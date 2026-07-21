@@ -1,0 +1,5 @@
+- Dịch tự nhiên, ngắn, ưu tiên khớp timing và nghe được khi lồng tiếng.
+- Giữ đúng ý chính, cảm xúc chính và quan hệ nhân vật.
+- Không thêm ý mới để câu nghe kịch tính hơn.
+- Nếu câu Trung dài, rút gọn chi tiết phụ thay vì kéo dài lời Việt.
+- Tránh dùng xưng hô "bạn/tôi" khi ngữ cảnh phim có quan hệ rõ hơn.

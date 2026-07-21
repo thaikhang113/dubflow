@@ -1,0 +1,26 @@
+.vscode/**
+.gitignore
+.env
+.claude/**
+mcps/**
+research/**
+test/**
+src/**
+integration/**
+out-integration/**
+.vscode-test.mjs
+.vscode-test/**
+tsconfig.json
+node_modules/**
+!node_modules/ws/**
+.git/**
+**/*.map
+**/*.ts
+!out/**/*.js
+grok-session-preview.html
+# Private/untracked working docs (git-excluded via .gitignore / .git/info/exclude)
+# must never ship in the public vsix — vsce doesn't read those files.
+docs/backlog.md
+docs/POST_NOTES.md
+docs/issue-37-diagrams.md
+docs/codex-style-analysis.md

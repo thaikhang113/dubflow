@@ -1,0 +1,2379 @@
+:root {
+  --pad: 8px;
+  --gap: 6px;
+  --radius: 6px;
+  /* Codex-style chat surfaces. The user bubble is a foreground-relative tint,
+     NOT a semantic surface token: themes (Cursor dark) can map
+     editorWidget.background to the exact sideBar.background, making a
+     token-colored bubble invisible. 5% of the theme's own foreground is
+     polarity-independent — slightly lighter than the sidebar on dark themes,
+     slightly darker on light ones. The -opaque variant is the same tint
+     composited over the sidebar, for places that must occlude content
+     (the collapsed-message fade) where a translucent endpoint can't. */
+  --chat-surface-user: color-mix(in oklab, var(--vscode-foreground) 5%, transparent);
+  --chat-surface-user-opaque: color-mix(in oklab, var(--vscode-foreground) 5%, var(--vscode-sideBar-background));
+  /* ONE surface for all chat code, inline and fenced — not
+     --vscode-textCodeBlock-background, which Cursor's dark theme maps to a
+     near-black nothing else in the sidebar uses (inline vs fenced looked like
+     two unrelated controls). Codex's chip formula: the percentages
+     deliberately sum to 66% — per the color-mix() spec the shortfall becomes
+     an alpha multiplier, so this is a ~66%-opaque wash of mostly list-hover
+     with a hint of foreground. Don't "normalize" the sum to 100%. */
+  --chat-surface-code: color-mix(in srgb, var(--vscode-list-hoverBackground) 60%, var(--vscode-foreground) 6%);
+  /* Radius scale (largest container → smallest nested surface): user bubble
+     12 → block code / IN-OUT command block 8 → inline code chip 6. Keeps
+     nested corners visually concentric and matches the 8px icon buttons. */
+  --chat-radius-message: 12px;
+  --chat-radius-code: 8px;
+}
+
+* { box-sizing: border-box; }
+
+/* Explicit scrollbar styling for every scroller (messages, textarea, popovers).
+   Left unstyled, the webview renders the platform's native bars — on Windows 11
+   that's Fluent scrollbars with ARROW BUTTONS, which put a stray ▼ at the
+   bottom-right of the messages area, floating above the composer. Styling
+   ::-webkit-scrollbar opts into the custom path where unstyled parts (the
+   buttons) don't render; the button rule is belt-and-braces. */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--vscode-scrollbarSlider-background);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--vscode-scrollbarSlider-hoverBackground); }
+::-webkit-scrollbar-thumb:active { background: var(--vscode-scrollbarSlider-activeBackground); }
+::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+::-webkit-scrollbar-corner { background: transparent; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+  background: var(--vscode-sideBar-background);
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  /* grok.chatFontScale zooms the chat via --chat-zoom (set inline on <body>).
+     `zoom` scales layout but `vh` ignores it, so a 100vh body at zoom 0.7 would
+     render at 70vh and leave dead space below the composer — divide the height
+     back out so the body always fills the viewport and the composer stays
+     pinned to the bottom at any scale. */
+  zoom: var(--chat-zoom, 1);
+  height: calc(100vh / var(--chat-zoom, 1));
+  overflow: hidden;
+}
+
+.muted { color: var(--vscode-descriptionForeground); }
+.small { font-size: 11px; }
+
+kbd {
+  background: var(--vscode-keybindingLabel-background);
+  border: 1px solid var(--vscode-keybindingLabel-border);
+  color: var(--vscode-keybindingLabel-foreground);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 11px;
+}
+
+code {
+  background: var(--chat-surface-code);
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 0.92em;
+  /* Match the surrounding prose. Without this, the webview host's injected
+     default stylesheet paints code with --vscode-textPreformat-foreground,
+     which Cursor maps to a blue. Codex does the same thing by remapping the
+     preformat token to its plain text color. */
+  color: inherit;
+}
+/* Inside a fenced block the surface belongs to .code-block — kill the inline
+   chip wherever a <pre> wraps <code> (agent, user, and plan-card blocks alike). */
+pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+}
+
+/* Links — markdown [text](url) and detected file refs alike: link color only
+   at rest, underline on hover (the VS Code-native affordance; permanent
+   underlines get noisy in ref-heavy chat). Deliberate exceptions like
+   .muted-link keep their own explicit underline via class specificity. */
+a {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* A detected file ref renders EXACTLY like any other link: no rules on the
+   anchor itself (the shared `a` styling above applies), and the inner
+   <code> is fully neutralized — no chip, no monospace, no own color. */
+.file-ref-link > code {
+  font: inherit;
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  color: inherit;
+}
+
+/* ---- top bar ---- */
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 2px 4px;
+  border-bottom: 1px solid var(--vscode-editorWidget-border);
+  flex-shrink: 0;
+  position: relative;
+}
+
+/* ---- toolbar popovers ---- */
+
+.toolbar-popover {
+  position: absolute;
+  min-width: 160px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-radius: 6px;
+  box-shadow: 0 -4px 12px var(--vscode-widget-shadow);
+  z-index: 50;
+}
+/* .history-popover sets display:flex, which would otherwise beat the UA
+   [hidden]{display:none} rule (author styles win), so it could never hide. */
+.toolbar-popover[hidden] { display: none; }
+.toolbar-popover-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: inherit;
+  white-space: nowrap;
+  color: var(--vscode-foreground);
+}
+.toolbar-popover-item:hover { background: var(--vscode-list-hoverBackground); }
+.toolbar-popover-item:hover .mode-item-label { color: var(--vscode-list-hoverForeground, var(--vscode-foreground)); }
+.toolbar-popover-item.active { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground, var(--vscode-foreground)); }
+.toolbar-popover-item.active .mode-item-desc { color: var(--vscode-list-activeSelectionForeground, var(--vscode-descriptionForeground)); opacity: 0.75; }
+.popover-check { color: var(--vscode-button-background); flex-shrink: 0; }
+.mode-popover-item { white-space: normal; align-items: flex-start; }
+
+/* On/off switcher used by toggle items in the gear popover (e.g. Show thinking
+   traces). White knob reads on both the muted-off and accent-on tracks across
+   light and dark themes. */
+.popover-switch {
+  position: relative;
+  display: inline-block;
+  width: 24px;
+  height: 13px;
+  border-radius: 7px;
+  background: var(--vscode-input-border, #6e6e6e);
+  flex-shrink: 0;
+  transition: background 0.14s;
+}
+.popover-switch.on { background: var(--vscode-charts-blue, #3794ff); }
+.popover-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: transform 0.14s;
+}
+.popover-switch.on .popover-switch-knob { transform: translateX(11px); }
+
+/* ---- messages ---- */
+
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--pad);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 32px 12px;
+  gap: 8px;
+  /* Re-reveal: the inline critical style in getHtml holds the welcome
+     invisible until this stylesheet has loaded (anti-FOUC). */
+  visibility: visible;
+}
+/* The explicit display above beats the UA's [hidden]{display:none}, so
+   clearWelcome()'s `hidden` attribute needs this companion rule — without it
+   the logo/byline block never actually disappears once chat content lands. */
+.welcome[hidden] { display: none; }
+.welcome-mark {
+  width: 56px; height: 56px; opacity: 0.9;
+  display: inline-block;
+  background-color: var(--vscode-foreground);
+  -webkit-mask: var(--welcome-mark) center / contain no-repeat;
+  mask: var(--welcome-mark) center / contain no-repeat;
+}
+.welcome h2 { margin: 0; font-weight: 600; }
+.welcome-byline { margin: 0; font-size: 11px; }
+.muted-link { color: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.muted-link:hover { opacity: 0.8; }
+
+/* Animated trailing ellipsis for transient status text ("Starting", "Thinking",
+   "Updating Grok Build CLI", "Summarizing"). The dots are a pseudo-element so the
+   element's textContent stays clean (the literal "..." is stripped at the call
+   sites); a reserved width keeps the label from shifting as the dots cycle. */
+@keyframes loading-ellipsis {
+  0% { content: ""; }
+  25% { content: "."; }
+  50% { content: ".."; }
+  75%, 100% { content: "..."; }
+}
+.loading-dots::after {
+  content: "...";
+  display: inline-block;
+  width: 1.2em;
+  text-align: left;
+  animation: loading-ellipsis 1.4s steps(1, end) infinite;
+}
+
+/* ---- onboarding panel ---- */
+
+#welcome-onboarding:empty { display: none; }
+.onb {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+  text-align: left;
+  max-width: 320px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.onb-heading {
+  margin: 0;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--vscode-foreground);
+}
+.onb-desc {
+  margin: 0;
+  color: var(--vscode-descriptionForeground);
+}
+.onb-or {
+  margin: 2px 0;
+  text-align: center;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.onb-cmd {
+  position: relative;
+  background: var(--vscode-textCodeBlock-background);
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-radius: 4px;
+  padding: 8px 36px 8px 10px;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 12px;
+  word-break: break-all;
+}
+.onb-cmd code {
+  background: none;
+  padding: 0;
+  color: var(--vscode-foreground);
+  font-size: 12px;
+}
+.onb-copy {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: transparent;
+  border: none;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+}
+.onb-copy:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+  color: var(--vscode-foreground);
+}
+.onb-copy.copied { color: var(--vscode-charts-green, #4ec9b0); }
+.onb-action {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border: none;
+  border-radius: 4px;
+  padding: 7px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: center;
+}
+.onb-action code {
+  background: rgba(255,255,255,0.12);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: inherit;
+}
+.onb-action:hover { background: var(--vscode-button-hoverBackground); }
+.onb-action.onb-secondary {
+  background: var(--vscode-button-secondaryBackground, transparent);
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  border: 1px solid var(--vscode-editorWidget-border);
+}
+.onb-action.onb-secondary:hover {
+  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground));
+}
+.onb-link { color: var(--vscode-textLink-foreground); text-decoration: underline; }
+
+.msg {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.msg.user {
+  align-self: flex-end;
+  max-width: 77%;
+  background: transparent;
+  border: none;
+  padding: 0;
+  white-space: normal;
+}
+.msg.user .msg-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  border-radius: var(--chat-radius-message);
+  background: var(--chat-surface-user);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  position: relative;
+}
+/* Queued sends (#37): pending user blocks pinned to the end of the chat —
+   italic + dashed border + clock tag = "composed, not sent yet". Combined into
+   one prompt by the host when the session's turn ends. */
+.queued-msgs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* A 5% tint composites to nothing in forced-colors mode — a border is the
+   dependable affordance there. */
+@media (forced-colors: active) {
+  .msg.user .msg-bubble { border: 1px solid CanvasText; }
+}
+.msg.user.queued .msg-bubble {
+  background: transparent;
+  border: 1px dashed var(--vscode-editorWidget-border, var(--vscode-input-border, #555));
+  opacity: 0.9;
+}
+.queued-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.queued-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+.queued-tag svg { width: 12px; height: 12px; display: block; }
+.queued-actions { display: inline-flex; gap: 2px; }
+.queued-action {
+  background: transparent;
+  border: none;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+.queued-action:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+  color: var(--vscode-foreground);
+}
+.queued-text {
+  font-style: italic;
+  color: var(--vscode-descriptionForeground);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.msg.agent {
+  background: transparent;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.msg-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.msg.user .msg-actions {
+  justify-content: flex-end;
+  padding: 0 10px;
+}
+.msg.user:hover .msg-actions,
+.msg.agent:hover .msg-actions,
+.msg-actions:focus-within { opacity: 1; }
+/* Codex-style ghost action: 16px glyph centered in a 28px rounded-square hit
+   target (glyph size and hit area are deliberately separate — a 28px glyph
+   would look heavy). Same recipe as .icon-btn / .code-copy-btn. */
+.msg-action-btn {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+.msg-action-btn svg { width: 16px; height: 16px; }
+.msg-action-btn:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+  color: var(--vscode-foreground);
+}
+.msg-action-btn:focus-visible {
+  color: var(--vscode-foreground);
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
+}
+.msg-action-btn.copied { color: var(--vscode-charts-green, #4ec9b0); }
+.msg-action-glyph { display: inline-flex; align-items: center; }
+.msg-timestamp { font-size: 11px; }
+.msg.thinking {
+  background: transparent;
+  padding: 2px 0;
+  white-space: normal;
+}
+.thinking-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  color: var(--vscode-descriptionForeground);
+  font-size: var(--vscode-font-size);
+  font-family: var(--vscode-font-family);
+  padding: 3px 0;
+  user-select: none;
+}
+.thinking-header:hover { color: var(--vscode-foreground); }
+/* Leading brain icon — mirrors the tool rows' .tool-icon so a thinking row reads
+   as a sibling of the tool rows (and matches the "Thinking…" stand-in). */
+.thinking-icon { width: 16px; height: 16px; flex: 0 0 auto; opacity: 0.85; }
+.thinking-icon svg { display: block; width: 100%; height: 100%; }
+.thinking-header:hover .thinking-icon { opacity: 1; }
+/* Chevron on the right (after the label), same glyph + rotate-on-expand as tool groups. */
+.thinking-chevron {
+  margin-left: 4px;
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.45;
+  transition: opacity 0.12s, transform 0.12s;
+}
+.thinking-header:hover .thinking-chevron { opacity: 0.8; }
+.msg.thinking.expanded .thinking-chevron { opacity: 0.8; transform: rotate(90deg); }
+.thinking-body {
+  margin-top: 2px;
+  padding: 2px 0 2px 15px;
+  border-left: 1px solid var(--vscode-panel-border);
+  margin-left: 7px;
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+  font-size: var(--vscode-font-size);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* Hide thinking traces by default (#26). A single body class hides every
+   reasoning block at once — live and replayed/old sessions alike — so the
+   gear → Config & debug toggle is an instant, reload-free flip. */
+body.thinking-hidden .msg.thinking { display: none; }
+
+/* Progress indicators (Grokking / "Thinking…" stand-in) share the tool rows'
+   metrics — editor font size, 16px leading icon @0.85, gap 7px, flush-left —
+   so they read as siblings of the tool rows, and all animate with the same
+   three blinking dots (.blink-dots) as a running tool. */
+.thinking-indicator,
+.grokking {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--vscode-descriptionForeground);
+  font-size: var(--vscode-font-size);
+  padding: 3px 0;
+  user-select: none;
+}
+.thinking-indicator-icon,
+.grokking-icon { width: 16px; height: 16px; flex: 0 0 auto; opacity: 0.85; }
+.thinking-indicator-icon svg,
+.grokking-icon svg { display: block; width: 100%; height: 100%; }
+/* The orbit icon slowly spins to reinforce "working". */
+.grokking-icon svg {
+  transform-origin: center;
+  animation: grokking-orbit 3.5s linear infinite;
+}
+@keyframes grokking-orbit { to { transform: rotate(-360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .grokking-icon svg { animation: none; }
+}
+
+/* Three blinking dots — the tool rows' in-progress animation, reused by every
+   progress indicator so they all pulse identically (replacing the morphing "…"
+   ellipsis). Same `tool-dot-blink` keyframes the tool group uses. */
+.blink-dots {
+  display: inline-flex;
+  gap: 1px;
+  margin-left: 1px;
+}
+.blink-dots span {
+  opacity: 0.2;
+  animation: tool-dot-blink 1.4s infinite;
+}
+.blink-dots span:nth-child(2) { animation-delay: 0.2s; }
+.blink-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+/* ---- file chips in user message history ---- */
+
+.msg-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+.msg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-family: var(--vscode-editor-font-family);
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.8;
+}
+/* Full name + line range in the DOM (tests and hover need it); a long one
+   ellipsizes here instead of being cut in JS. nowrap is required — .msg-chip
+   doesn't inherit one (unlike .chip, which sets its own). */
+.msg-chip span {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- tool group ---- */
+
+.tool-flat {
+  display: flex;
+  flex-wrap: wrap; /* the #41 details block breaks onto its own full-width row */
+  align-items: flex-start;
+  gap: 7px;
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-descriptionForeground);
+  padding: 3px 0;
+  font-family: var(--vscode-font-family);
+}
+.tool-flat.has-details { cursor: pointer; }
+
+/* Generated media (grok /imagine image, /imagine-video video) */
+.generated-image {
+  /* A definite-width block that hugs the media: width is min(100%, 320px), so it
+     never exceeds the chat column (responsive) and caps the thumbnail at 320px.
+     The media fills it (width:100% below), so the block's right edge IS the
+     image's right edge — that's what anchors the hover actions ON the image
+     rather than out at the chat column's edge (position:relative). We size the
+     block explicitly instead of shrink-wrapping it (fit-content/inline-block),
+     because a shrink-to-fit container collapses a replaced <img> to zero width in
+     Chromium — the 1.4.0 invisible-image bug. The file itself is untouched
+     (click / Open in VS Code shows full res). */
+  position: relative;
+  width: min(100%, 320px);
+  margin: 6px 0;
+}
+.generated-image img,
+.generated-image video {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+  border: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
+}
+/* Hover actions over the media's top-right corner — mirrors .code-copy-btn. */
+.generated-media-actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.12s;
+  z-index: 1;
+}
+.generated-image:hover .generated-media-actions { opacity: 1; }
+.generated-media-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  border: 1px solid var(--vscode-editorWidget-border);
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  padding: 5px;
+  border-radius: 4px;
+  cursor: pointer;
+  line-height: 1;
+}
+.generated-media-btn:hover,
+.generated-media-btn:focus-visible {
+  background: color-mix(in srgb, var(--vscode-foreground) 12%, var(--vscode-editorWidget-background, var(--vscode-editor-background)));
+  color: var(--vscode-foreground);
+}
+.generated-media-btn.copied { color: var(--vscode-charts-green, #4ec9b0); }
+
+/* Subagent delegation row — same typography as the tool rows, with a purple
+   accent marking "delegated work" (one level up from a single tool call). */
+.subagent-card {
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-descriptionForeground);
+  padding: 5px 10px;
+  margin: 4px var(--pad);
+  border-left: 2px solid var(--vscode-charts-purple, #b180d7);
+  background: var(--vscode-textBlockQuote-background, rgba(177, 128, 215, 0.08));
+  border-radius: 0 6px 6px 0;
+}
+.subagent-card .subagent-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.subagent-card .subagent-row.expandable { cursor: pointer; }
+.subagent-card .subagent-badge { display: inline-flex; flex: none; }
+.subagent-card .subagent-label { font-weight: 600; flex: none; }
+.subagent-card .subagent-sep { flex: none; opacity: 0.7; }
+.subagent-card .subagent-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.subagent-card .subagent-time { flex: none; opacity: 0.85; }
+.subagent-card .subagent-result-label {
+  font-size: 0.92em;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 4px;
+}
+.subagent-card .subagent-result {
+  margin-top: 5px;
+  /* Balance the bottom edge: the last paragraph's margin is collapsed below,
+     so without this the text sits on the card's 5px padding while the top has
+     row + gap above it. */
+  padding-bottom: 3px;
+  overflow-wrap: anywhere;
+  color: var(--vscode-foreground);
+  opacity: 0.9;
+}
+.subagent-card .subagent-result > *:first-child { margin-top: 0; }
+.subagent-card .subagent-result > *:last-child { margin-bottom: 0; }
+
+.tool-group {
+  font-size: var(--vscode-font-size);
+}
+.tool-group-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  cursor: pointer;
+  color: var(--vscode-descriptionForeground);
+  padding: 3px 0;
+  font-family: var(--vscode-font-family);
+  user-select: none;
+}
+.tool-group-header:hover { color: var(--vscode-foreground); }
+/* Category icon — size + color (currentColor) set here, overriding the SVG's own attrs. */
+.tool-icon { width: 16px; height: 16px; flex: 0 0 auto; margin-top: 1px; opacity: 0.85; }
+.tool-group-header:hover .tool-icon { opacity: 1; }
+.tool-chevron {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  opacity: 0.45;
+  margin-left: 4px;
+  transition: opacity 0.12s, transform 0.12s;
+}
+.tool-group-header:hover .tool-chevron { opacity: 0.8; }
+/* Header-scoped (> .tool-group-header) on purpose: the body's command ROWS
+   carry their own chevrons whose state must not inherit from the group —
+   an unscoped selector rotated every row chevron to v whenever the group
+   was expanded, and hid them all while the group ran (#41 follow-up). */
+.tool-group.expanded > .tool-group-header .tool-chevron {
+  opacity: 0.8;
+  transform: rotate(90deg);
+}
+.tool-group.in-progress > .tool-group-header .tool-chevron { display: none; } /* can't expand while running */
+/* …except a lone running COMMAND, which is expandable immediately (#41), or a
+   group the Expand-All latch forced open mid-run (so it can be collapsed). */
+.tool-group.in-progress.cmd-single > .tool-group-header .tool-chevron,
+.tool-group.in-progress.expanded > .tool-group-header .tool-chevron { display: inline-flex; }
+/* A running group stays muted like the Grokking / Thinking indicators — the
+   blinking dots convey activity, not a brighter text color. */
+.tool-group-label { color: inherit; }
+.tool-dots { display: none; }
+.tool-group.in-progress .tool-dots {
+  display: inline-flex;
+  gap: 1px;
+  margin-left: 1px;
+}
+.tool-group.in-progress .tool-dots span {
+  opacity: 0.2;
+  animation: tool-dot-blink 1.4s infinite;
+}
+.tool-group.in-progress .tool-dots span:nth-child(2) { animation-delay: 0.2s; }
+.tool-group.in-progress .tool-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes tool-dot-blink {
+  0%, 80%, 100% { opacity: 0.2; }
+  40% { opacity: 1; }
+}
+.tool-group-body {
+  margin-top: 2px;
+  padding-left: 15px;
+  border-left: 1px solid var(--vscode-panel-border);
+  margin-left: 7px;
+}
+.tool-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 0;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-descriptionForeground);
+}
+/* #41: per-command expandable detail — Claude-Code-style IN/OUT block on the
+   shared code-chip surface. Every tool call stays one ellipsized line;
+   clickable command rows carry a trailing chevron (› collapsed, v expanded)
+   plus hover brightening — plain rows like get_command_or_subagent_output
+   don't react. */
+.tool-item.has-details, .tool-flat.has-details { cursor: pointer; user-select: none; }
+.tool-item.has-details:hover, .tool-flat.has-details:hover { color: var(--vscode-foreground); }
+.tool-item.has-details:hover .tool-chevron, .tool-flat.has-details:hover .tool-chevron { opacity: 0.8; }
+.tool-item.expanded .tool-chevron, .tool-flat.expanded .tool-chevron {
+  opacity: 0.8;
+  transform: rotate(90deg);
+}
+/* Single-line labels: truncate instead of wrapping (long grep patterns,
+   commands); the details block still breaks onto its own full-width row. */
+.tool-item-label, .tool-flat .tool-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-item-details {
+  flex-basis: 100%;
+  min-width: 0;
+  margin: 3px 0 6px;
+  cursor: default;      /* the block is content, not a toggle target */
+  user-select: text;    /* output must be selectable without collapsing */
+}
+.cmd-block {
+  background: var(--chat-surface-code);
+  border-radius: var(--chat-radius-code, 10px);
+  padding: 6px 10px;
+  font-size: 0.92em;
+  line-height: 1.45;
+}
+.cmd-io {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 0 8px;
+}
+.cmd-io + .cmd-io {
+  border-top: 1px solid color-mix(in srgb, var(--vscode-foreground) 10%, transparent);
+  margin-top: 6px;
+  padding-top: 6px;
+}
+.cmd-io-tag {
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.75;
+  font-size: 0.85em;
+  padding-top: 2px;
+  user-select: none;
+}
+.cmd-io pre {
+  margin: 0;
+  padding: 0;
+  background: none;
+  border-radius: 0;
+  font-size: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* Long commands and outputs scroll inside the block instead of growing it. */
+.tool-cmd {
+  max-height: 140px;
+  overflow-y: auto;
+  color: var(--vscode-editor-foreground, var(--vscode-foreground));
+}
+.tool-cmd-output {
+  max-height: 260px;
+  overflow-y: auto;
+  color: var(--vscode-foreground);
+}
+.cmd-out-marker {
+  font-size: 0.88em;
+  color: var(--vscode-errorForeground);
+  margin-bottom: 3px;
+}
+.cmd-out-marker.muted { color: var(--vscode-descriptionForeground); }
+/* exit-0-with-no-output: a muted done marker (a green tick, description-colored
+   text) instead of an empty "(no output)" pre. */
+.cmd-out-marker.ok { color: var(--vscode-descriptionForeground); }
+.cmd-out-marker.ok::first-letter { color: var(--vscode-charts-green, #4ec9b0); }
+.cmd-out.failed .cmd-io-tag,
+.cmd-out.failed .tool-cmd-output { color: var(--vscode-errorForeground); }
+
+/* Inline edit-diff palette — Codex's exact green/red (they read well in both
+   themes and match the Codex panel a lot of users run side-by-side). Dark is the
+   default; light overrides on the VS Code body class. bg = translucent tint,
+   line = the solid stroke used for the left border + the +/- glyph + the stat. */
+:root {
+  --tdiff-add-bg: #40c9773b;
+  --tdiff-del-bg: #fa423e3b;
+  --tdiff-add-line: #40c977;
+  --tdiff-del-line: #fa423e;
+}
+body.vscode-light {
+  --tdiff-add-bg: #00a24026;
+  --tdiff-del-bg: #ba262326;
+  --tdiff-add-line: #00a240;
+  --tdiff-del-line: #ba2623;
+}
+/* Edit rows: the always-visible "+A −R" change count (green adds, red removes),
+   shown inline after the label AND rolled up onto a collapsed group header, so an
+   edit is auditable at a glance without expanding (#45). */
+.diff-stat { white-space: nowrap; }
+.diff-stat-add { color: var(--tdiff-add-line); }
+.diff-stat-del { color: var(--tdiff-del-line); }
+
+/* Codex-style inline diff inside the edit row's expandable detail: a line-number
+   gutter, a colored left-border stripe, a subtle per-line tint, and a small +/-
+   glyph by the border for color-blind readability. Rows scroll rather than growing
+   the row unbounded. */
+.tool-diff-region {
+  margin: 0 0 6px;
+  max-height: 320px;
+  overflow: auto;
+  border-radius: var(--chat-radius-code, 8px);
+  background: var(--chat-surface-code);
+  padding: 4px 0;
+  font-size: 0.92em;
+  line-height: 1.5;
+}
+.tdl {
+  display: grid;
+  /* sign | line# | code — line# was 3ch; digits >99 wrapped under overflow-wrap:anywhere */
+  grid-template-columns: 1.1ch 4ch 1fr;
+  gap: 0 8px;
+  padding-left: 7px;  /* breathing room between the colored border stripe and the +/- glyph */
+  padding-right: 10px;
+  border-left: 2px solid transparent;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--vscode-editor-foreground, var(--vscode-foreground));
+}
+.tdl-sign {
+  text-align: center;
+  user-select: none;
+  font-weight: 600;
+}
+.tdl-num {
+  text-align: right;
+  color: var(--vscode-editorLineNumber-foreground, var(--vscode-descriptionForeground));
+  opacity: 0.75;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap; /* never wrap 3+ digit line numbers onto a second row */
+}
+.tdl-code { min-width: 0; }
+.tdl-add { background: var(--tdiff-add-bg); border-left-color: var(--tdiff-add-line); }
+.tdl-del { background: var(--tdiff-del-bg); border-left-color: var(--tdiff-del-line); }
+.tdl-add .tdl-sign { color: var(--tdiff-add-line); }
+.tdl-del .tdl-sign { color: var(--tdiff-del-line); }
+.tool-diff-more {
+  padding: 2px 10px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.92em;
+}
+.tool-item-diff .preview-link { display: inline-block; margin: 0 0 4px; }
+
+/* The line-count + "open diff" sit inline after the label on one row (they used
+   to each take a full-width line via flex-basis:100%). A failure message
+   (.tool-error) still keeps its own line. */
+.tool-item-subtitle {
+  font-size: inherit; /* same size as the tool row label ("Edit acp.ts") */
+  color: var(--vscode-descriptionForeground);
+}
+/* Button-tag actions that read as links ("open diff →", "open generated
+   image ↗") — one unscoped rule so tool rows, cards, and media captions all
+   match the chat's link convention: link color, underline on hover only. */
+.preview-link {
+  background: none;
+  border: none;
+  color: var(--vscode-textLink-foreground);
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  font-size: inherit; /* matches the surrounding row/card text, not a mini size */
+  text-align: left;
+}
+.preview-link:hover {
+  color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* Failed tool call — the row goes error-colored and shows grok's reason. */
+.tool-flat.tool-failed,
+.tool-item.tool-failed { color: var(--vscode-errorForeground); }
+.tool-flat.tool-failed .tool-icon,
+.tool-item.tool-failed .tool-icon { opacity: 1; }
+.tool-group.has-error .tool-group-header .tool-icon { color: var(--vscode-errorForeground); opacity: 1; }
+.tool-error {
+  flex-basis: 100%;
+  color: var(--vscode-errorForeground);
+  font-size: 11px;
+  margin-top: 2px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tool-kind {
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-textBlockQuote-background);
+  padding: 1px 4px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.tool-title-text { color: var(--vscode-foreground); }
+.tool-detail { color: var(--vscode-descriptionForeground); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+.msg.error {
+  background: var(--vscode-inputValidation-errorBackground);
+  border: 1px solid var(--vscode-inputValidation-errorBorder);
+  color: var(--vscode-errorForeground);
+}
+
+/* ---- bidi / RTL content ---- */
+
+/* RTL support, half two (half one is applyAutoDir in chat.js): each loose
+   prose line takes its direction from its own first strong character, so an
+   Arabic paragraph right-aligns with its punctuation on the correct side
+   while the chat chrome (bubble sides, toolbar, tool rows) stays LTR.
+   plaintext must sit on the CONTAINERS because renderMarkdown emits
+   paragraph text bare (with <br> breaks), never inside <p>. The default
+   text-align:start follows each line's resolved direction under plaintext. */
+.msg .body,
+.thinking-body,
+.card .plan-body,
+.subagent-result,
+.queued-text {
+  unicode-bidi: plaintext;
+}
+/* The composer is dir="auto" (typed Arabic right-aligns live). The UA gives
+   textarea[dir=auto] plaintext already; stating it on both keeps the
+   send-phrase mirror (#input-highlight) laid out byte-identically to the
+   textarea it overlays — same per-line direction resolution. */
+#input,
+.input-highlight {
+  unicode-bidi: plaintext;
+}
+/* Code is code: always LTR, isolated so surrounding RTL prose can't reorder
+   it (Codex pins its markdown code blocks dir="ltr" the same way). Also
+   keeps file-ref links readable inside RTL sentences. */
+.code-block pre,
+.msg .body code,
+.card .plan-body code,
+.thinking-body code,
+.subagent-result code {
+  direction: ltr;
+  unicode-bidi: isolate;
+  text-align: left;
+}
+
+/* ---- markdown in agent messages ---- */
+
+.msg.agent .body { white-space: normal; line-height: 1.55; }
+.msg.agent .body h1,
+.msg.agent .body h2,
+.msg.agent .body h3 {
+  margin: 16px 0 8px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.msg.agent .body h1 { font-size: 1.4em; }
+.msg.agent .body h2 { font-size: 1.25em; }
+.msg.agent .body h3 { font-size: 1.1em; }
+.msg.agent .body > h1:first-child,
+.msg.agent .body > h2:first-child,
+.msg.agent .body > h3:first-child { margin-top: 0; }
+.msg.agent .body ul,
+.msg.agent .body ol {
+  margin: 6px 0;
+  padding-inline-start: 22px; /* logical: indents from the right for RTL lists */
+}
+.msg.agent .body ul { list-style-type: disc; }
+.msg.agent .body ol { list-style-type: decimal; }
+.msg.agent .body li { margin: 3px 0; }
+.msg.agent .body li > ul { margin: 3px 0; list-style-type: circle; }
+.msg.agent .body li > ul ul { list-style-type: square; }
+/* The wrapper owns the block surface (Codex-style): radius on the div,
+   overflow clipped so full-width diff-line tints follow the rounded corners.
+   Every fenced block renderMarkdown emits is wrapped in .code-block, in agent,
+   user, and plan-card bodies alike. */
+.code-block {
+  position: relative;
+  margin: 8px 0;
+  border-radius: var(--chat-radius-code);
+  background: var(--chat-surface-code);
+  overflow: clip;
+}
+/* Codex's roomier 14px block margin, in agent prose only — inside a compact
+   user bubble or plan card the 8px base reads better. */
+.msg.agent .body .code-block { margin: 14px 0; }
+.code-block pre {
+  margin: 0;
+  padding: 8px;
+  overflow-x: auto;
+  background: transparent;
+}
+/* No font-size here on purpose: fenced code inherits the global `code` 0.92em,
+   matching inline code (~12px at the default 13px UI font). Don't use
+   --vscode-editor-font-size — it defaults to 14px, LARGER than chat prose. */
+.code-block pre code {
+  line-height: 1.5;
+  /* Editor foreground, not the inherited sidebar foreground — themes (Cursor)
+     can mute the latter, and code should read at editor contrast. */
+  color: var(--vscode-editor-foreground, var(--vscode-foreground));
+}
+.code-copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Occluding backdrop matching the block's VISUAL color: the button floats
+     OVER code text, so a fully transparent ghost would leave the glyph
+     illegible on top of characters (Codex parks its copy in a header row; we
+     overlay). The surface token is translucent, so layer it over the sidebar
+     color it composites against. */
+  background:
+    linear-gradient(var(--chat-surface-code), var(--chat-surface-code)),
+    var(--vscode-sideBar-background);
+  border: 0;
+  color: var(--vscode-descriptionForeground);
+  padding: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s;
+  z-index: 1;
+  line-height: 1;
+}
+.code-copy-btn svg { width: 16px; height: 16px; }
+.code-copy-btn .code-copy-glyph {
+  display: inline-flex;
+  align-items: center;
+}
+.code-block:hover .code-copy-btn { opacity: 1; }
+.code-copy-btn:hover,
+.code-copy-btn:focus-visible {
+  opacity: 1;
+  background: color-mix(in srgb, var(--vscode-foreground) 12%, var(--vscode-sideBar-background));
+  color: var(--vscode-foreground);
+}
+.code-copy-btn:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
+}
+.code-copy-btn.copied { color: var(--vscode-charts-green, #4ec9b0); }
+.code-block.diff pre { padding: 8px 0; }
+.diff-code { display: block; }
+/* A ```diff fence in Grok's MESSAGE text (renderDiffCode) shares the same visual
+   language as an edit row's inline diff (buildInlineDiffRegion): the Codex palette
+   + a colored left-border stripe + subtle tint. No line-number gutter here — a raw
+   unified-diff fence carries no reliable per-line numbers (Grok's message diffs
+   have no @@ hunk headers) — but the +/- prefix stays as the color-blind glyph. */
+.diff-line {
+  display: block;
+  padding: 0 10px 0 9px;
+  border-left: 2px solid transparent;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.diff-line.diff-add { background: var(--tdiff-add-bg); border-left-color: var(--tdiff-add-line); }
+.diff-line.diff-del { background: var(--tdiff-del-bg); border-left-color: var(--tdiff-del-line); }
+.diff-line.diff-hunk { color: var(--vscode-textLink-foreground); }
+.diff-line.diff-meta { color: var(--vscode-descriptionForeground); }
+.msg.agent .body strong { font-weight: 600; }
+.msg.agent .body em { font-style: italic; }
+.msg.agent .body .md-table-wrap {
+  overflow-x: auto;
+  margin: 8px 0;
+}
+.msg.agent .body table {
+  border-collapse: collapse;
+  font-size: inherit;
+  width: 100%;
+}
+.msg.agent .body th,
+.msg.agent .body td {
+  border: 1px solid var(--vscode-editorWidget-border);
+  padding: 5px 8px;
+  text-align: start; /* follows the cell's dir="auto" (RTL cells right-align) */
+  vertical-align: top;
+  line-height: 1.45;
+  /* Never break inside a word (headers looked cramped/narrow when long words
+     were chopped mid-letter); still break at spaces and after hyphens. A run
+     with no break opportunity overflows into the wrapper's horizontal scroll. */
+  word-break: normal;
+  overflow-wrap: normal;
+}
+.msg.agent .body th {
+  background: var(--vscode-textBlockQuote-background, var(--vscode-editorWidget-background));
+  font-weight: 600;
+}
+
+/* ---- composer ---- */
+
+/* No border-top separator: the card's own border is the boundary between the
+   messages scroll area and the input (mirrors Claude Code / Cursor composers —
+   a full-width rule above the card read as a dead strip). */
+.composer {
+  padding: var(--pad);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* One unified card owns the border, fill, and focus ring for the whole input
+   area — attachments row, textarea, and the bottom toolbar live INSIDE it, so
+   they read as one control instead of three stacked strips. */
+.composer-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-editorWidget-border));
+  border-radius: var(--radius);
+}
+.composer-card:focus-within {
+  border-color: var(--vscode-focusBorder);
+}
+
+/* Floating "Scroll to bottom" (#28). Anchored to the composer (the chat input
+   area), so it sits inside the `--chat-zoom` scaled coordinate space and stays
+   correctly placed above the input at any font scale. Hidden (opacity + no
+   pointer events) until the user scrolls away from the bottom. */
+.scroll-bottom-btn {
+  position: absolute;
+  /* Sit above the composer's top edge by the same gap the card sits inside the
+     composer (its top padding, --pad) — symmetric spacing. */
+  bottom: calc(100% + var(--pad));
+  left: 50%;
+  transform: translate(-50%, 4px);
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 11px 4px 9px;
+  border-radius: 13px;
+  border: 1px solid var(--vscode-editorWidget-border);
+  background: var(--vscode-editorWidget-background, var(--vscode-input-background));
+  color: var(--vscode-foreground);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s ease, transform 0.14s ease, background 0.12s ease;
+}
+.scroll-bottom-btn.visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+}
+.scroll-bottom-btn:hover { background: var(--vscode-toolbar-hoverBackground); }
+.scroll-bottom-btn svg { display: block; }
+.scroll-bottom-label { white-space: nowrap; }
+
+/* The input is a textarea layered over a "backdrop" that highlights recognized
+   voice commands (e.g. "grok send"). Textareas can't style their own text, so
+   the backdrop renders a mirrored copy with the command wrapped in an accent
+   pill; the textarea sits on top with a transparent background so the pill shows
+   through behind the matching words. Border + fill + focus ring belong to the
+   enclosing .composer-card; the wrap stays position:relative because the mic
+   button and the highlight backdrop anchor to the textarea's box. */
+.composer-input-wrap {
+  position: relative;
+}
+/* Shared text-box metrics — MUST match between the textarea and the backdrop so
+   the highlight aligns exactly. */
+textarea#input,
+.input-highlight {
+  margin: 0;
+  /* extra right padding leaves room for the mic button in the top-right corner */
+  padding: 6px 34px 6px 8px;
+  border: 0;
+  /* UI font, not the editor's monospace — typed text should look like the
+     user message it becomes (textareas default to monospace otherwise). */
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size, 13px);
+  line-height: 1.5;
+  letter-spacing: normal;
+  tab-size: 4;
+}
+textarea#input {
+  display: block;
+  width: 100%;
+  resize: none;
+  background: transparent;
+  color: var(--vscode-input-foreground);
+  border-radius: var(--radius);
+  outline: none;
+  position: relative;
+  z-index: 1;
+}
+.input-highlight {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  color: transparent;
+  pointer-events: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+/* The recognized command, shown as a subtle accent pill behind the live text. */
+.input-highlight .cmd-token {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 26%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 50%, transparent);
+}
+
+/* ---- mic / voice-input button (top-right corner of the textbox) ---- */
+
+.mic-btn {
+  /* Anchored inside .composer-input-wrap (position:relative) so it tracks the
+     textarea's top-right corner — not the composer, which grows when the
+     attachments row appears above the input (that made the mic "jump"). */
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  /* Above the textarea (z-index:1) so its top-right padding doesn't swallow the
+     hover/click — the textarea was lifted for the highlight overlay. */
+  z-index: 2;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--vscode-descriptionForeground, var(--vscode-foreground));
+  cursor: pointer;
+  opacity: 0.75;
+  transition: background 0.12s, color 0.12s, opacity 0.12s;
+}
+.mic-btn:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground); }
+.mic-btn:disabled { cursor: default; }
+/* Subtle "needs setup" dot when no voice API key is configured. */
+.mic-btn.needs-setup::after {
+  content: "";
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--vscode-charts-blue, #3794ff);
+  border: 1px solid var(--vscode-editor-background, #1e1e1e);
+}
+/* Listening: blue, with an expanding "wave" ring pulsing outward. */
+.mic-btn.listening {
+  opacity: 1;
+  color: #fff;
+  background: var(--vscode-charts-blue, #3794ff);
+  animation: mic-pulse 1.5s ease-out infinite;
+}
+@keyframes mic-pulse {
+  0%   { box-shadow: 0 0 0 0 var(--vscode-charts-blue, rgba(55, 148, 255, 0.5)); }
+  70%  { box-shadow: 0 0 0 9px rgba(55, 148, 255, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(55, 148, 255, 0); }
+}
+.mic-btn.transcribing,
+.mic-btn.connecting {
+  opacity: 1;
+  color: var(--vscode-charts-blue, #3794ff);
+}
+.mic-btn.transcribing svg,
+.mic-btn.connecting svg { animation: send-spinner-rotate 0.9s linear infinite; }
+/* Animated equalizer bars shown while listening. */
+.mic-waves {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 14px;
+}
+.mic-waves i {
+  width: 2px;
+  height: 4px;
+  background: currentColor;
+  border-radius: 1px;
+  animation: mic-bar 0.9s ease-in-out infinite;
+}
+.mic-waves i:nth-child(2) { animation-delay: 0.15s; }
+.mic-waves i:nth-child(3) { animation-delay: 0.3s; }
+.mic-waves i:nth-child(4) { animation-delay: 0.45s; }
+@keyframes mic-bar {
+  0%, 100% { height: 4px; }
+  50%      { height: 14px; }
+}
+
+/* ---- bottom toolbar ---- */
+
+.composer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  min-height: 28px;
+  /* Bottom row inside .composer-card — inset from the card edges. */
+  padding: 0 5px 5px;
+}
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+#mode-btn {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  max-width: 120px;
+}
+/* Same 28px hit-target + 8px radius as .icon-btn so the mode button's icon
+   size and highlight height match the gear/history/new buttons exactly. */
+.toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  background: transparent;
+  color: var(--vscode-foreground);
+  border: none;
+  border-radius: 8px;
+  padding: 0 7px;
+  cursor: pointer;
+  font-size: 11px;
+  font-family: inherit;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.toolbar-btn svg { width: 16px; height: 16px; flex: none; }
+.toolbar-btn:hover { background: var(--vscode-toolbar-hoverBackground); }
+/* Codex-style ghost icon button: 16px glyph in a 28px rounded-square hit
+   target. Used by the icon-only triggers (history, new session, add context,
+   settings); #mode-btn keeps .toolbar-btn because it carries a text label. */
+.icon-btn {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  color: var(--vscode-descriptionForeground);
+  background: transparent;
+  cursor: pointer;
+}
+.icon-btn svg { width: 16px; height: 16px; }
+.icon-btn:hover {
+  color: var(--vscode-foreground);
+  background: var(--vscode-toolbar-hoverBackground);
+}
+.icon-btn:focus-visible {
+  color: var(--vscode-foreground);
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
+}
+.toolbar-btn.plan-active { color: var(--vscode-charts-blue, #569cd6); }
+.toolbar-btn.yolo-active { color: var(--vscode-charts-orange, #d7ba7d); }
+.btn-label {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- gear popover: model + effort row ---- */
+
+.gear-popover { min-width: 230px; }
+
+.model-effort-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 6px;
+}
+.model-name-btn {
+  flex-shrink: 1;
+  min-width: 0;
+  padding: 3px 5px;
+  font-size: 13px;
+}
+
+.effort-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  flex-shrink: 0;
+}
+.effort-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  user-select: none;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 50%;
+  opacity: 0.6;
+  box-sizing: border-box;
+}
+/* Inner CSS-shaped dot — identical size for active + inactive. Avoids the
+   Unicode ●/○ glyph-pair mismatch where the empty circle renders larger. */
+.effort-dot::before {
+  content: "";
+  display: block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 1.5px solid var(--vscode-descriptionForeground);
+  background: transparent;
+}
+.effort-dot.active::before {
+  background: var(--vscode-button-background);
+  border-color: var(--vscode-button-background);
+}
+.effort-dot:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground); }
+.effort-dot.active { opacity: 1; }
+
+/* Model + effort are locked while the session is busy/priming (mirrors the
+   disabled send button). No pointer, no hover affordance. */
+.model-name-btn.disabled,
+#mode-btn.disabled,
+.effort-dot.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.effort-dot.disabled:hover { background: transparent; }
+
+/* ---- mode / section popover extras ---- */
+
+.mode-popover-item { min-width: 240px; }
+.popover-section {
+  padding: 5px 10px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--vscode-descriptionForeground);
+  border-top: 1px solid var(--vscode-editorWidget-border);
+  margin-top: 2px;
+}
+.popover-section:first-child,
+.popover-section-first { border-top: none; margin-top: 0; }
+.popover-value { color: var(--vscode-descriptionForeground); font-size: 10px; }
+.popover-external { color: var(--vscode-descriptionForeground); font-size: 12px; }
+.popover-back { color: var(--vscode-textLink-foreground); }
+.popover-chevron { color: var(--vscode-descriptionForeground); flex-shrink: 0; }
+
+/* Non-clickable info rows (About panel: versions, update status). */
+.popover-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--vscode-foreground);
+}
+.popover-ver { color: var(--vscode-descriptionForeground); }
+.popover-update-avail { color: var(--vscode-textLink-foreground); }
+.popover-warn { color: var(--vscode-editorWarning-foreground, var(--vscode-descriptionForeground)); }
+/* The "Update Grok Build" action; disabled when checking / already up to date. */
+.popover-action { color: var(--vscode-textLink-foreground); }
+.popover-action.disabled { color: var(--vscode-descriptionForeground); opacity: 0.55; cursor: default; pointer-events: none; }
+.popover-action.disabled:hover { background: transparent; }
+/* Version & about panel: separators, tagline, repo link, trademark fine print. */
+.popover-sep { height: 0; border-top: 1px solid var(--vscode-editorWidget-border); margin: 4px 0; }
+.popover-muted { color: var(--vscode-descriptionForeground); }
+.popover-gh { display: inline-flex; align-items: center; gap: 6px; }
+.popover-fineprint { padding: 6px 10px; font-size: 11px; line-height: 1.45; color: var(--vscode-descriptionForeground); }
+/* Leading icon + label inside a popover row (gear -> Move view). */
+.popover-icon-label { display: inline-flex; align-items: center; gap: 7px; }
+.popover-icon-label svg { flex: none; opacity: 0.9; }
+
+.mode-item-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  color: var(--vscode-descriptionForeground);
+  /* The items are top-aligned (multi-line desc below the label); nudge the
+     icon down so its visible top meets the label's first-line cap height
+     instead of floating above it. */
+  margin-top: 2px;
+}
+/* Same 16px glyph as the toolbar buttons (the raw lucide markup is 13px). */
+.mode-item-icon svg { width: 16px; height: 16px; }
+.mode-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+.mode-item-label { font-size: 12px; font-weight: 500; line-height: 16px; }
+.mode-item-desc { font-size: 11px; color: var(--vscode-descriptionForeground); white-space: normal; line-height: 1.3; }
+.mode-popover-item.disabled { opacity: 0.45; cursor: not-allowed; }
+.mode-popover-item.disabled:hover { background: transparent; }
+.mode-item-disabled-note { display: block; font-size: 10px; color: var(--vscode-descriptionForeground); opacity: 0.85; margin-top: 3px; line-height: 1.3; white-space: normal; }
+
+/* ---- chips (inline in toolbar-left) ---- */
+
+#chips {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  overflow-x: auto;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  scrollbar-width: none;
+  padding-left: 4px;
+}
+#chips::-webkit-scrollbar { display: none; }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  background: var(--vscode-editorWidget-background);
+  color: var(--vscode-foreground);
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: var(--vscode-editor-font-family);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  user-select: none;
+}
+.chip:hover { background: var(--vscode-list-hoverBackground); }
+/* Full file name up to a sane cap — a pathological name ellipsizes instead of
+   growing the chip unbounded (the JS side no longer truncates). */
+.chip span {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chip.chip-hidden {
+  opacity: 0.5;
+  color: var(--vscode-descriptionForeground);
+  background: transparent;
+}
+
+/* Uploaded attachments live on their own row at the top of the composer card
+   (above the textarea), separate from the active-editor chip that stays in the
+   toolbar. Each carries a remove (×) — not a hide toggle. Horizontal inset
+   matches the textarea's 8px text padding so chips align with the input text. */
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 8px 0;
+}
+.attachments:empty { display: none; }
+.attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 4px 2px 7px;
+  background: var(--vscode-editorWidget-background);
+  color: var(--vscode-foreground);
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: var(--vscode-editor-font-family);
+}
+.attachment > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.attachment-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  font-family: inherit;
+}
+.attachment-remove:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+  color: var(--vscode-foreground);
+}
+
+/* ---- send button ---- */
+
+.send {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.send:hover { background: var(--vscode-button-hoverBackground); }
+.send:disabled { opacity: 0.4; cursor: default; }
+/* Stop mode: same button position, different look. Subtle so it doesn't shout. */
+.send.stop {
+  background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
+}
+.send.stop:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground)); }
+/* Initialization spinner: locked busy state (e.g. session-start priming).
+   Button is disabled; the spinner SVG inside rotates. */
+.send.initializing {
+  cursor: progress;
+  opacity: 0.65;
+}
+.send.initializing svg {
+  animation: send-spinner-rotate 0.9s linear infinite;
+}
+@keyframes send-spinner-rotate {
+  to { transform: rotate(360deg); }
+}
+
+/* ---- context donut ---- */
+
+.context-donut {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  cursor: pointer; /* click opens the context-details popover */
+  /* Match the .icon-btn hit-target height + radius so the whole toolbar row
+     highlights at one consistent size. */
+  height: 28px;
+  border-radius: 8px;
+  padding: 0 6px;
+}
+.context-donut:hover { background: var(--vscode-toolbar-hoverBackground); }
+.context-donut::after {
+  content: '';
+  display: block;
+  width: 1px;
+  height: 12px;
+  background: var(--vscode-widget-border, rgba(128,128,128,0.3));
+  margin-left: 4px;
+}
+
+/* ---- slash popover ---- */
+
+.slash-popover {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: var(--pad);
+  right: var(--pad);
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 8px var(--vscode-widget-shadow);
+  z-index: 10;
+}
+.slash-item {
+  padding: 6px 10px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-bottom: 1px solid var(--vscode-editorWidget-border);
+}
+.slash-item:last-child { border-bottom: none; }
+.slash-item:hover, .slash-item.active {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+.slash-name { font-family: var(--vscode-editor-font-family); font-size: 12px; font-weight: 600; }
+.slash-desc { font-size: 11px; color: var(--vscode-descriptionForeground); }
+
+/* ---- drag target ---- */
+
+body.dragging { outline: 2px dashed var(--vscode-focusBorder); outline-offset: -2px; }
+
+/* ---- permission / plan cards ---- */
+
+.card {
+  background: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-left: 3px solid var(--vscode-charts-orange, #d7ba7d);
+  border-radius: var(--radius);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.card.plan { border-left-color: var(--vscode-charts-blue, #569cd6); }
+.card .card-title {
+  font-weight: 600;
+  font-size: var(--vscode-font-size, 13px);
+  font-family: var(--vscode-editor-font-family);
+}
+.card .card-subtitle {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+}
+.card .card-actions {
+  display: flex;
+  flex-direction: column;
+  margin: 4px -10px -10px;
+  border-top: 1px solid var(--vscode-editorWidget-border);
+}
+.card-actions button {
+  background: transparent;
+  color: var(--vscode-foreground);
+  border: none;
+  border-bottom: 1px solid var(--vscode-editorWidget-border);
+  border-radius: 0;
+  padding: 7px 10px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--vscode-font-size, 13px);
+  text-align: left;
+  width: 100%;
+}
+.card-actions button:last-child { border-bottom: none; }
+.card-actions button:hover { background: var(--vscode-list-hoverBackground); }
+.card-actions button.primary { font-weight: 600; }
+.card-actions button.danger { color: var(--vscode-errorForeground); }
+.card-actions button:disabled { opacity: 0.4; cursor: default; }
+.card.resolved { opacity: 0.5; border-left-color: var(--vscode-editorWidget-border); }
+
+/* ---- resolved (minimized) permission card ---- */
+.card.permission.perm-resolved {
+  opacity: 1; /* the muted line carries the de-emphasis, not the whole card */
+  padding: 6px 10px;
+  border-left-color: var(--vscode-editorWidget-border);
+}
+.perm-resolved-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+  min-width: 0;
+}
+.perm-resolved-verb { font-weight: 600; flex: none; }
+.perm-resolved-line.perm-allowed .perm-resolved-verb { color: var(--vscode-charts-green, #4ec9b0); }
+.perm-resolved-line.perm-rejected .perm-resolved-verb { color: var(--vscode-charts-orange, #ce9178); }
+.perm-resolved-what {
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--vscode-editor-font-family);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- restored plan card: show/hide toggle ---- */
+.card .plan-toggle {
+  align-self: flex-start;
+  background: transparent;
+  color: var(--vscode-textLink-foreground);
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  cursor: pointer;
+}
+.card .plan-toggle:hover { text-decoration: underline; }
+
+/* ---------- question card (ask_user_question) ---------- */
+.card.question { border-left-color: var(--vscode-charts-purple, #b180d7); }
+/* "Grok is asking" / "You answered" reads as a small label so the question
+   itself is the prominent line. */
+.card.question .card-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vscode-descriptionForeground);
+}
+.card .question-block { display: flex; flex-direction: column; gap: 6px; }
+.card .question-text {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  font-family: var(--vscode-font-family);
+}
+/* The chosen answer, shown once the card is answered — kept bright (the card
+   isn't dimmed) so it's an unmistakable "grok got this" signal. */
+.card.question.resolved { opacity: 1; }
+.card .question-answer {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vscode-charts-green, #89d185);
+}
+.card .question-options { display: flex; flex-direction: column; gap: 4px; }
+.card button.question-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: var(--vscode-foreground);
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+}
+.card button.question-option:hover { background: var(--vscode-list-hoverBackground); }
+.card button.question-option.selected {
+  border-color: var(--vscode-focusBorder);
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+.card button.question-option:disabled { opacity: 0.4; cursor: default; }
+.card .question-option-label { font-weight: 600; }
+.card .question-option-desc { color: var(--vscode-descriptionForeground); font-size: 11px; }
+.card button.question-skip {
+  align-self: flex-start;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  text-decoration: underline;
+}
+.card button.question-skip:disabled { opacity: 0.4; cursor: default; text-decoration: none; }
+
+/* ---- collapsible user messages ---- */
+
+.msg.user.collapsible .body {
+  max-height: 48px;
+  overflow: hidden;
+  position: relative;
+}
+.msg.user.collapsible .body::after {
+  content: "";
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 28px;
+  /* Must end on the bubble's VISUAL color to occlude the clipped text. The
+     bubble fill itself is translucent (--chat-surface-user), which can't
+     terminate a gradient opaquely — use the sidebar-composited variant. */
+  background: linear-gradient(to bottom, transparent, var(--chat-surface-user-opaque));
+  pointer-events: none;
+}
+.msg-expand-btn {
+  display: none;
+  position: absolute;
+  bottom: 8px;
+  right: 10px;
+  /* A stronger foreground mix than the bubble so the chip reads as elevated
+     on it in any theme (editorWidget.background can collapse to the sidebar
+     color — the same failure the bubble tint avoids). */
+  background: color-mix(in oklab, var(--vscode-foreground) 10%, var(--vscode-sideBar-background));
+  border: 1px solid var(--vscode-editorWidget-border);
+  color: var(--vscode-foreground);
+  font-size: 11px;
+  font-family: inherit;
+  padding: 5px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  z-index: 1;
+  line-height: 1;
+}
+.msg-expand-btn:hover {
+  background: var(--vscode-foreground);
+  color: var(--vscode-editor-background);
+  border-color: var(--vscode-foreground);
+}
+.msg.user.collapsible:hover .msg-expand-btn { display: block; }
+.msg-collapse-btn {
+  background: color-mix(in oklab, var(--vscode-foreground) 10%, var(--vscode-sideBar-background));
+  border: 1px solid var(--vscode-editorWidget-border);
+  color: var(--vscode-foreground);
+  font-size: 11px;
+  font-family: inherit;
+  padding: 5px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  align-self: flex-end;
+  line-height: 1;
+  margin-top: 4px;
+}
+.msg-collapse-btn:hover {
+  background: var(--vscode-foreground);
+  color: var(--vscode-editor-background);
+  border-color: var(--vscode-foreground);
+}
+
+/* ---- session context banner (shown after Summarize & Restart) ---- */
+
+.session-context-banner {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  text-align: center;
+  padding: 5px 10px;
+  border-top: 1px solid var(--vscode-editorWidget-border);
+  border-bottom: 1px solid var(--vscode-editorWidget-border);
+  opacity: 0.8;
+}
+
+.plan-notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  padding: 5px 10px;
+  margin: 4px 0;
+  border-left: 2px solid var(--vscode-charts-blue, #569cd6);
+  background: var(--vscode-textBlockQuote-background, rgba(86, 156, 214, 0.08));
+}
+.plan-notice svg { flex-shrink: 0; opacity: 0.8; }
+
+.plan-tools {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: -2px;
+}
+.plan-file-link {
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+.plan-file-link code {
+  background: transparent;
+  padding: 0;
+}
+.plan-file-link:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+.card .plan-body {
+  margin: 0;
+  font-size: var(--vscode-font-size, 13px);
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--vscode-textCodeBlock-background);
+  padding: 6px 10px;
+  border-radius: 4px;
+  line-height: 1.5;
+}
+.card .plan-body > :first-child { margin-top: 0; }
+.card .plan-body > :last-child { margin-bottom: 0; }
+.card .plan-body p { margin: 4px 0; }
+.card .plan-body ul,
+.card .plan-body ol { margin: 4px 0; padding-inline-start: 20px; }
+.card .plan-body li { margin: 2px 0; }
+.card .plan-body h1,
+.card .plan-body h2,
+.card .plan-body h3,
+.card .plan-body h4 { margin: 8px 0 4px; font-size: 1em; font-weight: 600; }
+.card .plan-body code { font-family: var(--vscode-editor-font-family); } /* size: the global 0.92em */
+.card .plan-body pre { margin: 4px 0; }
+.card textarea.plan-feedback {
+  width: 100%;
+  margin-top: 6px;
+  box-sizing: border-box;
+  resize: vertical;
+  font-family: var(--vscode-font-family);
+  font-size: 11px;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-editorWidget-border));
+  border-radius: 4px;
+  padding: 4px 6px;
+}
+.card textarea.plan-feedback:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+.card textarea.plan-feedback:disabled { opacity: 0.5; }
+.card-actions button.chosen {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+  opacity: 1 !important;
+}
+.plan-verdict-label {
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--vscode-descriptionForeground);
+}
+.plan-verdict-label.plan-verdict-approved { color: var(--vscode-charts-green, #4ec9b0); }
+.plan-verdict-label.plan-verdict-rejected { color: var(--vscode-charts-orange, #ce9178); }
+.plan-verdict-label.plan-verdict-abandoned { color: var(--vscode-descriptionForeground); }
+
+/* Indicator shown below a resolved plan card while grok processes the verdict.
+   Cleared when the next agent chunk arrives. Three pulsing dots. */
+.plan-processing {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  margin: 4px 0 8px 12px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}
+.plan-processing-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+.plan-processing-dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--vscode-descriptionForeground);
+  animation: plan-processing-pulse 1.2s ease-in-out infinite;
+}
+.plan-processing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.plan-processing-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes plan-processing-pulse {
+  0%, 80%, 100% { opacity: 0.25; }
+  40% { opacity: 1; }
+}
+
+/* ---- history popover ---- */
+.history-popover {
+  min-width: 280px;
+  max-width: 360px;
+  max-height: 400px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+}
+.history-search-wrap { padding: 4px; }
+.history-search {
+  width: 100%;
+  padding: 4px 6px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-editorWidget-border));
+  border-radius: 4px;
+  outline: none;
+}
+.history-search:focus { border-color: var(--vscode-focusBorder); }
+.history-list {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 340px;
+}
+.history-empty {
+  padding: 12px 8px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  text-align: center;
+}
+.history-more {
+  padding: 8px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  text-align: center;
+  opacity: 0.7;
+}
+.history-footer {
+  padding: 4px;
+  border-top: 1px solid var(--vscode-editorWidget-border, rgba(255,255,255,0.08));
+}
+.history-clear-all {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--vscode-descriptionForeground);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.history-clear-all:hover {
+  color: var(--vscode-errorForeground);
+  background: var(--vscode-toolbar-hoverBackground, rgba(255,255,255,0.08));
+}
+.history-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.history-row:hover { background: var(--vscode-list-hoverBackground); }
+.history-row.active { background: var(--vscode-list-activeSelectionBackground); }
+.history-row-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  /* Gray "at rest" is the default — idle, already-read, cold, and loaded-from-disk
+     all look the same; only the states worth knowing about light up. */
+  background: var(--vscode-descriptionForeground);
+}
+.history-row-dot.dot-none { background: var(--vscode-descriptionForeground); }
+.history-row-dot.dot-working { background: var(--vscode-charts-blue); }
+.history-row-dot.dot-needs-you { background: var(--vscode-charts-yellow); }
+.history-row-dot.dot-unread { background: var(--vscode-charts-green); }
+.history-row-dot.dot-error { background: var(--vscode-errorForeground); }
+.history-row-main { flex: 1; min-width: 0; }
+.history-row-name {
+  font-size: 13px;
+  color: var(--vscode-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.history-row.active .history-row-name {
+  color: var(--vscode-list-activeSelectionForeground, var(--vscode-foreground));
+}
+.history-row-meta {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  margin-top: 2px;
+}
+.history-row-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.history-row:hover .history-row-actions,
+.history-row.active .history-row-actions { opacity: 1; }
+.history-action-btn {
+  background: transparent;
+  border: none;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+}
+.history-action-btn:hover { background: var(--vscode-toolbar-hoverBackground, rgba(255,255,255,0.08)); }
+.history-action-danger:hover { color: var(--vscode-errorForeground); }
+.history-rename {
+  width: 100%;
+  padding: 2px 4px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-focusBorder);
+  border-radius: 3px;
+  outline: none;
+}
+
+/* ---- add popover ---- */
+.add-item-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* ---- LaTeX math (MathJax SVG) ---- */
+/* MathJax emits <mjx-container> wrapping an inline SVG whose fill is currentColor,
+   so equations already match surrounding prose. */
+mjx-container { color: inherit; }
+/* Safety net for the assistive-MathML duplicate (also disabled in config): if any
+   <mjx-assistive-mml> slips through, hide it so Chromium doesn't render a second,
+   native-MathML copy of the equation next to the SVG. */
+mjx-container mjx-assistive-mml { display: none !important; }
+/* Display math (\[ … \]) stands alone on its own line, centered, with horizontal
+   scroll so a wide matrix doesn't blow out the narrow sidebar. We set display:block
+   ourselves because MathJax's own stylesheet — which normally does this — isn't
+   applied when we render manually via tex2svg. Inline \( … \) keeps MathJax's
+   inline `vertical-align` (set on the SVG itself) so it sits on the text baseline. */
+mjx-container[display="true"] {
+  display: block;
+  text-align: center;
+  margin: 0.6em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 2px;
+}
+/* Fallback when MathJax can't render (or hasn't finished starting up): show the
+   raw TeX in a monospace tint rather than blanking it. */
+.math-raw {
+  font-family: var(--vscode-editor-font-family, monospace);
+  color: var(--vscode-textPreformat-foreground);
+}
+.math-raw.math-display { display: block; margin: 0.5em 0; white-space: pre-wrap; }
+
+/* ---- Mermaid diagrams ---- */
+/* Once rendered, .mermaid-block holds the SVG directly (the fallback code block
+   markup is replaced). Center it and let a wide diagram scroll horizontally
+   rather than overflow the narrow sidebar. While unrendered (mermaid not loaded
+   or still rendering) it keeps the normal .code-block look showing the source. */
+.mermaid-block[data-mermaid-state="done"] {
+  display: block;
+  margin: 0.5em 0;
+  padding: 0;
+  background: none;
+  border: none;
+  overflow-x: auto;
+  text-align: center;
+}
+.mermaid-block[data-mermaid-state="done"] svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ---- Export hover actions (display math + rendered mermaid) ---- */
+/* A Copy / Download / Open overlay pinned top-right, revealed on hover — mirrors
+   the generated-image media actions. The host (.math-export / .mermaid-block)
+   carries data-export-src + data-export-kind for the delegated click handler. */
+.math-export { position: relative; display: block; }
+.mermaid-block[data-mermaid-state="done"] { position: relative; }
+.expr-actions {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.12s;
+  z-index: 2;
+}
+.math-export:hover .expr-actions,
+.mermaid-block[data-mermaid-state="done"]:hover .expr-actions,
+.expr-actions:focus-within { opacity: 1; }
+.expr-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  border: 1px solid var(--vscode-editorWidget-border);
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  padding: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  line-height: 1;
+}
+.expr-btn:hover,
+.expr-btn:focus-visible {
+  background: color-mix(in srgb, var(--vscode-foreground) 12%, var(--vscode-editorWidget-background, var(--vscode-editor-background)));
+  color: var(--vscode-foreground);
+}
+.expr-btn.copied { color: var(--vscode-charts-green, #4ec9b0); }

@@ -1,0 +1,16 @@
+{
+  "// note": "Integration (Electron) tests compile in isolation — separate from the extension build (src -> out) and the vitest suite (test/**). Output goes to out-integration/ so nothing collides.",
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "ES2021",
+    "lib": ["ES2021"],
+    "outDir": "../out-integration",
+    "rootDir": ".",
+    "sourceMap": true,
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["node", "mocha"]
+  },
+  "include": ["**/*.ts"]
+}

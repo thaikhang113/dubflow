@@ -1,0 +1,17 @@
+[Unit]
+Description=OpenClaw Telegram reply bot
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/haonguyen/.openclaw/workspace
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=OPENCLAW_TELEGRAM_GROUP_REPLY_MODE=all
+Environment=OPENCLAW_TELEGRAM_AI_BASE=http://127.0.0.1:20128/v1
+EnvironmentFile=-/home/haonguyen/.openclaw/config/channels/telegram.env
+ExecStart=/usr/bin/python3 /home/haonguyen/.openclaw/workspace/skills/telegram-openclaw-bot/openclaw_telegram_bot.py --run
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

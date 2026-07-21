@@ -1,0 +1,102 @@
+# Secrets / API / accounts
+.env
+.env.*
+*.env
+*secret*
+*token*
+*api_key*
+*apikey*
+*cookie*
+*cookies*
+*proxy*
+*.key
+*.pem
+
+# OpenClaw private config
+config/
+secrets/
+credentials/
+
+# Browser / Douyin session
+chrome-profile/
+user-data-dir/
+profiles/
+sessions/
+cookies/
+storage/
+
+# Output video/audio/subtitle
+output/
+outputs/
+downloads/
+videos/
+audios/
+results/
+temp/
+tmp/
+cache/
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.mp3
+*.wav
+*.aac
+*.srt
+*.ass
+*.vtt
+
+# Logs
+logs/
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# OpenClaw runtime/state files
+skills/content-monitor/daemon.pid
+skills/content-monitor/seen_videos.json
+skills/**/session/
+skills/**/sessions/
+skills/**/cache/
+skills/**/tmp/
+skills/**/temp/
+skills/**/output/
+skills/**/outputs/
+
+# OpenClaw runtime/state files
+skills/content-monitor/daemon.pid
+skills/content-monitor/seen_videos.json
+skills/**/session/
+skills/**/sessions/
+skills/**/cache/
+skills/**/tmp/
+skills/**/temp/
+skills/**/output/
+skills/**/outputs/
+
+# Content monitor runtime state
+skills/content-monitor/daemon.pid
+skills/content-monitor/seen_videos.json
+
+.gitnexus/
+
+# Claude local agent files
+.claude/
+CLAUDE.md
+
+# Sanitized snapshot exclusions
+.recovery/
+integrations/grok-vscode-bridge/docs/screenshots/

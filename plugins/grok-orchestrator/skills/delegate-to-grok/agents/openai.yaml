@@ -1,0 +1,7 @@
+interface:
+  display_name: "Delegate to Grok"
+  short_description: "Delegate plain-language coding tasks to Grok"
+  default_prompt: "Use $delegate-to-grok to have Grok implement the latest plan safely."
+
+policy:
+  allow_implicit_invocation: true

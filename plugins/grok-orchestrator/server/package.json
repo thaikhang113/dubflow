@@ -1,0 +1,19 @@
+{
+  "name": "@local/grok-session-broker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --experimental-strip-types --test test/*.test.ts",
+    "test:live": "npm run build && node scripts/live-smoke.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.30",
+    "typescript": "5.8.3"
+  }
+}

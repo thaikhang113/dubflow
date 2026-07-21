@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "default_voice": "ai33:vbee_hn_female_maiphuong_vdts_48k-fhg",
+  "voices": [
+    {
+      "provider": "ai33",
+      "voice_id": "vbee_hn_female_maiphuong_vdts_48k-fhg",
+      "label": "Mai Phuong - Vbee",
+      "aliases": [
+        "ai33",
+        "vbee",
+        "vbee-maiphuong",
+        "vbee-mai-phuong",
+        "maiphuong",
+        "mai-phuong",
+        "mai_phuong"
+      ],
+      "enabled": true,
+      "timing_profile": "ai33_balanced_fast",
+      "min_slow_ratio": 0.85
+    },
+    {
+      "provider": "ai33",
+      "voice_id": "elevenlabs_UuMSQK8FdLwaY2M8ZAnh",
+      "label": "Phanh - ElevenLabs",
+      "aliases": [
+        "elevenlabs",
+        "elevenlabs-phanh",
+        "eleven-phanh",
+        "phanh",
+        "phan"
+      ],
+      "enabled": true,
+      "timing_profile": "ai33_balanced_fast",
+      "min_slow_ratio": 0.85
+    }
+  ]
+}

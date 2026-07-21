@@ -1,0 +1,342 @@
+{
+  "name": "grok-vscode-phuryn",
+  "displayName": "Grok Build for VS Code (Community)",
+  "description": "GUI for Grok Build CLI (incl. Grok 4.5). Voice control, multiple sessions, images and videos, Mermaid diagrams, and LaTeX. Works with SuperGrok, X Premium+, and xAI API key. MIT, open-source. Not affiliated with or endorsed by xAI.",
+  "version": "1.5.14",
+  "publisher": "PawelHuryn",
+  "author": {
+    "name": "Paweł Huryn",
+    "url": "https://www.productcompass.pm"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/phuryn/grok-build-vscode",
+  "bugs": {
+    "url": "https://github.com/phuryn/grok-build-vscode/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/phuryn/grok-build-vscode"
+  },
+  "engines": {
+    "vscode": "^1.106.0"
+  },
+  "categories": [
+    "AI",
+    "Chat"
+  ],
+  "keywords": [
+    "grok",
+    "grok-build",
+    "xai",
+    "xai-grok",
+    "acp",
+    "acp-client",
+    "agent-client-protocol",
+    "agent",
+    "ai",
+    "chat",
+    "thinking",
+    "tool-calls",
+    "sidebar"
+  ],
+  "icon": "resources/grok-icon.png",
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "secondarySidebar": [
+        {
+          "id": "grokSidebar",
+          "title": "Grok",
+          "icon": "resources/grok-icon.svg"
+        }
+      ],
+      "activitybar": [
+        {
+          "id": "grokPrimary",
+          "title": "Grok",
+          "icon": "resources/grok-icon.svg"
+        }
+      ],
+      "panel": [
+        {
+          "id": "grokPanel",
+          "title": "Grok",
+          "icon": "resources/grok-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "grokSidebar": [
+        {
+          "type": "webview",
+          "id": "grok.chat",
+          "name": "Grok"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "grok.open",
+        "title": "Grok: Open"
+      },
+      {
+        "command": "grok.newSession",
+        "title": "Grok: New Session"
+      },
+      {
+        "command": "grok.compact",
+        "title": "Grok: Compact Conversation"
+      },
+      {
+        "command": "grok.pickModel",
+        "title": "Grok: Pick Model"
+      },
+      {
+        "command": "grok.toggleMode",
+        "title": "Grok: Toggle Plan / Agent Mode"
+      },
+      {
+        "command": "grok.sendSelection",
+        "title": "Add Selection to Grok"
+      },
+      {
+        "command": "grok.sendFile",
+        "title": "Grok: Send File"
+      },
+      {
+        "command": "grok.insertAtMention",
+        "title": "Grok: Insert @-Mention"
+      },
+      {
+        "command": "grok.showLogs",
+        "title": "Grok: Show Logs"
+      },
+      {
+        "command": "grok.expandAllToolDetails",
+        "title": "Grok: Expand All Tool Details (This Session)"
+      },
+      {
+        "command": "grok.collapseAllToolDetails",
+        "title": "Grok: Collapse All Tool Details (This Session)"
+      },
+      {
+        "command": "grok.logout",
+        "title": "Grok: Log Out"
+      },
+      {
+        "command": "grok._debugDummyPlan",
+        "title": "Grok: Debug — Show dummy plan card (for testing Approve/Reject/Cancel)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "grok.open",
+        "key": "ctrl+;",
+        "mac": "cmd+;"
+      },
+      {
+        "command": "grok.insertAtMention",
+        "key": "alt+g",
+        "when": "editorTextFocus"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "grok._debugDummyPlan",
+          "when": "false"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "grok.sendSelection",
+          "when": "editorHasSelection",
+          "group": "grok@1"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "grok.sendFile",
+          "when": "resourceScheme == file",
+          "group": "grok@1"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "grok.sendFile",
+          "when": "resourceScheme == file",
+          "group": "grok@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Grok",
+      "properties": {
+        "grok.connectionMode": {
+          "type": "string",
+          "enum": [
+            "internal",
+            "external"
+          ],
+          "default": "internal",
+          "markdownDescription": "`internal` starts the extension-owned Grok CLI (rollback default). `external` attaches to the authenticated local Grok session broker and never spawns a second Grok process. Reload the extension host after changing this setting."
+        },
+        "grok.externalSteeringEnabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Allow Send, Approve, Reject, and Cancel in external-broker mode. Keep off for monitor-only rollout until the scratch-repo live gate passes. The broker remains the sole permission authority."
+        },
+        "grok.cliPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the grok binary. Empty = auto-discover (~/.grok/bin/grok, then PATH)."
+        },
+        "grok.defaultModel": {
+          "type": "string",
+          "default": "",
+          "description": "Model ID to use on new sessions. Empty = CLI default."
+        },
+        "grok.defaultMode": {
+          "type": "string",
+          "enum": [
+            "",
+            "agent",
+            "yolo"
+          ],
+          "enumDescriptions": [
+            "Agent mode (CLI default)",
+            "Agent mode",
+            "Auto accept — auto-approve every permission request"
+          ],
+          "default": "",
+          "description": "Mode for new sessions. Updated automatically to remember your last switch between Agent and Auto accept (Plan is never remembered). Empty = Agent."
+        },
+        "grok.includeActiveFileByDefault": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-add the active editor file as a context chip."
+        },
+        "grok.defaultEffort": {
+          "type": "string",
+          "enum": [
+            "",
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "enumDescriptions": [
+            "CLI default (no flag passed to grok agent stdio)",
+            "None",
+            "Minimal",
+            "Low — faster, lighter reasoning",
+            "Medium",
+            "High",
+            "XHigh — deepest reasoning, slowest"
+          ],
+          "default": "",
+          "description": "Reasoning effort passed as --reasoning-effort to grok agent stdio. Values match the grok CLI's accepted set (none, minimal, low, medium, high, xhigh). Changing this restarts the session."
+        },
+        "grok.useCtrlEnterToSend": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use Ctrl/Cmd+Enter to send (Enter inserts newline)."
+        },
+        "grok.terminalShell": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "cmd"
+          ],
+          "enumDescriptions": [
+            "PowerShell on Windows (pwsh, then Windows PowerShell 5.1) — matches the standalone Grok CLI",
+            "Force cmd.exe on Windows (legacy)"
+          ],
+          "default": "auto",
+          "markdownDescription": "Which shell runs the agent's commands **on Windows**. `auto` (default) uses PowerShell — `pwsh.exe` if installed, else Windows PowerShell 5.1 — so your PowerShell profile functions and pipelines work like they do in the standalone Grok CLI (#46). `cmd` forces `cmd.exe` (the pre-1.5.13 behavior) if the PowerShell host causes trouble. **Tip: install PowerShell 7 (`pwsh`)** — the 5.1 fallback rejects `&&` chains and reports every failing command's exit code as 1. No effect on macOS/Linux (always `/bin/sh`)."
+        },
+        "grok.showThinking": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Show Grok's reasoning (thinking) traces in chat. Off by default — a lightweight \"Thinking…\" indicator stands in while Grok reasons. Also toggleable live from the gear menu → **Config & debug → Show thinking traces** (applies to already-loaded sessions too)."
+        },
+        "grok.expandCommandOutputs": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Expand tool details by default — each shell command's IN/OUT block (full command text + captured output) and each edit's inline diff (useful for auditing Auto-accept sessions). Tool groups (\"Ran N commands\", \"Edited N files\") still need to be expanded first; a single command outside a group shows its details immediately. Off: click a row (›) to expand just that one — edit rows always show a `+N −M` change count regardless. Also toggleable live from the gear menu → **Config & debug → Expand tool details**."
+        },
+        "grok.telemetry.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Send anonymous, privacy-first usage telemetry. A single `session_start` event per session carries only an anonymous install id (a random GUID, no account/identity) plus the chosen mode/model/effort — **never** any message content, code, or file paths. Also requires VS Code's global `telemetry.telemetryLevel` to be enabled; turning either off stops all sending."
+        },
+        "grok.chatFontScale": {
+          "type": "number",
+          "default": 100,
+          "minimum": 60,
+          "maximum": 300,
+          "markdownDescription": "Zoom for the Grok chat panel only, as a percent (100 = default). Scales the whole chat UI — text, icons, spacing — without affecting the rest of VS Code (unlike `Ctrl/Cmd+Shift+=`). Applies live, no reload needed. Supports User (global) and Workspace (local) scope."
+        },
+        "grok.voiceApiKey": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "xAI API key for voice control (Speech-to-Text via `api.x.ai/v1/stt`). This is a **separate** developer key from [console.x.ai](https://console.x.ai) — it is billed pay-as-you-go and is unrelated to the Grok CLI login. Leave empty to fall back to `GROK_VOICE_API_KEY` or `XAI_API_KEY` in your workspace `.env`."
+        },
+        "grok.ffmpegPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the ffmpeg binary used to record the microphone for voice control. Empty = use 'ffmpeg' from PATH. Install ffmpeg from https://ffmpeg.org if voice control reports it as missing."
+        },
+        "grok.voiceInputDevice": {
+          "type": "string",
+          "default": "",
+          "description": "Microphone device for voice control. Empty = system default (on Windows, the first DirectShow audio device is auto-detected). Set this to a specific device name (Windows/dshow) or index (macOS/avfoundation) to override."
+        },
+        "grok.voiceSendPhrase": {
+          "type": "string",
+          "default": "grok send",
+          "description": "Spoken phrase that auto-submits the message when it ends a voice transcription (e.g. say \"…fix the bug, grok send\"). The phrase is stripped before sending. Leave empty to disable hands-free sending."
+        },
+        "grok.voiceStreaming": {
+          "type": "boolean",
+          "default": true,
+          "description": "Stream voice transcription live as you speak (words appear in the composer in real time, and \"grok send\" can submit without a second click). Disable to use one-shot batch mode (click to start, click to stop, then transcribe). Streaming costs $0.20/hr of audio vs $0.10/hr batch."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "tsc -p .",
+    "compile": "tsc -p .",
+    "watch": "tsc -p . -w",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:perf": "vitest run --config vitest.perf.config.ts",
+    "compile:integration": "tsc -p integration/tsconfig.json",
+    "test:integration": "npm run compile && npm run compile:integration && vscode-test",
+    "test:live": "tsc -p . && node scripts/live-tests.cjs",
+    "telemetry:probe": "tsc -p . && node scripts/telemetry-probe.cjs",
+    "prepackage": "node -e \"for (const f of require('fs').readdirSync('.')) if (f.endsWith('.vsix')) require('fs').unlinkSync(f)\"",
+    "package": "npx @vscode/vsce package",
+    "publish": "npx @vscode/vsce publish"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.94.0",
+    "@types/ws": "^8.18.1",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.5.2",
+    "happy-dom": "^20.9.0",
+    "typescript": "^5.4.0",
+    "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "serialize-javascript": "7.0.7"
+  },
+  "dependencies": {
+    "ws": "^8.21.0"
+  }
+}

@@ -1,0 +1,4 @@
+- Giọng cổ trang vừa phải, dễ hiểu với người xem hiện đại.
+- Có thể dùng "ta/ngươi", "thiếp/chàng", "nàng/huynh" khi đúng quan hệ.
+- Tránh từ hiện đại kiểu "ok", "xịn", "drama".
+- Không làm câu quá dài hoặc quá cổ lỗ khiến TTS khó nghe.

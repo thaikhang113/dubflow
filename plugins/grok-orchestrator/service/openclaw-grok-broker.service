@@ -1,0 +1,19 @@
+[Unit]
+Description=OpenClaw Grok ACP session broker
+After=default.target
+
+[Service]
+Type=simple
+Environment=GROK_BINARY=%h/.local/bin/grok
+Environment=GROK_EXPECTED_VERSION=0.2.101
+ExecStart=/usr/bin/node %h/.openclaw/workspace/plugins/grok-orchestrator/server/dist/src/broker-main.js
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/state/openclaw-grok-broker %h/ai-anime-trend-scout/.git %h/.grok/sessions %t
+
+[Install]
+WantedBy=default.target

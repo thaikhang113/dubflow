@@ -1,0 +1,6 @@
+- 师父 dịch là sư phụ.
+- 师兄 dịch là sư huynh.
+- 师姐 dịch là sư tỷ.
+- 道友 dịch là đạo hữu khi nhân vật ngang hàng.
+- Giọng thoại trang trọng vừa phải, không quá cổ lỗ.
+- Tránh từ hiện đại kiểu "ok", "đỉnh", "xịn".
