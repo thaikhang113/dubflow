@@ -42,7 +42,7 @@ def canonical_speed_contract(required_speed, *, native_max_speed, total_max_spee
 def measured_post_atempo_fit(*, actual_duration_ms, allowed_duration_ms,
                              native_speed, total_max_speed,
                              routine_post_atempo_max, adaptation_needs_attention,
-                             adaptation_fit_eligible=False):
+                             adaptation_fit_eligible=False, exact_sync=False):
     """Choose the minimum measured post-tempo factor without changing text.
 
     Routine fit remains gentle.  Only a cue still overlong after a semantic
@@ -57,13 +57,16 @@ def measured_post_atempo_fit(*, actual_duration_ms, allowed_duration_ms,
     routine_cap = max(1.0, float(routine_post_atempo_max))
     needed = max(1.0, actual_ms / allowed_ms)
     rescue = actual_ms > allowed_ms and (
-        bool(adaptation_needs_attention) or bool(adaptation_fit_eligible)
+        bool(adaptation_needs_attention) or bool(adaptation_fit_eligible) or bool(exact_sync)
     )
     cap = total_cap / native if rescue else min(routine_cap, total_cap / native)
     factor = min(needed, cap)
+    decision = "exact_sync_rescue" if exact_sync and actual_ms > allowed_ms else (
+        "measured_overlong_rescue" if rescue else "routine_fit"
+    )
     return {
         "post_atempo_factor": round(factor, 4),
         "total_speed_factor": round(native * factor, 4),
-        "decision": "measured_overlong_rescue" if rescue else "routine_fit",
+        "decision": decision,
         "adaptation_needs_attention": bool(adaptation_needs_attention),
     }

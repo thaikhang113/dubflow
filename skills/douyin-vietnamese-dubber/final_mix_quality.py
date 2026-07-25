@@ -19,6 +19,7 @@ from typing import Any, Mapping
 
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
+CANONICAL_AUDIO_STAGE_PREFIXES = ("tts_", "voice_", "final_")
 
 
 def _as_bool(value: object, default: bool = False) -> bool:
@@ -42,6 +43,20 @@ def _as_float(value: object, default: float, low: float | None = None, high: flo
 def _fmt(value: float) -> str:
     return f"{value:.4f}".rstrip("0").rstrip(".")
 
+
+def canonical_sample_rate_error(stage: str, sample_rate: int, expected_sample_rate: int = 48000) -> str | None:
+    """Return an error for canonical TTS/final stages with the wrong sample rate."""
+    stage_name = str(stage or "")
+    if not stage_name.startswith(CANONICAL_AUDIO_STAGE_PREFIXES):
+        return None
+    actual = int(sample_rate or 0)
+    expected = int(expected_sample_rate or 48000)
+    if actual == expected:
+        return None
+    return (
+        f"TTS_CANONICAL_SAMPLE_RATE_MISMATCH stage={stage_name} "
+        f"expected={expected} actual={actual}"
+    )
 
 def build_final_mix_policy(env: Mapping[str, object]) -> dict[str, Any]:
     """Return safe, explicit B3 defaults without changing legacy sync mode."""
@@ -211,7 +226,7 @@ def decide_video_fit(
         allow_video_retime
         and allow_freeze_frame
         and scene_safe
-        and overhang_ms >= 300.0
+        and overhang_ms > 0.01
         and overhang_ms <= max_freeze_ms
         and increase_percent <= max(0.0, float(max_output_duration_increase))
     )

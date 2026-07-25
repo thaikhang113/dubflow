@@ -1429,7 +1429,7 @@ def test_balanced_dub_quality_policy_static():
     run_sh = (SKILL_DIR / "run.sh").read_text(encoding="utf-8")
     optimizer = (SKILL_DIR / "viet_dub_timing_optimizer.py").read_text(encoding="utf-8")
     required_run = [
-        'SYNC_MODE="${SYNC_MODE:-${TTS_SYNC_MODE:-balanced_dub}}"',
+        'SYNC_MODE="${SYNC_MODE:-${TTS_SYNC_MODE:-exact_sync}}"',
         'TTS_SYNC_POLICY="${TTS_SYNC_POLICY:-bounded}"',
         'AI33_MAX_SPEED="${AI33_MAX_SPEED:-1.12}"',
         'POST_ATEMPO_MAX="${POST_ATEMPO_MAX:-1.05}"',

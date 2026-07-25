@@ -57,8 +57,25 @@ TARGET_MAX_SPEED="${TARGET_MAX_SPEED:-1.25}"
 SOFT_MAX_SPEED="${SOFT_MAX_SPEED:-1.35}"
 HARD_MAX_SPEED="${HARD_MAX_SPEED:-1.50}"
 HARD_MAX_DURATION="${HARD_MAX_DURATION:-3.0}"
-SYNC_MODE="${SYNC_MODE:-${TTS_SYNC_MODE:-balanced_dub}}"
+SYNC_MODE="${SYNC_MODE:-${TTS_SYNC_MODE:-exact_sync}}"
 case "${SYNC_MODE,,}" in
+  exact|exact_sync)
+    SYNC_MODE="exact_sync"
+    TTS_SYNC_POLICY="${TTS_SYNC_POLICY:-frame_strict}"
+    AI33_MAX_SPEED="${AI33_MAX_SPEED:-1.12}"
+    POST_ATEMPO_MAX="${POST_ATEMPO_MAX:-99.0}"
+    TOTAL_AUDIO_SPEED_MAX="${TOTAL_AUDIO_SPEED_MAX:-99.0}"
+    DEFAULT_MUSIC_BED_VOLUME="${DEFAULT_MUSIC_BED_VOLUME:-0.12}"
+    DEFAULT_SUBTITLE_ONLY_RATIO="${DEFAULT_SUBTITLE_ONLY_RATIO:-10.0}"
+    ALLOW_AGGRESSIVE_ATEMPO="${ALLOW_AGGRESSIVE_ATEMPO:-1}"
+    ALLOW_VIDEO_RETIME="${ALLOW_VIDEO_RETIME:-1}"
+    ALLOW_FREEZE_FRAME="${ALLOW_FREEZE_FRAME:-1}"
+    LOCAL_RETIME_SCENE_SAFE="${LOCAL_RETIME_SCENE_SAFE:-1}"
+    MAX_FREEZE_PER_SEGMENT_MS="${MAX_FREEZE_PER_SEGMENT_MS:-300}"
+    MAX_FREEZE_PER_SCENE_MS="${MAX_FREEZE_PER_SCENE_MS:-300}"
+    FRAME_STRICT_MAX_SEGMENT_DRIFT_MS="${FRAME_STRICT_MAX_SEGMENT_DRIFT_MS:-40}"
+    STRICT_QUALITY_GATE="${STRICT_QUALITY_GATE:-1}"
+    ;;
   quality|quality_dub)
     SYNC_MODE="quality_dub"
     TTS_SYNC_POLICY="${TTS_SYNC_POLICY:-bounded}"
@@ -113,8 +130,9 @@ POST_ATEMPO_MIN="${POST_ATEMPO_MIN:-0.95}"
 TTS_ADAPT_ENABLED="${TTS_ADAPT_ENABLED:-1}"
 TTS_ADAPT_MAX_ATTEMPTS="${TTS_ADAPT_MAX_ATTEMPTS:-2}"
 TTS_RESTORE_IF_SLOT_RATIO_BELOW="${TTS_RESTORE_IF_SLOT_RATIO_BELOW:-0.72}"
-# B3: no video retime/freeze is enabled by default.  A local tail freeze is
-# possible only when BOTH explicit flags are set and its bounded policy passes.
+# exact_sync enables a bounded tail freeze; other modes stay opt-in.
+# ponytail: per-cue scene retime waits for real-video evidence; upgrade with a
+# scene-cut-aware setpts planner if semantic fit + pitch-preserving atempo sounds poor.
 FINAL_VIDEO_FIT_MODE="${FINAL_VIDEO_FIT_MODE:-none}"
 STRICT_QUALITY_GATE="${STRICT_QUALITY_GATE:-0}"
 # Short natural AI33 speech is not a render blocker in balanced/quality mode.  These
@@ -608,12 +626,14 @@ fail() {
 }
 
 append_tts_audio_stage_report() {
-  local report_path="$1" stage="$2" audio_path="$3"
-  python3 - "$report_path" "$stage" "$audio_path" <<'PY'
+  local report_path="$1" stage="$2" audio_path="$3" expected_sample_rate="${4:-48000}"
+  python3 - "$report_path" "$stage" "$audio_path" "$expected_sample_rate" <<'PY'
 import json, subprocess, sys
 from pathlib import Path
 
-report_path, stage, audio_path = map(Path, (sys.argv[1], sys.argv[2], sys.argv[3]))
+report_path, audio_path = map(Path, (sys.argv[1], sys.argv[3]))
+stage = sys.argv[2]
+expected_sample_rate = int(sys.argv[4])
 try:
     raw = subprocess.check_output([
         'ffprobe', '-v', 'error', '-select_streams', 'a:0',
@@ -636,12 +656,22 @@ try:
     stages = report.get('stages') if isinstance(report.get('stages'), list) else []
     warnings = report.get('warnings') if isinstance(report.get('warnings'), list) else []
     stages.append(item)
-    if item['sample_rate'] == 16000 and 'TTS_MASTER_DOWNGRADED_TO_ASR_FORMAT' not in warnings:
-        warnings.append('TTS_MASTER_DOWNGRADED_TO_ASR_FORMAT')
+    sample_rate_error = None
+    if str(stage).startswith(('tts_', 'voice_', 'final_')) and item['sample_rate'] != expected_sample_rate:
+        sample_rate_error = (
+            f"TTS_CANONICAL_SAMPLE_RATE_MISMATCH stage={stage} "
+            f"expected={expected_sample_rate} actual={item['sample_rate']}"
+        )
+        if item['sample_rate'] == 16000 and 'TTS_MASTER_DOWNGRADED_TO_ASR_FORMAT' not in warnings:
+            warnings.append('TTS_MASTER_DOWNGRADED_TO_ASR_FORMAT')
+        if sample_rate_error not in warnings:
+            warnings.append(sample_rate_error)
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps({'stages': stages, 'warnings': warnings}, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    if sample_rate_error:
+        raise SystemExit(sample_rate_error)
 except Exception as exc:
-    print(f'WARN: cannot append TTS audio stage {stage}: {exc}', file=sys.stderr)
+    raise SystemExit(f'TTS_AUDIO_STAGE_REPORT_FAILED stage={stage}: {exc}')
 PY
 }
 
@@ -1463,6 +1493,12 @@ if not speed_contract_spec or not speed_contract_spec.loader:
     raise RuntimeError(f"TTSSpeedContractMissing: {speed_contract_py}")
 speed_contract = importlib.util.module_from_spec(speed_contract_spec)
 speed_contract_spec.loader.exec_module(speed_contract)
+final_mix_quality_py = skill_dir / 'final_mix_quality.py'
+final_mix_quality_spec = importlib.util.spec_from_file_location('openclaw_final_mix_quality', final_mix_quality_py)
+if not final_mix_quality_spec or not final_mix_quality_spec.loader:
+    raise RuntimeError(f"FinalMixQualityMissing: {final_mix_quality_py}")
+final_mix_quality = importlib.util.module_from_spec(final_mix_quality_spec)
+final_mix_quality_spec.loader.exec_module(final_mix_quality)
 segments_dir = root / 'tts_segments'
 segments_dir.mkdir(parents=True, exist_ok=True)
 concat_list = root / 'tts_concat.txt'
@@ -1476,6 +1512,17 @@ job_status_path = root.parent / 'job_status.json'
 # Individual dub text is fingerprinted per cue by tts_checkpoint.py.
 source_fingerprint = ''
 source_speech_regions = []
+speech_timing_source = ''
+display_subtitle_timing = ''
+dub_tts_timing = ''
+try:
+    transcript_decision_path = Path(os.environ.get('TRANSCRIPT_DECISION_JSON') or '')
+    transcript_decision = json.loads(transcript_decision_path.read_text(encoding='utf-8'))
+    speech_timing_source = str(transcript_decision.get('speech_timing_source') or '')
+    display_subtitle_timing = str(transcript_decision.get('display_subtitle_timing') or '')
+    dub_tts_timing = str(transcript_decision.get('dub_tts_timing') or '')
+except Exception:
+    pass
 # Exact backend labels emitted by speech_only_preprocess.py that classify speech
 # rather than merely detecting audio energy. Unknown/missing backends must stay
 # available for diagnostics, but cannot turn a synthetic silence into proof.
@@ -1550,10 +1597,21 @@ def record_audio_stage(stage: str, path: Path):
         stages = report.get('stages') if isinstance(report.get('stages'), list) else []
         warnings = report.get('warnings') if isinstance(report.get('warnings'), list) else []
         stages.append(item)
+        sample_rate_error = final_mix_quality.canonical_sample_rate_error(
+            stage, item['sample_rate'], tts_master_sample_rate,
+        )
         if item['sample_rate'] == 16000 and 'TTS_MASTER_DOWNGRADED_TO_ASR_FORMAT' not in warnings:
             warnings.append('TTS_MASTER_DOWNGRADED_TO_ASR_FORMAT')
+        if sample_rate_error and sample_rate_error not in warnings:
+            warnings.append(sample_rate_error)
         tts_audio_stage_report_path.parent.mkdir(parents=True, exist_ok=True)
         tts_audio_stage_report_path.write_text(json.dumps({'stages': stages, 'warnings': warnings}, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+        if sample_rate_error:
+            raise RuntimeError(sample_rate_error)
+    except RuntimeError as exc:
+        if str(exc).startswith('TTS_CANONICAL_SAMPLE_RATE_MISMATCH'):
+            raise
+        print(f'WARN: audio stage report failed stage={stage}: {exc}', flush=True)
     except Exception as exc:
         print(f'WARN: audio stage report failed stage={stage}: {exc}', flush=True)
 
@@ -1706,11 +1764,12 @@ try:
     max_tts_speed = max(1.0, float(max_speed_raw))
 except Exception:
     max_tts_speed = 1.2
-# balanced_dub/quality_dub: giữ giọng tự nhiên trước, timeline bounded sau.
-# Chỉ SYNC_MODE=aggressive_legacy mới cho frame_strict mở atempo chain vô hạn.
-sync_mode = (os.environ.get("SYNC_MODE", "balanced_dub") or "balanced_dub").strip().lower()
-sync_policy = (os.environ.get("TTS_SYNC_POLICY", "bounded") or "bounded").strip().lower()
+# Mọi mode đều ưu tiên rewrite + native speed; exact/aggressive mới mở residual atempo rộng.
+sync_mode = (os.environ.get("SYNC_MODE", "exact_sync") or "exact_sync").strip().lower()
+sync_policy_default = "frame_strict" if sync_mode == "exact_sync" else "bounded"
+sync_policy = (os.environ.get("TTS_SYNC_POLICY", sync_policy_default) or sync_policy_default).strip().lower()
 frame_strict = (sync_policy == "frame_strict")
+exact_sync = (sync_mode == "exact_sync")
 allow_aggressive_atempo = (os.environ.get("ALLOW_AGGRESSIVE_ATEMPO", "0") or "0").strip().lower() in ("1", "true", "yes", "on")
 try:
     post_atempo_max = max(1.0, float(os.environ.get("POST_ATEMPO_MAX", str(max_tts_speed)) or str(max_tts_speed)))
@@ -3503,6 +3562,7 @@ with concat_list.open('w', encoding='utf-8') as manifest:
                     routine_post_atempo_max=speed_intent['post_atempo_max'],
                     adaptation_needs_attention=adaptation_needs_attention,
                     adaptation_fit_eligible=(fit_decision == "candidate_accepted_pending_fit"),
+                    exact_sync=exact_sync,
                 )
                 speed_ratio = measured_fit['post_atempo_factor']
                 post_cap = speed_ratio
@@ -3663,6 +3723,10 @@ with concat_list.open('w', encoding='utf-8') as manifest:
             "action_taken": action_taken,
             "quality_flag": quality_flag,
             "tts_engine": engine,
+            'speech_timing_source': speech_timing_source,
+            'display_subtitle_timing': display_subtitle_timing,
+            'dub_tts_timing': dub_tts_timing,
+            'pitch_preserving_method': 'ffmpeg_atempo' if final_speed != 1.0 else 'none',
             "text": text,
         })
         segment_index += 1
@@ -3718,12 +3782,12 @@ stats["trimmed_ms"] = max(0, stats["final_voice_ms"] - target_video_ms) if targe
 stats_path.write_text(json.dumps(stats, ensure_ascii=False, indent=2), encoding='utf-8')
 alignment_report_path.write_text(json.dumps({"stats": stats, "segments": alignment_rows}, ensure_ascii=False, indent=2), encoding='utf-8')
 with speed_report_path.open('w', encoding='utf-8') as f:
-    f.write('segment_id,slot_ms,natural_tts_ms,post_atempo,final_segment_ms,slow_fit_used,orig_start_ms,orig_end_ms,slot_duration_ms,effective_slot_ms,source_gap_ms,synthetic_padding_ms,fill_ratio,tts_raw_duration_ms,measured_duration_ms,required_speed,ai33_speed,native_speed,native_speed_mode,post_atempo_speed,post_atempo_applied,total_audio_speed,total_speed_factor,speed_fit_decision,final_speed,final_duration_ms,overhang_ms,adapt_direction,restore_safe_detail_attempted,restore_safe_detail_success,rewrite_attempts,meaning_risk,fit_decision,action_taken,quality_flag,subtitle_text,dub_text_before,dub_text_after,kept_meaning,dropped_details,restored_details,text\n')
+    f.write('segment_id,slot_ms,natural_tts_ms,post_atempo,final_segment_ms,slow_fit_used,orig_start_ms,orig_end_ms,slot_duration_ms,effective_slot_ms,source_gap_ms,synthetic_padding_ms,fill_ratio,tts_raw_duration_ms,measured_duration_ms,required_speed,ai33_speed,native_speed,native_speed_mode,post_atempo_speed,post_atempo_applied,total_audio_speed,total_speed_factor,speed_fit_decision,final_speed,final_duration_ms,overhang_ms,adapt_direction,restore_safe_detail_attempted,restore_safe_detail_success,rewrite_attempts,meaning_risk,fit_decision,action_taken,quality_flag,speech_timing_source,display_subtitle_timing,dub_tts_timing,pitch_preserving_method,subtitle_text,dub_text_before,dub_text_after,kept_meaning,dropped_details,restored_details,text\n')
     for row in alignment_rows:
         def csv_value(value):
             return '"' + str(value).replace('"', '""').replace('\n', ' ') + '"'
         f.write(
-            f"{row['segment_id']},{row['slot_ms']},{row['natural_tts_ms']},{row['post_atempo']},{row['final_segment_ms']},{row['slow_fit_used']},{row['orig_start_ms']},{row['orig_end_ms']},{row['slot_duration_ms']},{row['effective_slot_ms']},{row['source_gap_ms']},{row['synthetic_padding_ms']},{row['fill_ratio']},{row['tts_raw_duration_ms']},{row['measured_duration_ms']},{row['required_speed']},{row['ai33_speed']},{row['native_speed']},{row['native_speed_mode']},{row['post_atempo_speed']},{row['post_atempo_applied']},{row['total_audio_speed']},{row['total_speed_factor']},{row['speed_fit_decision']},{row['final_speed']},{row['final_duration_ms']},{row['overhang_ms']},{row['adapt_direction']},{row['restore_safe_detail_attempted']},{row['restore_safe_detail_success']},{row['rewrite_attempts']},{row['meaning_risk']},{csv_value(row['fit_decision'])},{row['action_taken']},{row['quality_flag']},{csv_value(row['subtitle_text'])},{csv_value(row['dub_text_before'])},{csv_value(row['dub_text_after'])},{csv_value(json.dumps(row['kept_meaning'], ensure_ascii=False))},{csv_value(json.dumps(row['dropped_details'], ensure_ascii=False))},{csv_value(json.dumps(row['restored_details'], ensure_ascii=False))},{csv_value(row.get('text', ''))}\n"
+            f"{row['segment_id']},{row['slot_ms']},{row['natural_tts_ms']},{row['post_atempo']},{row['final_segment_ms']},{row['slow_fit_used']},{row['orig_start_ms']},{row['orig_end_ms']},{row['slot_duration_ms']},{row['effective_slot_ms']},{row['source_gap_ms']},{row['synthetic_padding_ms']},{row['fill_ratio']},{row['tts_raw_duration_ms']},{row['measured_duration_ms']},{row['required_speed']},{row['ai33_speed']},{row['native_speed']},{row['native_speed_mode']},{row['post_atempo_speed']},{row['post_atempo_applied']},{row['total_audio_speed']},{row['total_speed_factor']},{row['speed_fit_decision']},{row['final_speed']},{row['final_duration_ms']},{row['overhang_ms']},{row['adapt_direction']},{row['restore_safe_detail_attempted']},{row['restore_safe_detail_success']},{row['rewrite_attempts']},{row['meaning_risk']},{csv_value(row['fit_decision'])},{row['action_taken']},{row['quality_flag']},{csv_value(row['speech_timing_source'])},{csv_value(row['display_subtitle_timing'])},{csv_value(row['dub_tts_timing'])},{row['pitch_preserving_method']},{csv_value(row['subtitle_text'])},{csv_value(row['dub_text_before'])},{csv_value(row['dub_text_after'])},{csv_value(json.dumps(row['kept_meaning'], ensure_ascii=False))},{csv_value(json.dumps(row['dropped_details'], ensure_ascii=False))},{csv_value(json.dumps(row['restored_details'], ensure_ascii=False))},{csv_value(row.get('text', ''))}\n"
         )
 PY
 }
@@ -5110,18 +5174,27 @@ else:
 # Ghi voice_sync_quality_report.json (report mới, yêu cầu 5).
 decision_path = os.environ.get("TRANSCRIPT_DECISION_JSON") or ""
 transcript_source = ""
+speech_timing_source = ""
+display_subtitle_timing = ""
+dub_tts_timing = ""
 asr_cues = 0
 ocr_cues = 0
 try:
     if decision_path and Path(decision_path).exists():
         dec = json.loads(Path(decision_path).read_text(encoding="utf-8"))
         transcript_source = dec.get("chosen") or ""
+        speech_timing_source = dec.get("speech_timing_source") or ""
+        display_subtitle_timing = dec.get("display_subtitle_timing") or ""
+        dub_tts_timing = dec.get("dub_tts_timing") or ""
         asr_cues = int(dec.get("asr_segments") or 0)
         ocr_cues = int(dec.get("ocr_segments") or 0)
 except Exception:
     pass
 voice_sync_report = {
     "transcript_source": transcript_source,
+    "speech_timing_source": speech_timing_source,
+    "display_subtitle_timing": display_subtitle_timing,
+    "dub_tts_timing": dub_tts_timing,
     "asr_cues": asr_cues,
     "ocr_cues": ocr_cues,
     "tts_source_entries": source_total,
@@ -5602,9 +5675,9 @@ else
     cp "$AUDIO_ONLY_VIDEO" "$FINAL_VIDEO"
   fi
 fi
-append_tts_audio_stage_report "$TTS_AUDIO_STAGE_REPORT_JSON" "final_mix" "$AUDIO_ONLY_VIDEO"
+append_tts_audio_stage_report "$TTS_AUDIO_STAGE_REPORT_JSON" "final_mix" "$AUDIO_ONLY_VIDEO" "$FINAL_AUDIO_SAMPLE_RATE"
 [[ -s "$FINAL_VIDEO" ]] || fail "Không tạo được final_video_vi.mp4"
-append_tts_audio_stage_report "$TTS_AUDIO_STAGE_REPORT_JSON" "final_mp4" "$FINAL_VIDEO"
+append_tts_audio_stage_report "$TTS_AUDIO_STAGE_REPORT_JSON" "final_mp4" "$FINAL_VIDEO" "$FINAL_AUDIO_SAMPLE_RATE"
 status_update "mux" "86" "Đang kiểm tra duration final" "0"
 
 TIMELINE_REPORT_JSON="$OUT_DIR/timeline_duration_report.json"
