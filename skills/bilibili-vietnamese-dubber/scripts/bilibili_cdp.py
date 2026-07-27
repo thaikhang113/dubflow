@@ -5,19 +5,28 @@ import json
 import re
 import sys
 from pathlib import Path
-from urllib.parse import quote_plus
-
-try:
-    from playwright.async_api import async_playwright
-except Exception as exc:
-    raise SystemExit(f"Playwright chưa sẵn sàng: {exc}")
+from urllib.parse import quote_plus, urlsplit
 
 CDP_URL_DEFAULT = "http://127.0.0.1:9222"
 
 
 def normalize_video_url(url: str) -> str:
-    match = re.search(r"(https?://(?:www\.)?bilibili\.com/video/[A-Za-z0-9]+)", url or "")
-    return match.group(1) if match else (url or "")
+    try:
+        parsed = urlsplit((url or "").strip())
+    except ValueError:
+        return ""
+    if parsed.scheme.lower() not in {"http", "https"}:
+        return ""
+    try:
+        port = parsed.port
+    except ValueError:
+        return ""
+    if parsed.username or parsed.password or port not in {None, 80, 443}:
+        return ""
+    if (parsed.hostname or "").lower() not in {"bilibili.com", "www.bilibili.com", "m.bilibili.com"}:
+        return ""
+    match = re.fullmatch(r"/video/([A-Za-z0-9]+)/*", parsed.path)
+    return f"https://www.bilibili.com/video/{match.group(1)}" if match else ""
 
 
 def cookie_netscape(cookies):
@@ -36,6 +45,10 @@ def cookie_netscape(cookies):
 
 
 async def connect(cdp_url):
+    try:
+        from playwright.async_api import async_playwright
+    except Exception as exc:
+        raise SystemExit(f"Playwright chưa sẵn sàng: {exc}")
     p = await async_playwright().start()
     browser = await p.chromium.connect_over_cdp(cdp_url)
     context = browser.contexts[0] if browser.contexts else await browser.new_context()
@@ -101,6 +114,9 @@ async def get_meta_from_page(page):
 
 
 async def cmd_meta(args):
+    args.url = normalize_video_url(args.url)
+    if not args.url:
+        raise SystemExit("BilibiliUrlInvalid: invalid Bilibili video URL.")
     p, browser, context = await connect(args.cdp)
     try:
         logged, cookies = await ensure_login_state(context)
@@ -514,6 +530,9 @@ def main():
     p.add_argument("--require-login", action="store_true")
     p.set_defaults(func=cmd_meta)
 
+    p = sub.add_parser("normalize-url")
+    p.add_argument("url")
+
     p = sub.add_parser("search")
     p.add_argument("keyword")
     p.add_argument("--limit", type=int, default=10)
@@ -534,6 +553,12 @@ def main():
     p.set_defaults(func=cmd_episodes)
 
     args = parser.parse_args()
+    if args.cmd == "normalize-url":
+        normalized = normalize_video_url(args.url)
+        if not normalized:
+            raise SystemExit("BilibiliUrlInvalid: invalid Bilibili video URL.")
+        print(normalized)
+        return
     asyncio.run(args.func(args))
 
 

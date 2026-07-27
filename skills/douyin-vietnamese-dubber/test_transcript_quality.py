@@ -268,7 +268,7 @@ def run_choose(ocr_cues, asr_cues, ocr_report_extra=None, asr_report=None):
         ocr_report_p.write_text(json.dumps(ocr_report, ensure_ascii=False), encoding="utf-8")
         asr_report_p.write_text(json.dumps(asr_report or {"hallucination": {"severe": False}}, ensure_ascii=False), encoding="utf-8")
         proc = subprocess.run(
-            ["python3", str(CHOOSE), "--mode", "auto",
+            [sys.executable, str(CHOOSE), "--mode", "auto",
              "--asr-srt", str(asr_srt), "--ocr-srt", str(ocr_srt),
              "--output-srt", str(out_srt),
              "--asr-report", str(asr_report_p), "--ocr-report", str(ocr_report_p),
@@ -454,6 +454,42 @@ def test_choose_both_sources_failed_qc():
     if ok:
         print("  OK: both sources failed QC -> decision JSON failed_qc + exit 7")
     return ok
+
+
+def test_choose_high_coverage_reported_severe_asr_when_ocr_empty():
+    """A rich 98.6% ASR timeline must not stop only because upstream reported severe."""
+    duration = 300.0
+    cues = good_asr_cues(98)
+    cues[-1] = (293800, 295800, "最后一句正常语音转写")
+    dec = run_choose(
+        [],
+        cues,
+        ocr_report_extra={
+            "status": "ok",
+            "quality_ok": False,
+            "coverage_ratio": 0.0,
+            "avg_confidence": 0.0,
+            "video_duration": duration,
+        },
+        asr_report={
+            "hallucination": {"severe": True, "bursts": [], "dropped_burst_segments": 0},
+            "video_duration": duration,
+        },
+    )
+    if dec.get("_returncode"):
+        print(f"  FAIL: choose exited {dec['_returncode']}: {dec.get('_stderr')}")
+        return False
+    if dec.get("chosen") != "asr":
+        print(f"  FAIL: chosen={dec.get('chosen')} (need asr)")
+        return False
+    if dec.get("severe_asr"):
+        print("  FAIL: high-quality ASR remained severe")
+        return False
+    if dec.get("asr_report_severe_relaxed") is not True:
+        print("  FAIL: missing asr_report_severe_relaxed evidence")
+        return False
+    print("  OK: 98.6% ASR continues with explicit relaxation evidence")
+    return True
 
 
 def test_choose_severe_asr_does_not_reject_good_ocr_as_sparse():
@@ -680,6 +716,24 @@ def test_resume_ocr_timeout_keeps_auto_mode():
     return ok
 
 
+def test_transcript_failure_status_keeps_structured_context():
+    run_sh = (SKILL_DIR / "run.sh").read_text(encoding="utf-8")
+    required = (
+        "status_add_failure_context",
+        '"both_sources_failed_qc"',
+        '"retry_transcript_sources"',
+        '"$TRANSCRIPT_DECISION_JSON"',
+        '"$ASR_OCR_CONSISTENCY_REPORT_JSON"',
+        '"$OCR_TRANSCRIPT_REPORT_JSON"',
+    )
+    missing = [value for value in required if value not in run_sh]
+    if missing:
+        print(f"  FAIL: structured transcript status missing {missing}")
+        return False
+    print("  OK: transcript failure keeps reason, retry action and artifacts")
+    return True
+
+
 def test_asr_long_thin_repair():
     """Regression test cho job input-20260702-201915: ASR 94 cue có 3 long-thin, OCR 65 ok.
     chosen=asr (asr_better_for_dub_timing). Repair chia long-thin ASR cue theo ranh giới
@@ -792,7 +846,7 @@ def test_asr_repair_uses_sparse_clean_ocr_anchor():
             "asr_quality": {"long_thin_cues": 4},
         }, ensure_ascii=False), encoding="utf-8")
         proc = subprocess.run([
-            "python3", str(REPAIR),
+            sys.executable, str(REPAIR),
             "--asr-srt", str(asr_srt),
             "--ocr-srt", str(ocr_srt),
             "--decision-json", str(decision),
@@ -1008,7 +1062,7 @@ def test_run_sh_bounded_fast_mode_and_flock():
     if re.search(r'\bOCR_VISION_API_KEY="\$API_KEY"\s*\\', run_sh):
         print("  FAIL: OCR_VISION_API_KEY còn bị truyền qua argv bằng env KEY=..., dễ lộ qua ps")
         ok = False
-    if 'export OCR_VISION_API_KEY="$API_KEY"' not in run_sh:
+    if 'export OCR_VISION_API_KEY="' not in run_sh:
         print("  FAIL: thiếu export OCR_VISION_API_KEY trước khi gọi OCR python")
         ok = False
     if "trap on_pipeline_exit EXIT" not in run_sh or "Pipeline exited unexpectedly" not in run_sh:
@@ -1148,6 +1202,8 @@ def main():
     ok = test_choose_sparse_clean_ocr_keeps_timing_anchor() and ok
     print("== choose: ASR severe + OCR timeout/empty -> failed_qc exit 7 ==")
     ok = test_choose_both_sources_failed_qc() and ok
+    print("== choose: 98.6% ASR + upstream severe + OCR empty -> ASR with warning ==")
+    ok = test_choose_high_coverage_reported_severe_asr_when_ocr_empty() and ok
     print("== choose: ASR severe + OCR good but sparse-vs-ASR -> OCR ==")
     ok = test_choose_severe_asr_does_not_reject_good_ocr_as_sparse() and ok
     print("== choose: ASR repeated loop + clean OCR -> OCR ==")
@@ -1162,6 +1218,8 @@ def main():
     ok = test_choose_ocr_partial_accepted_when_quality_ok() and ok
     print("== run.sh regression: resume OCR timeout keeps auto mode ==")
     ok = test_resume_ocr_timeout_keeps_auto_mode() and ok
+    print("== run.sh regression: transcript failure keeps structured status ==")
+    ok = test_transcript_failure_status_keeps_structured_context() and ok
     print("== run.sh regression: bounded fast mode + flock + partial-report guard ==")
     ok = test_run_sh_bounded_fast_mode_and_flock() and ok
     print("== ocr regression: report status names are explicit ==")

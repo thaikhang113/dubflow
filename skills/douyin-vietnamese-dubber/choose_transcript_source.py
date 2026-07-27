@@ -224,6 +224,7 @@ def main():
     parser.add_argument("--min-cues-per-min", type=float, default=float(os.environ.get("CHOOSE_MIN_CUES_PER_MIN", "4")))
     parser.add_argument("--max-long-thin-ratio", type=float, default=float(os.environ.get("CHOOSE_MAX_LONG_THIN_RATIO", "0.08")))
     parser.add_argument("--asr-min-timeline-coverage", type=float, default=float(os.environ.get("CHOOSE_ASR_MIN_TIMELINE_COVERAGE", "0.65")))
+    parser.add_argument("--asr-relax-min-timeline-coverage", type=float, default=float(os.environ.get("CHOOSE_ASR_RELAX_MIN_TIMELINE_COVERAGE", "0.97")))
     parser.add_argument("--asr-repeat-max-consecutive", type=int, default=int(os.environ.get("CHOOSE_ASR_REPEAT_MAX_CONSECUTIVE", "12")))
     parser.add_argument("--asr-repeat-min-top-count", type=int, default=int(os.environ.get("CHOOSE_ASR_REPEAT_MIN_TOP_COUNT", "20")))
     parser.add_argument("--asr-repeat-max-top-ratio", type=float, default=float(os.environ.get("CHOOSE_ASR_REPEAT_MAX_TOP_RATIO", "0.25")))
@@ -315,12 +316,35 @@ def main():
         and ocr_too_sparse
         and asr_much_richer_than_ocr
     )
-    severe_asr = severe_asr_before_relax and not asr_burst_severe_relaxed
+    asr_long_thin_ratio = asr_quality["long_thin_cues"] / max(1, asr_quality["cue_count"])
+    asr_tail_gap_seconds = max(0.0, video_duration - asr_quality["last_end_seconds"])
+    asr_tail_gap_limit_seconds = max(3.0, video_duration * 0.03)
+    asr_report_severe_relaxed = (
+        reported_severe_asr
+        and not asr_repeat_loop_severe
+        and not ocr_observation_usable
+        and asr_quality["timeline_coverage_ratio"] >= args.asr_relax_min_timeline_coverage
+        and asr_quality["cue_density_per_min"] >= args.min_cues_per_min
+        and asr_quality["max_cue_seconds"] <= args.ocr_quality_max_cue_seconds
+        and asr_long_thin_ratio <= args.max_long_thin_ratio
+        and asr_tail_gap_seconds <= asr_tail_gap_limit_seconds
+    )
+    severe_asr = severe_asr_before_relax and not (
+        asr_burst_severe_relaxed or asr_report_severe_relaxed
+    )
     if asr_burst_severe_relaxed:
         ocr_warnings.append(
             "asr_burst_severe_relaxed_due_to_good_asr_sparse_ocr="
             f"burst_dropped={reported_burst_segments},asr_cues={asr_quality['cue_count']},"
             f"ocr_cues={ocr_quality['cue_count']}"
+        )
+    asr_warnings = []
+    if asr_report_severe_relaxed:
+        asr_warnings.append(
+            "asr_report_severe_relaxed_due_to_quality="
+            f"coverage={asr_quality['timeline_coverage_ratio']},"
+            f"density={asr_quality['cue_density_per_min']},"
+            f"tail_gap={asr_tail_gap_seconds:.3f}"
         )
     if ocr_too_sparse:
         sparse_reason = f"ocr_too_sparse_vs_asr={ocr_quality['cue_count']}/{max(1, asr_quality['cue_count'])}"
@@ -370,6 +394,11 @@ def main():
         "reported_severe_asr": reported_severe_asr,
         "severe_asr_before_relax": severe_asr_before_relax,
         "asr_burst_severe_relaxed": asr_burst_severe_relaxed,
+        "asr_report_severe_relaxed": asr_report_severe_relaxed,
+        "asr_warnings": asr_warnings,
+        "asr_long_thin_ratio": round(asr_long_thin_ratio, 4),
+        "asr_tail_gap_seconds": round(asr_tail_gap_seconds, 3),
+        "asr_tail_gap_limit_seconds": round(asr_tail_gap_limit_seconds, 3),
         "asr_reported_burst_segments": reported_burst_segments,
         "asr_repeat_loop_severe": asr_repeat_loop_severe,
         "asr_repeat_loop_local": asr_repeat_loop_local,

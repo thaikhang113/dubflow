@@ -61,6 +61,21 @@ class BilibiliProcessContractTests(unittest.TestCase):
         self.assertEqual(request["BILIBILI_BRAND_INCLUDE_INTRO"], "0")
         self.assertEqual(request["BILIBILI_BRAND_INCLUDE_OUTRO"], "0")
 
+    def test_tracking_url_is_canonicalized_before_queueing(self) -> None:
+        validated = self.module.validate_bilibili_process_payload({
+            "action": "bilibili-process",
+            "url": "https://www.bilibili.com/video/BV1example?vd_source=tracking#reply",
+            "voice": "Ngoc Huyen",
+        })
+        self.assertEqual(
+            validated["url"],
+            "https://www.bilibili.com/video/BV1example",
+        )
+        self.assertEqual(
+            self.module.bilibili_process_queue_fields(validated)["URL"],
+            "https://www.bilibili.com/video/BV1example",
+        )
+
     def test_rejects_unknown_or_untrusted_fields(self) -> None:
         with self.assertRaises(ValueError):
             self.module.validate_bilibili_process_payload({

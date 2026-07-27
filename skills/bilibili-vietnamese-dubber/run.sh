@@ -37,6 +37,32 @@ BRAND_ASSETS_JSON="${BRAND_ASSETS_JSON:-/home/haonguyen/.openclaw/workspace/skil
 fail() { echo "ERROR: $*" >&2; exit 1; }
 need_cmd() { command -v "$1" >/dev/null 2>&1 || fail "Thiếu lệnh: $1"; }
 
+emit_latest_job_failure() {
+  local exit_code="$1"
+  local output_dir status_file
+  [[ -s "$LATEST_OUTPUT" ]] || return 0
+  output_dir="$(head -n 1 "$LATEST_OUTPUT" 2>/dev/null || true)"
+  status_file="$output_dir/job_status.json"
+  [[ -s "$status_file" ]] || return 0
+  python3 - "$status_file" "$output_dir" "$exit_code" <<'PY' >&2 || true
+import json, sys
+from pathlib import Path
+
+try:
+    status = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+except Exception:
+    status = {}
+allowed = (
+    "state", "phase", "progress_percent", "label", "error_code",
+    "error_message", "reason", "retry_action", "artifacts",
+)
+payload = {key: status[key] for key in allowed if key in status}
+payload["output_dir"] = sys.argv[2]
+payload["exit_code"] = int(sys.argv[3])
+print("OPENCLAW_JOB_STATUS_JSON=" + json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+PY
+}
+
 validate_branding_flags() {
   case "$BILIBILI_BRANDING" in 0|1) ;; *) fail "BILIBILI_BRANDING chỉ nhận 0 hoặc 1" ;; esac
   case "$BILIBILI_BRAND_INCLUDE_INTRO" in 0|1) ;; *) fail "BILIBILI_BRAND_INCLUDE_INTRO chỉ nhận 0 hoặc 1" ;; esac
@@ -178,9 +204,10 @@ if [[ "$INPUT" == "--find" || "$INPUT" == "find" || "$INPUT" == "search" || "$IN
 fi
 
 [[ -n "$INPUT" ]] || fail "Thiếu URL Bilibili hoặc --find."
-[[ "$INPUT" =~ ^https?://([^/]+\.)?bilibili\.com/video/ ]] || fail "Chỉ hỗ trợ URL video Bilibili trực tiếp."
-ensure_hdd
 need_cmd python3
+INPUT="$(python3 "$CDP_HELPER" normalize-url "$INPUT")" || fail "Chỉ hỗ trợ URL video Bilibili trực tiếp."
+[[ -n "$INPUT" ]] || fail "Chỉ hỗ trợ URL video Bilibili trực tiếp."
+ensure_hdd
 need_cmd yt-dlp
 [[ -x "$DOUYIN_PIPELINE" ]] || fail "Không tìm thấy pipeline vietsub: $DOUYIN_PIPELINE"
 VOICE_PRESET="$(normalize_voice "$VOICE_PRESET")"
@@ -261,14 +288,22 @@ export GOOGLE_FLOW_THUMBNAIL_SCRIPT="${GOOGLE_FLOW_THUMBNAIL_SCRIPT:-/home/haong
 echo "Đã tải Bilibili xong, chuyển sang pipeline vietsub/lồng tiếng hiện có..."
 # Đảm bảo pipeline con thấy ~/.local/bin (edge-tts pip --user) và EDGE_TTS_BIN.
 export PATH="$HOME/.local/bin:$PATH"
+set +e
 if [[ "$BILIBILI_BRANDING" == "1" ]]; then
   [[ -f "$SINGLE_JOB_BRAND_SCRIPT" ]] || fail "Không tìm thấy single-job branding script: $SINGLE_JOB_BRAND_SCRIPT"
   [[ -f "$BRAND_ASSETS_JSON" ]] || fail "Không tìm thấy approved branding assets: $BRAND_ASSETS_JSON"
   # The child must not organize/upload the unbranded video.  This wrapper brands
   # its verified job-local final output, then performs each final hand-off once.
   ORGANIZE_OUTPUT=0 AUTO_TELEGRAM_RESULT=0 bash "$DOUYIN_PIPELINE" "$VIDEO_FILE"
+  child_status=$?
 else
   bash "$DOUYIN_PIPELINE" "$VIDEO_FILE"
+  child_status=$?
+fi
+set -e
+if [[ "$child_status" -ne 0 ]]; then
+  emit_latest_job_failure "$child_status"
+  exit "$child_status"
 fi
 
 if [[ -f "$LATEST_OUTPUT" ]]; then

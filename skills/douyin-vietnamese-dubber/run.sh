@@ -488,6 +488,34 @@ status_update() {
   fi
 }
 
+status_add_failure_context() {
+  local reason="$1"
+  local retry_action="$2"
+  shift 2
+  [[ -s "$STATUS_FILE" ]] || return 0
+  python3 - "$STATUS_FILE" "$reason" "$retry_action" "$@" <<'PY' || true
+import json, os, sys
+from pathlib import Path
+
+status_path = Path(sys.argv[1])
+try:
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+except Exception:
+    status = {}
+artifacts = {}
+for raw in sys.argv[4:]:
+    path = Path(raw)
+    if path.is_file():
+        artifacts[path.name] = str(path)
+status["reason"] = sys.argv[2]
+status["retry_action"] = sys.argv[3]
+status["artifacts"] = artifacts
+tmp = status_path.with_name(status_path.name + ".tmp")
+tmp.write_text(json.dumps(status, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+os.replace(tmp, status_path)
+PY
+}
+
 run_with_status_heartbeat() {
   local phase="$1"
   local progress="$2"
@@ -4111,7 +4139,7 @@ if [[ "$SUBTITLE_TRANSCRIPT_SOURCE" == "auto" || "$SUBTITLE_TRANSCRIPT_SOURCE" =
     export SUBTITLE_OCR_MIN_CONFIDENCE
     export OCR_VISION_MODEL
     export OCR_VISION_API_BASE
-    export OCR_VISION_API_KEY=${OCR_VISION_API_KEY:?Set OCR_VISION_API_KEY in the environment}
+    export OCR_VISION_API_KEY="${OCR_VISION_API_KEY:?Set OCR_VISION_API_KEY in the environment}"
     export OCR_VISION_MIN_CONFIDENCE
     export OCR_VISION_DEDUP_THRESHOLD
     export OCR_TRANSCRIPT_FRAME_STRIDE
@@ -4169,6 +4197,12 @@ if [[ -x "$TRANSCRIPT_DECISION_SCRIPT" ]]; then
     echo "ERROR: $transcript_decision_msg" >&2
     create_translate_pending "$transcript_decision_msg"
     status_update "manual_translate" "58" "Transcript gốc lỗi, cần dán transcript_vi.json" "0" "TranscriptSourcesFailedQC" "$transcript_decision_msg"
+    status_add_failure_context \
+      "both_sources_failed_qc" \
+      "retry_transcript_sources" \
+      "$TRANSCRIPT_DECISION_JSON" \
+      "$ASR_OCR_CONSISTENCY_REPORT_JSON" \
+      "$OCR_TRANSCRIPT_REPORT_JSON"
     exit 7
   elif [[ "$transcript_decision_status" -ne 0 ]]; then
     fail "Chọn nguồn transcript lỗi (exit=$transcript_decision_status)."
@@ -5552,7 +5586,7 @@ if [[ "${BURN_VIET_SUBTITLE:-1}" != "0" && -x "$SUBTITLE_MASK_RENDER_SCRIPT" && 
     "$SUBTITLE_MASK_RENDER_PYTHON" "$SUBTITLE_MASK_RENDER_SCRIPT" --input-video "$AUDIO_ONLY_VIDEO" --srt "$VIETNAMESE_SRT" --output-video "$FINAL_VIDEO" --font "$SUBTITLE_FONT" --subtitle-region "$SUBTITLE_REGION_ARTIFACT" --detect-subtitle-region-only
   fi
   set +e
-  export OCR_VISION_API_KEY=${OCR_VISION_API_KEY:?Set OCR_VISION_API_KEY in the environment}
+  export OCR_VISION_API_KEY="${OCR_VISION_API_KEY:?Set OCR_VISION_API_KEY in the environment}"
   run_with_status_heartbeat "subtitle_render" "84" "Đang detect vị trí sub gốc + render blur band" "$subtitle_render_timeout" "${OPENCLAW_LONG_STEP_HEARTBEAT_SECONDS:-30}" \
     timeout "$subtitle_render_timeout" \
     env \

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import copy
 import json
 import os
 import re
@@ -181,9 +182,15 @@ def _start_budget(seconds: float):
         _BUDGET_DEADLINE = None
         return
     # SIGALRM chỉ hoạt động trên main thread; pipeline chạy python trực tiếp nên OK.
+    sigalrm = getattr(signal, "SIGALRM", None)
+    itimer_real = getattr(signal, "ITIMER_REAL", None)
+    setitimer = getattr(signal, "setitimer", None)
+    if sigalrm is None or itimer_real is None or setitimer is None:
+        _BUDGET_DEADLINE = None
+        return
     try:
-        signal.signal(signal.SIGALRM, _budget_handler)
-        signal.setitimer(signal.ITIMER_REAL, float(seconds))
+        signal.signal(sigalrm, _budget_handler)
+        setitimer(itimer_real, float(seconds))
         _BUDGET_DEADLINE = seconds
     except (ValueError, OSError):
         # Không phải main thread hoặc platform không hỗ trợ → bỏ qua budget.
@@ -192,9 +199,11 @@ def _start_budget(seconds: float):
 
 def _clear_budget():
     global _BUDGET_DEADLINE, _BUDGET_EXPIRED
-    if _BUDGET_DEADLINE is not None:
+    setitimer = getattr(signal, "setitimer", None)
+    itimer_real = getattr(signal, "ITIMER_REAL", None)
+    if _BUDGET_DEADLINE is not None and setitimer is not None and itimer_real is not None:
         try:
-            signal.setitimer(signal.ITIMER_REAL, 0)
+            setitimer(itimer_real, 0)
         except (ValueError, OSError):
             pass
     _BUDGET_DEADLINE = None
@@ -321,7 +330,7 @@ def run_paddle_on_frames(frames, args, ocr):
         for index, frame in enumerate(frames):
             if _budget_expired():
                 break
-            ts = args.start + index / args.fps
+            ts = args.start + getattr(args, "frame_indices", {}).get(str(frame), index) / args.fps
             try:
                 image = Image.open(frame).convert("RGB")
                 w, h = image.size
@@ -402,7 +411,7 @@ def run_vision_on_frames(frames, args, *, min_min_confidence=0.45, dedup=True, v
             reasons["budget_expired"] = reasons.get("budget_expired", 0) + 1
             break
         processed_frames += 1
-        ts = args.start + index / args.fps
+        ts = args.start + getattr(args, "frame_indices", {}).get(str(frame), index) / args.fps
         sig = _roi_signature(frame, args.roi_top, args.roi_bottom) if dedup else None
         # Dedup: frame kế giống frame trước -> giữ sample cũ, không gọi API.
         # NHƯNG chỉ trong cửa reuse (max_reuse_seconds) để đóng segment khi text/ROI đứng yên quá lâu.
@@ -457,6 +466,75 @@ def run_vision_on_frames(frames, args, *, min_min_confidence=0.45, dedup=True, v
     reasons["processed_frames"] = processed_frames
     reasons["vision_calls"] = vision_calls
     return samples, errors, skipped, reasons
+
+
+def classify_zero_sample_result(reasons, errors, timed_out):
+    if timed_out:
+        return "timeout"
+    ignored = {
+        "no_subtitle", "no_cjk", "prefilter_skip", "low_confidence",
+        "processed_frames", "vision_calls", "dedup_reuse_expired",
+    }
+    failure_keys = {key for key, count in (reasons or {}).items() if count and key not in ignored}
+    if errors or failure_keys:
+        return "ocr_subsystem_failed"
+    if (reasons or {}).get("no_subtitle") or (reasons or {}).get("no_cjk"):
+        return "no_visible_subtitles"
+    return "no_text_detected"
+
+
+def run_zero_sample_diagnostic_retry(frames, args, ocr):
+    if not frames:
+        return {
+            "samples": [], "errors": [], "skipped": 0, "reasons": {},
+            "engine_used": "9router_vision", "classification": "no_frames",
+            "frame_count": 0,
+        }
+    count = min(12, len(frames))
+    indices = sorted({round(i * (len(frames) - 1) / max(1, count - 1)) for i in range(count)})
+    selected = [frames[index] for index in indices]
+    retry_args = copy.copy(args)
+    retry_args.roi_top = min(float(args.roi_top), 0.35)
+    retry_args.roi_bottom = 1.0
+    retry_args.prefilter_min_ratio = 0.0
+    retry_args.prefilter_min_pixels = 0
+    retry_args.frame_stride = 1
+    retry_args.max_frames = None
+    retry_args.frame_indices = {str(frame): index for frame, index in zip(selected, indices)}
+    timeout = min(float(getattr(args, "vision_timeout", 0) or 10.0), 10.0)
+    samples, errors, skipped, reasons = run_vision_on_frames(
+        selected,
+        retry_args,
+        min_min_confidence=args.vision_min_confidence,
+        dedup=False,
+        vision_timeout=timeout,
+    )
+    engine_used = "9router_vision"
+    if not samples and ocr is not None and not _budget_expired():
+        paddle_samples, paddle_errors, paddle_skipped = run_paddle_on_frames(selected, retry_args, ocr)
+        errors.extend(paddle_errors)
+        skipped += paddle_skipped
+        if paddle_samples:
+            samples = paddle_samples
+            engine_used = "paddleocr"
+    retry_timed_out = bool(_budget_expired() or (reasons or {}).get("budget_expired"))
+    return {
+        "samples": samples,
+        "errors": errors,
+        "skipped": skipped,
+        "reasons": reasons,
+        "engine_used": engine_used,
+        "timed_out": retry_timed_out,
+        "classification": (
+            "subtitle_detected_on_retry"
+            if samples
+            else classify_zero_sample_result(reasons, errors, retry_timed_out)
+        ),
+        "frame_count": len(selected),
+        "roi_top": retry_args.roi_top,
+        "roi_bottom": retry_args.roi_bottom,
+        "prefilter_disabled": True,
+    }
 
 
 def _signatures_similarity(a, b):
@@ -546,6 +624,7 @@ def main():
     fallback_used = False
     fallback_reason = None
     vision_reasons = {}
+    diagnostic_retry = {"attempted": False}
     frame_count = 0
     processed_frame_count = 0
     vision_call_count = 0
@@ -570,25 +649,32 @@ def main():
                     timeout_reason = "vision_budget_exceeded"
                 vision_call_count = int((vision_reasons or {}).get("vision_calls", 0))
                 processed_frame_count = int((vision_reasons or {}).get("processed_frames", 0))
-                # Fallback Paddle khi vision không ra sample hoặc lỗi payload (và chưa bị budget kill).
+                # Zero-result retry is deliberately small: wider ROI, no prefilter,
+                # at most 12 representative frames, then Paddle on those frames.
                 if not samples and not timed_out:
                     fallback_reason = "vision_no_samples"
-                    if ocr is not None:
-                        try:
-                            samples, perr, pskip = run_paddle_on_frames(frames, args, ocr)
-                            errors.extend(perr)
-                            skipped_prefilter = pskip
-                            fallback_used = True
-                            engine_used = "paddleocr"
-                        except OcrTranscriptTimeout:
+                    try:
+                        diagnostic_retry = run_zero_sample_diagnostic_retry(
+                            frames, args, None if disable_fallback else ocr
+                        )
+                        diagnostic_retry["attempted"] = True
+                        diagnostic_retry["sample_count"] = len(diagnostic_retry["samples"])
+                        samples = diagnostic_retry.pop("samples")
+                        errors.extend(diagnostic_retry.pop("errors"))
+                        skipped_prefilter += int(diagnostic_retry.pop("skipped") or 0)
+                        engine_used = diagnostic_retry.get("engine_used") or "9router_vision"
+                        fallback_used = engine_used == "paddleocr"
+                        if diagnostic_retry.get("timed_out"):
                             timed_out = True
-                            timeout_reason = "paddle_budget_exceeded"
-                        except Exception as exc:
-                            fallback_reason = f"vision_no_samples_and_paddle_fail:{exc!r}"[:200]
-                    elif disable_fallback:
-                        fallback_reason = "vision_no_samples_and_paddle_fallback_disabled"
-                    else:
-                        fallback_reason = "vision_no_samples_and_paddle_unavailable"
+                            timeout_reason = "diagnostic_retry_budget_exceeded"
+                        vision_call_count += int((diagnostic_retry.get("reasons") or {}).get("vision_calls", 0))
+                        processed_frame_count += int((diagnostic_retry.get("reasons") or {}).get("processed_frames", 0))
+                        fallback_reason = diagnostic_retry.get("classification") or fallback_reason
+                    except OcrTranscriptTimeout:
+                        timed_out = True
+                        timeout_reason = "diagnostic_retry_budget_exceeded"
+                    except Exception as exc:
+                        fallback_reason = f"vision_zero_sample_diagnostic_failed:{exc!r}"[:200]
                 else:
                     engine_used = "9router_vision"
             else:
@@ -643,6 +729,7 @@ def main():
         "fallback_used": fallback_used,
         "fallback_reason": fallback_reason,
         "vision_reasons": vision_reasons,
+        "diagnostic_retry": diagnostic_retry,
         "video": str(video),
         "output_srt": str(output_srt),
         "fps": args.fps,
