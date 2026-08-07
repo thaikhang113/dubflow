@@ -13,6 +13,7 @@ import re
 import shutil
 import sys
 import time
+import unicodedata
 import urllib.parse
 from pathlib import Path
 from typing import Any
@@ -334,10 +335,14 @@ def load_registry(path: Path | None = None) -> dict[str, Any]:
 def _find_ai33(registry: dict[str, Any], value: str) -> dict[str, Any] | None:
     raw = str(value or "").strip()
     lower = raw.lower()
+    folded = unicodedata.normalize("NFKD", lower).encode("ascii", "ignore").decode("ascii")
+    lookup_keys = {lower, folded, folded.replace(" ", "-"), folded.replace(" ", "_")}
     if not lower:
         lower = str(registry.get("default_voice") or "").lower()
+        lookup_keys = {lower}
     if lower == "ai33":
         lower = str(registry.get("default_voice") or "").lower()
+        lookup_keys = {lower}
     if lower.startswith("ai33:"):
         lower_id = lower.split(":", 1)[1]
     else:
@@ -348,7 +353,16 @@ def _find_ai33(registry: dict[str, Any], value: str) -> dict[str, Any] | None:
         voice_id = str(item.get("voice_id") or "").lower()
         canonical = str(item.get("canonical_voice") or "").lower()
         aliases = {str(a).lower() for a in item.get("aliases") or []}
-        if lower == canonical or lower_id == voice_id or lower in aliases or lower_id in aliases:
+        alias_keys = aliases | {
+            unicodedata.normalize("NFKD", alias).encode("ascii", "ignore").decode("ascii")
+            for alias in aliases
+        }
+        if (
+            lower == canonical
+            or lower_id == voice_id
+            or lookup_keys & alias_keys
+            or lower_id in alias_keys
+        ):
             return item
     return None
 

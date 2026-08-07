@@ -16,6 +16,12 @@ SPEC.loader.exec_module(series_tracker)
 
 
 class SeriesTrackerStateTests(unittest.TestCase):
+    def test_normalize_ngoc_huyen_voice_alias(self):
+        self.assertEqual(
+            "ai33:vbee_hn_female_ngochuyen_full_48k-fhg",
+            series_tracker.normalize_voice("Ngọc Huyền"),
+        )
+
     def test_parse_duration_seconds(self):
         self.assertEqual(754, series_tracker.parse_duration_seconds("12:34"))
         self.assertEqual(3723, series_tracker.parse_duration_seconds("01:02:03"))

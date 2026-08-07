@@ -104,7 +104,7 @@ normalize_voice() {
     "") printf '%s' "$OPENCLAW_DEFAULT_TTS_VOICE" ;;
     resona) printf '%s' "resona:${RESONA_DEFAULT_VOICE_ID:-ZJEpWoOyElCKuEljNTkm}" ;;
     resona:*) printf '%s' "$1" ;;
-    ai33|vbee|vbee-maiphuong|vbee-mai-phuong|maiphuong|mai-phuong|mai_phuong|elevenlabs|elevenlabs-phanh|eleven-phanh|phanh|phan|ai33:*|elevenlabs_*|vbee_*)
+    ai33|vbee|vbee-maiphuong|vbee-mai-phuong|maiphuong|mai-phuong|mai_phuong|ngoc\ huyen|ngọc\ huyền|ngochuyen|vbee-ngochuyen|elevenlabs|elevenlabs-phanh|eleven-phanh|phanh|phan|ai33:*|elevenlabs_*|vbee_*)
       if [[ -f "$VOICE_REGISTRY_PY" ]] && normalized="$(python3 "$VOICE_REGISTRY_PY" normalize-ai33 "$raw" 2>/dev/null)"; then
         printf '%s' "$normalized"
       else

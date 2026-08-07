@@ -33,6 +33,20 @@
       "enabled": true,
       "timing_profile": "ai33_balanced_fast",
       "min_slow_ratio": 0.85
+    },
+    {
+      "provider": "ai33",
+      "voice_id": "vbee_hn_female_ngochuyen_full_48k-fhg",
+      "label": "Ngoc Huyen - Vbee",
+      "aliases": [
+        "ngoc-huyen",
+        "ngoc_huyen",
+        "ngochuyen",
+        "vbee-ngochuyen"
+      ],
+      "enabled": true,
+      "timing_profile": "ai33_balanced_fast",
+      "min_slow_ratio": 0.85
     }
   ]
 }

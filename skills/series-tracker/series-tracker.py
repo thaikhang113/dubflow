@@ -260,6 +260,7 @@ def normalize_voice(voice):
         default_voice = f"ai33:{ai33_mai_phuong}"
     raw_voice = str(voice or default_voice).strip()
     value = raw_voice.lower()
+    folded_value = fold_ascii(value)
     kokoro_voices = {
         "diem_trinh", "duc_an", "duc_duy", "hung_thinh", "mai_linh", "mai_loan",
         "manh_dung", "my_yen", "ngoc_huyen", "phat_tai", "storyvert",
@@ -271,9 +272,11 @@ def normalize_voice(voice):
         return f"resona:{resona_default}"
     if value.startswith("resona:"):
         return raw_voice
-    if value in {"ai33", "vbee", "vbee-maiphuong", "vbee-mai-phuong", "maiphuong", "mai-phuong", "mai_phuong", "elevenlabs", "elevenlabs-phanh", "eleven-phanh", "phanh", "phan"} or value.startswith("ai33:") or value.startswith("elevenlabs_") or value.startswith("vbee_"):
+    if value in {"ai33", "vbee", "vbee-maiphuong", "vbee-mai-phuong", "maiphuong", "mai-phuong", "mai_phuong", "ngochuyen", "vbee-ngochuyen", "elevenlabs", "elevenlabs-phanh", "eleven-phanh", "phanh", "phan"} or folded_value in {"ngoc huyen", "ngoc-huyen", "ngoc_huyen"} or value.startswith("ai33:") or value.startswith("elevenlabs_") or value.startswith("vbee_"):
         if voice_registry_lib is not None:
             try:
+                if folded_value in {"ngoc huyen", "ngoc-huyen", "ngoc_huyen", "ngochuyen"}:
+                    raw_voice = "ngoc huyen"
                 return voice_registry_lib.normalize_ai33_voice(raw_voice)
             except Exception as exc:
                 raise SystemExit(f"SeriesVoiceInvalid: {exc}") from exc
@@ -281,6 +284,8 @@ def normalize_voice(voice):
             return f"ai33:{ai33_mai_phuong}"
         if value in {"elevenlabs", "elevenlabs-phanh", "eleven-phanh", "phanh", "phan"}:
             return f"ai33:{ai33_phanh}"
+        if folded_value in {"ngoc huyen", "ngoc-huyen", "ngoc_huyen", "ngochuyen"}:
+            return "ai33:vbee_hn_female_ngochuyen_full_48k-fhg"
         if value.startswith("ai33:"):
             return raw_voice
         return f"ai33:{raw_voice or ai33_default}"

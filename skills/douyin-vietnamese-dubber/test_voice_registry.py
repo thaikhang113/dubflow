@@ -28,10 +28,13 @@ def test_default_and_aliases():
     reg = vr.load_registry(Path(__file__).with_name("voice_registry.default.json"))
     mai = "ai33:vbee_hn_female_maiphuong_vdts_48k-fhg"
     phanh = "ai33:elevenlabs_UuMSQK8FdLwaY2M8ZAnh"
+    ngoc_huyen = "ai33:vbee_hn_female_ngochuyen_full_48k-fhg"
     assert_eq(vr.default_voice(reg), mai, "Mai Phuong must be default")
     for alias in ("", "ai33", "maiphuong", "vbee", "vbee_hn_female_maiphuong_vdts_48k-fhg"):
         assert_eq(vr.normalize_ai33_voice(alias, reg), mai, f"alias {alias}")
     assert_eq(vr.normalize_ai33_voice("phanh", reg), phanh, "phanh alias")
+    assert_eq(vr.normalize_ai33_voice("Ngọc Huyền", reg), ngoc_huyen, "Ngọc Huyền alias")
+    assert_eq(vr.normalize_ai33_voice("ngoc huyen", reg), ngoc_huyen, "ASCII Ngọc Huyền alias")
     assert_eq(vr.ai33_metadata("maiphuong", reg)["min_slow_ratio"], 0.85, "timing floor")
 
 
@@ -168,10 +171,12 @@ def test_empty_runtime_registry_env_uses_default_path():
     )
     if proc.returncode != 0:
         raise AssertionError(f"empty env import failed: {proc.stderr}")
-    assert_eq(
-        proc.stdout.strip(),
-        "/home/haonguyen/.openclaw/config/voice_registry.json",
-        "empty OPENCLAW_VOICE_REGISTRY_JSON must not resolve to current directory",
+    runtime_path = proc.stdout.strip()
+    assert runtime_path.lower().endswith(
+        os.path.join("openclaw", "config", "voice_registry.json").lower()
+    ), f"unexpected runtime registry path: {runtime_path!r}"
+    assert runtime_path != str(Path.cwd()), (
+        "empty OPENCLAW_VOICE_REGISTRY_JSON must not resolve to current directory"
     )
 
 
