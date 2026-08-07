@@ -4837,6 +4837,8 @@ sys.path.insert(0, os.environ.get('DOUYIN_DUBBER_SKILL_DIR', ''))
 from voice_sync_overhang import summarize_unresolved_overhang
 stats_path, video_duration, voice_duration, original_srt, voice = sys.argv[1:6]
 stats = json.load(open(stats_path, 'r', encoding='utf-8'))
+from voice_sync_status import normalize_resona_grouped_source_cue_ids
+serialized_resona_grouped_source_cue_ids = normalize_resona_grouped_source_cue_ids(stats)
 RESONA_ERROR_SEVERITY = [
     'ResonaAuthMissing', 'ResonaAuthFailed', 'ResonaQuotaFailed',
     'ResonaTimeout', 'ResonaNoAudioUrl', 'ResonaTextTooShortUngroupable',
@@ -5359,9 +5361,7 @@ voice_sync_report = {
     "resona_short_edge_fallback_segments": resona_short_fb,
     "resona_short_grouped_units": resona_grouped_units,
     "resona_short_grouped_source_segments": resona_grouped_source_segments,
-    "resona_grouped_source_cue_ids": [
-        meta.get("source_cue_ids", []) for _, meta in sorted(resona_tts_group_meta.items())
-    ],
+    "resona_grouped_source_cue_ids": serialized_resona_grouped_source_cue_ids,
     "resona_short_group_max_cues": stats.get('resona_short_group_max_cues', 0) or 0,
     "resona_short_group_max_duration_ms": stats.get('resona_short_group_max_duration_ms', 0) or 0,
     "resona_fail_error_codes": resona_fail_codes,
@@ -5412,6 +5412,27 @@ PY
   fi
   if [[ -s "$TMP_DIR/voice_sync_quality_report.json" ]]; then
     cp "$TMP_DIR/voice_sync_quality_report.json" "$OUT_DIR/voice_sync_quality_report.json" 2>/dev/null || true
+  fi
+  if [[ ! -s "$OUT_DIR/voice_sync_quality_report.json" ]]; then
+    PYTHONPATH="$SKILL_DIR" python3 - "$OUT_DIR/voice_sync_quality_report.json" "$TTS_STATS_JSON" "$tts_gate_status" <<'PY'
+import json
+import sys
+from pathlib import Path
+from voice_sync_status import build_voice_sync_fallback_report
+
+report_path, stats_path, exit_status = sys.argv[1:4]
+try:
+    report = build_voice_sync_fallback_report(
+        f"checker exit={exit_status}",
+        stats_available=bool(stats_path and Path(stats_path).is_file()),
+    )
+    Path(report_path).write_text(
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+except Exception as exc:
+    print(f"WARN: failed to write VoiceSyncReportBuildFailed report: {exc}", file=sys.stderr)
+PY
   fi
   if [[ "$tts_gate_status" -eq 7 ]]; then
     # Heredoc có thể ghi provider-specific error_code vào voice_sync_quality_report.json
