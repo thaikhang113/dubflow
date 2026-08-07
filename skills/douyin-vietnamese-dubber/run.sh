@@ -1501,6 +1501,11 @@ sys.path.insert(0, str(skill_dir))
 from dialogue_boundary import boundary_after
 from voice_sync_overhang import unresolved_overhang_event
 from resona_grouping import ordered_source_cue_ids
+tts_checkpoint_spec = importlib.util.spec_from_file_location('openclaw_tts_checkpoint', skill_dir / 'tts_checkpoint.py')
+if not tts_checkpoint_spec or not tts_checkpoint_spec.loader:
+    raise RuntimeError(f"TTSCheckpointMissing: {skill_dir / 'tts_checkpoint.py'}")
+tts_checkpoint = importlib.util.module_from_spec(tts_checkpoint_spec)
+tts_checkpoint_spec.loader.exec_module(tts_checkpoint)
 structured_json_py = skill_dir / 'structured_json.py'
 structured_json_spec = importlib.util.spec_from_file_location('openclaw_structured_json', structured_json_py)
 if not structured_json_spec or not structured_json_spec.loader:
@@ -3254,11 +3259,40 @@ stats = {
 
 alignment_rows = []
 total_entries = len(entries)
-ai33_tts_workers = max(1, min(5, int(os.environ.get("AI33_TTS_WORKERS", "5") or "5")))
+ai33_tts_workers_limit = max(1, min(5, int(os.environ.get("AI33_TTS_WORKERS", "5") or "5")))
+ai33_tts_workers = min(ai33_tts_workers_limit, max(3, ai33_tts_workers_limit))
 prefetched_tts_results = {}
 if voice_name.lower().startswith("ai33") and ai33_tts_workers > 1 and entries:
     prefetch_dir = segments_dir / "_ai33_prefetch"
     prefetch_dir.mkdir(parents=True, exist_ok=True)
+    ai33_voice_id = resolve_ai33_voice_id(voice_name)
+    ai33_prefetch_settings_hash = hashlib.sha256(json.dumps({
+        'speed': 1.0, 'context_chaining': ai33_context_chaining,
+        'with_transcript': ai33_with_transcript, 'sample_rate': tts_master_sample_rate,
+        'channels': tts_master_channels, 'api_base': ai33_api_base,
+        'poll_interval': ai33_poll_interval, 'timeout_total': ai33_timeout_seconds,
+    }, sort_keys=True, separators=(',', ':')).encode('utf-8')).hexdigest()
+    ai33_prefetch_config = tts_checkpoint.CheckpointConfig(
+        source_fingerprint, ai33_voice_id,
+        {"settings_fingerprint": ai33_prefetch_settings_hash}, total_entries,
+        tts_master_sample_rate, tts_master_channels, 1, 1800000,
+    )
+    reusable_checkpoint_cues = set()
+    for entry_index, (_start_ms, _end_ms, _text) in enumerate(entries, 1):
+        identity = tts_checkpoint.CueIdentity(
+            entry_index - 1, hashlib.sha256(_text.encode("utf-8")).hexdigest(),
+            ai33_voice_id, ai33_prefetch_config.settings,
+        )
+        if tts_checkpoint.reusable_cue(ai33_checkpoint_path, ai33_prefetch_config, identity):
+            reusable_checkpoint_cues.add(entry_index)
+            _wav = prefetch_dir / f"{entry_index:04d}.wav"
+            tts_checkpoint.materialize_cue(ai33_checkpoint_path, ai33_prefetch_config, identity, _wav)
+            prefetched_tts_results[entry_index] = (
+                {"ok": True, "fallback_silence": False, "engine": "ai33",
+                 "ai33_failed": False, "attempts": 0, "ai33_voice": ai33_voice_id,
+                 "checkpoint_reused": True},
+                prefetch_dir / f"{entry_index:04d}.mp3", _wav,
+            )
 
     def prefetch_ai33(entry_index):
         _start_ms, _end_ms, _text = entries[entry_index - 1]
@@ -3270,14 +3304,39 @@ if voice_name.lower().startswith("ai33") and ai33_tts_workers > 1 and entries:
         )
         return _result, _mp3, _wav
 
-    print(f"AI33 TTS workers: {ai33_tts_workers}", flush=True)
-    with ThreadPoolExecutor(max_workers=ai33_tts_workers) as executor:
-        futures = {
-            entry_index: executor.submit(prefetch_ai33, entry_index)
-            for entry_index in range(1, total_entries + 1)
-        }
-        for entry_index in range(1, total_entries + 1):
-            prefetched_tts_results[entry_index] = futures[entry_index].result()
+    pending_entries = [
+        entry_index for entry_index in range(1, total_entries + 1)
+        if entry_index not in reusable_checkpoint_cues
+    ]
+    print(
+        f"AI33 TTS workers: {ai33_tts_workers}; checkpoint reuse: "
+        f"{len(reusable_checkpoint_cues)}/{total_entries}",
+        flush=True,
+    )
+    while pending_entries:
+        batch = pending_entries[:ai33_tts_workers]
+        del pending_entries[:len(batch)]
+        with ThreadPoolExecutor(max_workers=ai33_tts_workers) as executor:
+            futures = {
+                entry_index: executor.submit(prefetch_ai33, entry_index)
+                for entry_index in batch
+            }
+            batch_results = {
+                entry_index: futures[entry_index].result()
+                for entry_index in batch
+            }
+        prefetched_tts_results.update(batch_results)
+        transient_failure = any(
+            str((result[0] or {}).get("error_code") or "") in {
+                "AI33CreateRateLimited", "AI33PollingRateLimited",
+                "AI33Timeout", "AI33CreateTimeout", "AI33PollingTimeout",
+            }
+            for result in batch_results.values()
+        )
+        if transient_failure:
+            ai33_tts_workers = max(3, ai33_tts_workers - 1)
+        elif ai33_tts_workers < ai33_tts_workers_limit:
+            ai33_tts_workers += 1
 
 with concat_list.open('w', encoding='utf-8') as manifest:
     current_ms = 0
