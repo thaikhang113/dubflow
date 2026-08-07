@@ -612,8 +612,9 @@ def rounded_rect_ass_path(box, radius: int) -> str:
         f"b {x} {y + r - k} {x + r - k} {y} {x + r} {y}",
     ])
 
-def write_mask_ass(target: Path, width: int, height: int, mask_segments, args) -> int:
-    alpha = ass_alpha(args.mask_alpha)
+def write_mask_ass(target: Path, width: int, height: int, mask_segments, args, colour="black", opacity=None) -> int:
+    alpha = ass_alpha(args.mask_alpha if opacity is None else opacity)
+    colour_value = "FFFFFF" if str(colour).lower() == "white" else "000000"
     header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {width}
@@ -622,7 +623,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Mask,Arial,20,&H{alpha}000000,&H{alpha}000000,&H{alpha}000000,&H{alpha}000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
+Style: Mask,Arial,20,&H{alpha}{colour_value},&H{alpha}{colour_value},&H{alpha}{colour_value},&H{alpha}{colour_value},0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -635,7 +636,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         path = rounded_rect_ass_path(segment, radius)
         lines.append(
             f"Dialogue: 0,{ass_seconds(segment['start'])},{ass_seconds(segment['end'])},Mask,,0,0,0,,"
-            f"{{\\p1\\bord0\\shad0\\alpha&H{alpha}&\\1c&H000000&}}{path}{{\\p0}}"
+            f"{{\\p1\\bord0\\shad0\\alpha&H{alpha}&\\1c&H{colour_value}&}}{path}{{\\p0}}"
         )
     target.write_text(header + "\n".join(lines) + "\n", encoding="utf-8")
     return len(lines)
@@ -1227,15 +1228,18 @@ def load_or_build_source_track(input_video: Path, output_video: Path, width: int
         print(f"WARN: source subtitle detector lỗi trên input gốc {input_video}: {exc}; dùng fallback dynamic/cue masks.")
         return [], track_path, "error"
 
-def fallback_text_box(width: int, height: int, event_text: str, args):
-    fallback_h = max(28, int(height * args.fallback_mask_height_ratio))
-    safe_y = max(0, min(height - fallback_h, height - fallback_h - int(height * args.box_vertical_offset_ratio)))
+def fallback_text_box(width: int, height: int, event_text: str, args, band=None):
+    fallback_h = int((band or {}).get("h") or max(28, int(height * args.fallback_mask_height_ratio)))
+    safe_y = int((band or {}).get("y") or max(0, min(height - fallback_h, height - fallback_h - int(height * args.box_vertical_offset_ratio))))
     text_len = max(8, min(len(event_text), args.max_chars_per_line * max(1, args.max_lines)))
     estimated_w = int(width * 0.12 + text_len * max(5, int(height * args.font_size_ratio * 0.32)))
     min_w = int(width * args.dynamic_mask_min_width_ratio)
     max_w = int(width * args.fallback_mask_max_width_ratio)
+    if band:
+        max_w = min(max_w, int(band.get("w") or max_w))
     box_w = clamp_int(estimated_w, min_w, max_w)
-    box_x = max(0, (width - box_w) // 2)
+    center_x = int((band or {}).get("x", 0)) + int((band or {}).get("w", width)) // 2
+    box_x = clamp_int(center_x - box_w // 2, int((band or {}).get("x", 0)), max(0, int((band or {}).get("x", 0)) + int((band or {}).get("w", width)) - box_w))
     return {"x": box_x, "y": safe_y, "w": box_w, "h": fallback_h, "source": "fallback"}
 
 def detect_dynamic_masks(input_video: Path, events, width: int, height: int, args):
@@ -1263,7 +1267,7 @@ def detect_dynamic_masks(input_video: Path, events, width: int, height: int, arg
             masks.append(box)
     return masks
 
-def build_event_masks(input_video: Path, events, width: int, height: int, args):
+def build_event_masks(input_video: Path, events, width: int, height: int, args, band=None):
     dynamic_by_index = {box["event_index"]: box for box in detect_dynamic_masks(input_video, events, width, height, args)}
     masks = []
     for index, event in enumerate(events, 1):
@@ -1273,7 +1277,7 @@ def build_event_masks(input_video: Path, events, width: int, height: int, args):
             continue
         box = dynamic_by_index.get(index)
         if box is None:
-            box = fallback_text_box(width, height, event.get("text", ""), args)
+            box = fallback_text_box(width, height, event.get("text", ""), args, band=band)
             box.update({"start": start, "end": end, "event_index": index})
         masks.append(box)
     return masks
@@ -1290,7 +1294,7 @@ def best_source_for_event(start: float, end: float, source_segments, args):
             best_overlap = overlap
     return best, best_overlap
 
-def build_source_event_and_mask_segments(input_video: Path, events, width: int, height: int, args, source_segments):
+def build_source_event_and_mask_segments(input_video: Path, events, width: int, height: int, args, source_segments, band=None):
     mask_segments = []
     event_masks = []
     used_source_indexes = set()
@@ -1308,7 +1312,7 @@ def build_source_event_and_mask_segments(input_video: Path, events, width: int, 
                 "source_method": segment.get("method", "cv"),
             })
             mask_segments.append(box)
-    fallback_masks = build_event_masks(input_video, events, width, height, args) if enabled(args.dynamic_mask) else []
+    fallback_masks = build_event_masks(input_video, events, width, height, args, band=band) if enabled(args.dynamic_mask) else []
     fallback_by_index = {box.get("event_index"): box for box in fallback_masks}
     for event_index, event in enumerate(events, 1):
         start, end = event_time(event)
@@ -1333,7 +1337,7 @@ def build_source_event_and_mask_segments(input_video: Path, events, width: int, 
             continue
         box = fallback_by_index.get(event_index)
         if box is None:
-            box = fallback_text_box(width, height, event.get("text", ""), args)
+            box = fallback_text_box(width, height, event.get("text", ""), args, band=band)
             box.update({"start": start, "end": end, "event_index": event_index})
         box["source_time_overlap"] = 0.0
         event_masks.append(box)
@@ -1733,8 +1737,8 @@ def subtitle_band_fallback(width: int, height: int, args, reason: str, duration:
     }
 
 
-SUBTITLE_REGION_SCHEMA_VERSION = 1
-SUBTITLE_REGION_DETECTOR_VERSION = "stable-cluster-v2"
+SUBTITLE_REGION_SCHEMA_VERSION = 2
+SUBTITLE_REGION_DETECTOR_VERSION = "stable-cluster-v3"
 
 
 def source_fingerprint(video: Path) -> str:
@@ -2020,6 +2024,26 @@ def build_blur_band_filter(ass_filter: str, band, args) -> str:
     filters.append(f"[{input_label}]{ass_filter}[vout]")
     return ";".join(filters)
 
+def build_localized_blur_filter(ass_filter: str, mask_filter: str, args) -> str:
+    blur = max(1, int(args.band_blur))
+    chroma_blur = max(1, blur // 2)
+    tint_opacity = max(0.0, min(1.0, float(args.band_tint_opacity)))
+    filters = [
+        "[0:v]split=3[base][blur_src][mask_src]",
+        f"[blur_src]boxblur=luma_radius={blur}:luma_power=1:chroma_radius={chroma_blur}:chroma_power=1[blurred]",
+    ]
+    if tint_opacity > 0:
+        filters.append(f"[blurred]drawbox=color=black@{tint_opacity:.3f}:t=fill[blurred_tint]")
+        blur_label = "blurred_tint"
+    else:
+        blur_label = "blurred"
+    filters.extend([
+        f"[mask_src]lutrgb=r=0:g=0:b=0,{mask_filter},format=gray[mask]",
+        f"[base][{blur_label}][mask]maskedmerge[localized]",
+        f"[localized]{ass_filter}[vout]",
+    ])
+    return ";".join(filters)
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -2085,7 +2109,7 @@ def main():
     parser.add_argument("--mask-rounded", default=os.environ.get("SUBTITLE_MASK_ROUNDED", "1"))
     parser.add_argument("--mask-radius", type=int, default=env_int("SUBTITLE_MASK_RADIUS", 18))
     parser.add_argument("--mask-alpha", type=float, default=env_float("SUBTITLE_MASK_ALPHA", env_float("SUBTITLE_MASK_OPACITY", 0.82)))
-    parser.add_argument("--mask-style", choices=("blur_band", "legacy_box", "none"), default=os.environ.get("SUBTITLE_MASK_STYLE", "blur_band"))
+    parser.add_argument("--mask-style", choices=("localized_blur", "blur_band", "legacy_box", "none"), default=os.environ.get("SUBTITLE_MASK_STYLE", "localized_blur"))
     parser.add_argument("--band-sample-count", type=int, default=env_int("SUBTITLE_BAND_SAMPLE_COUNT", 24))
     parser.add_argument("--band-region-top-ratio", type=float, default=env_float("SUBTITLE_BAND_REGION_TOP_RATIO", 0.55))
     parser.add_argument("--band-region-bottom-ratio", type=float, default=env_float("SUBTITLE_BAND_REGION_BOTTOM_RATIO", 0.98))
@@ -2222,6 +2246,90 @@ def main():
         if status == "fail" and args.vi_layout_gate == "fail":
             return 8
         return 0
+
+    if args.mask_style == "localized_blur" and mask_enabled:
+        band = load_subtitle_region(region_path, input_video, width, height)
+        if band is None:
+            if args.subtitle_region:
+                raise SystemExit(f"subtitle region artifact missing, stale, or invalid: {region_path}")
+            band = detect_stable_subtitle_band(input_video, width, height, args)
+            write_subtitle_region(region_path, input_video, width, height, args, band)
+        source_segments, source_track_path, source_track_status = load_or_build_source_track(
+            input_video, output_video, width, height, args
+        )
+        if source_segments:
+            event_masks, mask_segments = build_source_event_and_mask_segments(
+                input_video, events, width, height, args, source_segments, band=band
+            )
+        else:
+            event_masks = build_event_masks(input_video, events, width, height, args, band=band)
+            mask_segments = list(event_masks)
+        mask_count = write_mask_ass(mask_ass, width, height, mask_segments, args, colour="white", opacity=1.0)
+        mask_by_index = {box.get("event_index"): box for box in event_masks}
+        layouts = []
+        for idx, event in enumerate(events, 1):
+            start, end = event_time(event)
+            cue_box = mask_by_index.get(idx) or fallback_text_box(width, height, event.get("text", ""), args, band=band)
+            fit = fit_vi_subtitle_text(event.get("text", ""), cue_box, width, height, font_path, fit_options)
+            cx, cy, use_pos = compute_cue_pos(cue_box, len(fit.get("lines", [])), height, fit_options.get("vertical_offset_ratio", 0.0))
+            layouts.append({
+                "start_raw": event["start_raw"], "end_raw": event["end_raw"],
+                "start": round(start, 3), "end": round(end, 3), "text": event.get("text", ""),
+                "lines": fit["lines"], "line_count": len(fit["lines"]),
+                "font_size": fit["font_size"], "text_width": fit["text_width"],
+                "text_height": fit["text_height"], "fill_ratio": fit["fill_ratio"],
+                "fit_status": fit["status"], "fit_reason": fit["reason"],
+                "pos_x": cx, "pos_y": cy, "use_pos": use_pos, "band_box": cue_box,
+            })
+        median_fill, small_cue_ratio = write_layout_report(
+            layout_report_path, layouts, None, width, height, args, fit_options["min_size"]
+        )
+        subtitle_count = write_fitted_srt(srt, wrapped_srt, layouts=layouts)
+        write_fitted_ass(
+            srt, wrapped_ass, width=width, height=height, font_name=font_name,
+            default_font_size=font_size, outline=args.outline, box_mode="none",
+            box_opacity=args.box_opacity, box_margin_x=max(1, args.box_margin_x),
+            box_margin_y=max(0, args.box_margin_y), margin_v=margin_v,
+            text_color=args.text_color, layouts=layouts,
+        )
+        ass_filter = ass_filter_string(ass_escape_path(wrapped_ass.resolve()), fontsdir)
+        mask_filter = f"ass='{ass_escape_path(mask_ass.resolve())}'"
+        filter_complex = build_localized_blur_filter(ass_filter, mask_filter, args)
+        run_render([
+            "ffmpeg", "-y", "-i", str(input_video),
+            "-filter_complex", filter_complex,
+            "-map", "[vout]", "-map", "0:a?",
+            "-c:v", "libx264", "-preset", os.environ.get("SUBTITLE_RENDER_PRESET", "veryfast"),
+            "-crf", os.environ.get("SUBTITLE_RENDER_CRF", "20"),
+            "-c:a", "copy", str(output_video),
+        ], "localized_blur")
+        source_count = sum(1 for box in event_masks if str(box.get("source", "")).startswith("source_track"))
+        dynamic_count = sum(1 for box in event_masks if box.get("source") == "dynamic")
+        fallback_count = sum(1 for box in event_masks if box.get("source") == "fallback")
+        fallback_ratio = fallback_count / max(1, len(event_masks))
+        mask_report_path = output_video.with_suffix(".subtitle_mask_report.json")
+        mask_report_path.write_text(json.dumps({
+            "status": "warning" if fallback_ratio > 0.25 else "ok",
+            "mask_style": "localized_blur",
+            "event_count": len(event_masks),
+            "mask_segment_count": mask_count,
+            "source_track_events": source_count,
+            "dynamic_events": dynamic_count,
+            "fallback_events": fallback_count,
+            "fallback_ratio": round(fallback_ratio, 4),
+            "source_track_status": source_track_status,
+            "source_track_path": str(source_track_path),
+        }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        gate_rc = emit_gate(median_fill, small_cue_ratio, layouts, ass_path=wrapped_ass)
+        print(
+            "subtitle_render_ok "
+            f"output={output_video} mask_style=localized_blur source={source_count} "
+            f"dynamic={dynamic_count} fallback={fallback_count} fallback_ratio={fallback_ratio:.3f} "
+            f"mask_report={mask_report_path} subtitle_count={subtitle_count}"
+        )
+        if gate_rc:
+            raise SystemExit(gate_rc)
+        return
 
     if args.mask_style == "blur_band" and mask_enabled:
         # Pipeline callers pass a fingerprinted artifact.  The old direct CLI remains

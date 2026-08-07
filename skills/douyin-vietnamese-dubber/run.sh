@@ -157,7 +157,7 @@ ENABLE_FINAL_LOUDNESS_NORMALIZATION="${ENABLE_FINAL_LOUDNESS_NORMALIZATION:-1}"
 VOICE_VOLUME="${VOICE_VOLUME:-1.25}"
 BURN_VIET_SUBTITLE="${BURN_VIET_SUBTITLE:-1}"
 MASK_ORIGINAL_SUBTITLE="${MASK_ORIGINAL_SUBTITLE:-1}"
-SUBTITLE_MASK_STYLE="${SUBTITLE_MASK_STYLE:-blur_band}"
+SUBTITLE_MASK_STYLE="${SUBTITLE_MASK_STYLE:-localized_blur}"
 SUBTITLE_BAND_SAMPLE_COUNT="${SUBTITLE_BAND_SAMPLE_COUNT:-24}"
 SUBTITLE_BAND_REGION_TOP_RATIO="${SUBTITLE_BAND_REGION_TOP_RATIO:-0.55}"
 SUBTITLE_BAND_REGION_BOTTOM_RATIO="${SUBTITLE_BAND_REGION_BOTTOM_RATIO:-0.98}"
@@ -275,11 +275,13 @@ MUSIC_BED_VOLUME="${MUSIC_BED_VOLUME:-$DEFAULT_MUSIC_BED_VOLUME}"
 ENABLE_BGM_DUCKING="${ENABLE_BGM_DUCKING:-1}"
 BGM_DUCK_AMOUNT="${BGM_DUCK_AMOUNT:-2.0}"
 BGM_MODE="${BGM_MODE:-auto}"
-BGM_MODE_FALLBACK="${BGM_MODE_FALLBACK:-duck}"
+BGM_MODE_FALLBACK="${BGM_MODE_FALLBACK:-none}"
 ASR_SPLIT_LONG_SEGMENTS="${ASR_SPLIT_LONG_SEGMENTS:-1}"
 ASR_SPLIT_MAX_SECONDS="${ASR_SPLIT_MAX_SECONDS:-10}"
 ASR_SPLIT_MAX_CHARS="${ASR_SPLIT_MAX_CHARS:-120}"
 AI33_TTS_WORKERS="${AI33_TTS_WORKERS:-3}"
+TTS_VOICE_QA_ENABLED="${TTS_VOICE_QA_ENABLED:-1}"
+TTS_VOICE_QA_RETRY_MAX="${TTS_VOICE_QA_RETRY_MAX:-1}"
 
 resolve_voice() {
   local preset="${1:-}"
@@ -390,6 +392,7 @@ AI33_API_KEY=${AI33_API_KEY:?Set AI33_API_KEY in the environment}
 AI33_TTS_SPEED="${AI33_TTS_SPEED:-1.0}"
 AI33_WITH_TRANSCRIPT="${AI33_WITH_TRANSCRIPT:-false}"
 AI33_CONTEXT_CHAINING="${AI33_CONTEXT_CHAINING:-false}"
+AI33_PRONUNCIATION_DICTIONARY_ID="${AI33_PRONUNCIATION_DICTIONARY_ID:-}"
 AI33_POLL_INTERVAL_SECONDS="${AI33_POLL_INTERVAL_SECONDS:-2}"
 AI33_TIMEOUT_SECONDS="${AI33_TIMEOUT_SECONDS:-180}"
 AI33_CIRCUIT_BREAKER_FAILURES="${AI33_CIRCUIT_BREAKER_FAILURES:-2}"
@@ -411,6 +414,7 @@ OCR_TRANSCRIPT_SCRIPT="${OCR_TRANSCRIPT_SCRIPT:-$SKILL_DIR/ocr_subtitle_transcri
 TRANSCRIPT_DECISION_SCRIPT="${TRANSCRIPT_DECISION_SCRIPT:-$SKILL_DIR/choose_transcript_source.py}"
 ORGANIZE_OUTPUT_SCRIPT="${ORGANIZE_OUTPUT_SCRIPT:-$SKILL_DIR/organize_output.py}"
 SUBTITLE_MASK_RENDER_SCRIPT="${SUBTITLE_MASK_RENDER_SCRIPT:-$SKILL_DIR/subtitle_mask_render.py}"
+TTS_VOICE_QUALITY_SCRIPT="${TTS_VOICE_QUALITY_SCRIPT:-$SKILL_DIR/tts_voice_quality.py}"
 SUBTITLE_MASK_RENDER_PYTHON="${SUBTITLE_MASK_RENDER_PYTHON:-/home/haonguyen/.venvs/openclaw-paddleocr/bin/python}"
 if [[ ! -x "$SUBTITLE_MASK_RENDER_PYTHON" ]]; then
   SUBTITLE_MASK_RENDER_PYTHON="$(command -v python3)"
@@ -1377,17 +1381,30 @@ PY
 
 select_bgm_source() {
   local mode="$(printf '%s' "${BGM_MODE:-auto}" | tr '[:upper:]' '[:lower:]')"
-  local fallback="$(printf '%s' "${BGM_MODE_FALLBACK:-duck}" | tr '[:upper:]' '[:lower:]')"
   SELECTED_BGM_MODE="$mode"; SELECTED_BGM_SOURCE=""
   case "$mode" in
     auto|demucs)
-      if [[ -s "$NO_VOCALS_WAV" ]]; then SELECTED_BGM_SOURCE="$NO_VOCALS_WAV"; SELECTED_BGM_MODE="demucs";
-      elif [[ "$mode" == "demucs" && "$fallback" == "none" ]]; then SELECTED_BGM_MODE="none";
-      else SELECTED_BGM_MODE="duck"; SELECTED_BGM_SOURCE="$VIDEO"; fi ;;
+      if background_separation_ready; then
+        SELECTED_BGM_SOURCE="$NO_VOCALS_WAV"; SELECTED_BGM_MODE="demucs"
+      else
+        SELECTED_BGM_MODE="error"
+      fi ;;
     duck) SELECTED_BGM_MODE="duck"; SELECTED_BGM_SOURCE="$VIDEO" ;;
     none|off|tat|tắt) SELECTED_BGM_MODE="none" ;;
     *) echo "WARN: BGM_MODE=$BGM_MODE không hợp lệ; dùng auto."; BGM_MODE="auto"; select_bgm_source ;;
   esac
+}
+
+background_separation_ready() {
+  [[ -s "$NO_VOCALS_WAV" && -s "$SPEECH_PREPROCESS_REPORT_JSON" ]] || return 1
+  python3 - "$SPEECH_PREPROCESS_REPORT_JSON" <<'PY'
+import json, sys
+try:
+    data = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    raise SystemExit(1)
+raise SystemExit(0 if data.get("demucs", {}).get("used") is True else 1)
+PY
 }
 
 write_fit_adjustments_report() {
@@ -1466,6 +1483,8 @@ generate_vietnamese_voice() {
   AI33_MAI_PHUONG_VOICE_ID="$AI33_MAI_PHUONG_VOICE_ID" AI33_PHANH_VOICE_ID="$AI33_PHANH_VOICE_ID" AI33_DEFAULT_VOICE_ID="$AI33_DEFAULT_VOICE_ID" \
   VOICE_REGISTRY_PY="$VOICE_REGISTRY_PY" VOICE_SOURCE_HINT="$VOICE_SOURCE_HINT" OPENCLAW_VOICE_REGISTRY_JSON="${OPENCLAW_VOICE_REGISTRY_JSON:-}" \
   AI33_TTS_SPEED="$AI33_TTS_SPEED" AI33_WITH_TRANSCRIPT="$AI33_WITH_TRANSCRIPT" \
+  AI33_PRONUNCIATION_DICTIONARY_ID="$AI33_PRONUNCIATION_DICTIONARY_ID" \
+  TTS_FORCE_CUE_IDS="${TTS_FORCE_CUE_IDS:-}" TTS_SPOKEN_TEXT_OVERRIDES_JSON="${TTS_SPOKEN_TEXT_OVERRIDES_JSON:-}" \
   TTS_MASTER_SAMPLE_RATE="$TTS_MASTER_SAMPLE_RATE" TTS_MASTER_CHANNELS="$TTS_MASTER_CHANNELS" \
   TTS_AUDIO_STAGE_REPORT_JSON="$tts_audio_stage_report_json" \
   AI33_MAX_SPEED="$AI33_MAX_SPEED" POST_ATEMPO_MAX="$POST_ATEMPO_MAX" \
@@ -1936,6 +1955,7 @@ except Exception:
     ai33_max_speed = max(ai33_tts_speed, 1.12)
 ai33_with_transcript = (os.environ.get('AI33_WITH_TRANSCRIPT', 'false') or 'false').lower()
 ai33_context_chaining = (os.environ.get('AI33_CONTEXT_CHAINING', 'false') or 'false').lower()
+ai33_pronunciation_dictionary_id = (os.environ.get('AI33_PRONUNCIATION_DICTIONARY_ID', '') or '').strip()
 ai33_poll_interval = max(1.0, float(os.environ.get('AI33_POLL_INTERVAL_SECONDS', '2')))
 ai33_timeout_seconds = max(30, int(os.environ.get('AI33_TIMEOUT_SECONDS', '180')))
 ai33_debug_dir = root / 'ai33_tts_debug'
@@ -2079,6 +2099,7 @@ def synthesize_ai33_tts(mp3_path: Path, wav_path: Path, text: str, voice_spec: s
         'with_transcript': ai33_with_transcript, 'sample_rate': tts_master_sample_rate,
         'channels': tts_master_channels, 'api_base': ai33_api_base,
         'poll_interval': ai33_poll_interval, 'timeout_total': ai33_timeout_seconds,
+        'pronunciation_dictionary_id': ai33_pronunciation_dictionary_id,
     }, sort_keys=True, separators=(',', ':')).encode('utf-8')).hexdigest()
     if not text:
         return {"ok": False, "fallback_silence": False, "engine": "ai33", "ai33_failed": True, "error_code": "AI33InputEmpty", "attempts": 0}
@@ -2110,6 +2131,10 @@ def synthesize_ai33_tts(mp3_path: Path, wav_path: Path, text: str, voice_spec: s
         '--source-fingerprint', source_fingerprint,
         '--settings-fingerprint', cue_settings_fingerprint,
     ]
+    if ai33_pronunciation_dictionary_id:
+        cmd.extend(['--pronunciation-dictionary-id', ai33_pronunciation_dictionary_id])
+    if cue_index in forced_cue_ids:
+        cmd.append('--force-regenerate')
     proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if proc.returncode == 0 and wav_path.exists() and wav_path.stat().st_size > 256:
         try:
@@ -2836,6 +2861,23 @@ if not entries:
         raise SystemExit(0)
     raise SystemExit('TTS source SRT không có dòng thoại và chưa biết VIDEO_DURATION để tạo silence fallback')
 
+forced_cue_ids = {
+    int(value) for value in (os.environ.get('TTS_FORCE_CUE_IDS', '') or '').split(',')
+    if value.strip().isdigit() and int(value) > 0
+}
+spoken_text_overrides = {}
+spoken_text_overrides_raw = (os.environ.get('TTS_SPOKEN_TEXT_OVERRIDES_JSON', '') or '').strip()
+if spoken_text_overrides_raw:
+    spoken_text_overrides_path = Path(spoken_text_overrides_raw)
+    try:
+        spoken_text_overrides = json.loads(spoken_text_overrides_path.read_text(encoding='utf-8'))
+    except Exception as exc:
+        raise RuntimeError(f"TTSVoiceQaOverridesInvalid: {exc}") from exc
+entries = [
+    (start_ms, end_ms, str(spoken_text_overrides.get(str(source_cue_id)) or text).strip(), source_cue_id)
+    for start_ms, end_ms, text, source_cue_id in entries
+]
+
 # Global identity changes conservatively for timing/topology changes. Text stays
 # per-cue so editing cue 50 does not discard 121 valid AI33 checkpoint WAVs.
 source_fingerprint = hashlib.sha256(json.dumps(
@@ -3270,6 +3312,7 @@ if voice_name.lower().startswith("ai33") and ai33_tts_workers > 1 and entries:
         'with_transcript': ai33_with_transcript, 'sample_rate': tts_master_sample_rate,
         'channels': tts_master_channels, 'api_base': ai33_api_base,
         'poll_interval': ai33_poll_interval, 'timeout_total': ai33_timeout_seconds,
+        'pronunciation_dictionary_id': ai33_pronunciation_dictionary_id,
     }, sort_keys=True, separators=(',', ':')).encode('utf-8')).hexdigest()
     ai33_prefetch_config = tts_checkpoint.CheckpointConfig(
         source_fingerprint, ai33_voice_id,
@@ -3278,6 +3321,8 @@ if voice_name.lower().startswith("ai33") and ai33_tts_workers > 1 and entries:
     )
     reusable_checkpoint_cues = set()
     for entry_index, (_start_ms, _end_ms, _text) in enumerate(entries, 1):
+        if entry_index in forced_cue_ids:
+            continue
         identity = tts_checkpoint.CueIdentity(
             entry_index - 1, hashlib.sha256(_text.encode("utf-8")).hexdigest(),
             ai33_voice_id, ai33_prefetch_config.settings,
@@ -3902,6 +3947,20 @@ with speed_report_path.open('w', encoding='utf-8') as f:
 PY
 }
 
+run_tts_voice_qa() {
+  local cue_ids="${1:-}"
+  local qa_base="$TMP_DIR/tts_voice_qa"
+  local qa_srt="${qa_base}.srt"
+  rm -f "$qa_srt"
+  "$WHISPER_BIN" -m "$WHISPER_MODEL" -f "$VIETNAMESE_VOICE_WAV" -l vi -osrt -of "$qa_base"
+  [[ -s "$qa_srt" ]] || return 9
+  if [[ -n "$cue_ids" ]]; then
+    python3 "$TTS_VOICE_QUALITY_SCRIPT" compare --expected-srt "$TTS_SOURCE_SRT" --observed-srt "$qa_srt" --report "$TTS_VOICE_QUALITY_REPORT_JSON" --cue-ids "$cue_ids"
+  else
+    python3 "$TTS_VOICE_QUALITY_SCRIPT" compare --expected-srt "$TTS_SOURCE_SRT" --observed-srt "$qa_srt" --report "$TTS_VOICE_QUALITY_REPORT_JSON"
+  fi
+}
+
 srt_has_spoken_text() {
   local srt_path="$1"
   python3 - "$srt_path" <<'PY'
@@ -4026,6 +4085,8 @@ TMP_DIR="$OUT_DIR/temp"
 TTS_STATS_JSON="$TMP_DIR/tts_stats.json"
 TTS_ALIGNMENT_REPORT_JSON="$TMP_DIR/tts_alignment_report.json"
 SPEED_REPORT_CSV="$TMP_DIR/speed_report.csv"
+TTS_TEXT_QUALITY_REPORT_JSON="$OUT_DIR/tts_text_quality_report.json"
+TTS_VOICE_QUALITY_REPORT_JSON="$OUT_DIR/tts_voice_quality_report.json"
 mkdir -p "$TMP_DIR"
 
 echo "Bắt đầu douyin-vietnamese-dubber"
@@ -4049,7 +4110,7 @@ echo "Optimizer timeout: ${OPTIMIZER_TIMEOUT_SECONDS:-1800}s"
 echo "Speech-only preprocess: ${SPEECH_ONLY_PREPROCESS_ENABLED:-1}"
 echo "Speech-only config: subtitle_mode=${SUBTITLE_MODE:-dialogue_only}, ignore_background_music=${IGNORE_BACKGROUND_MUSIC:-true}, ignore_song_lyrics=${IGNORE_SONG_LYRICS:-true}, keep_original_music_bed=${KEEP_ORIGINAL_MUSIC_BED:-true}"
 echo "Music bed: volume=${MUSIC_BED_VOLUME}; ducking=${ENABLE_BGM_DUCKING} amount=${BGM_DUCK_AMOUNT}; voice_volume=${VOICE_VOLUME}; tts_master=${TTS_MASTER_SAMPLE_RATE}Hz/${TTS_MASTER_CHANNELS}ch; final_audio=${FINAL_AUDIO_SAMPLE_RATE}Hz/${FINAL_AUDIO_CHANNELS}ch/${FINAL_AUDIO_BITRATE}; loudness=${FINAL_LOUDNESS_TARGET}LUFS TP=${FINAL_TRUE_PEAK_LIMIT}dBFS; slow_fit=${ALLOW_SLOW_FIT} (${POST_ATEMPO_MIN}..0.99 opt-in); allow_final_trim=${ALLOW_FINAL_TRIM}; retime=${ALLOW_VIDEO_RETIME}/${ALLOW_FREEZE_FRAME}/safe=${LOCAL_RETIME_SCENE_SAFE} max_freeze=${MAX_FREEZE_PER_SEGMENT_MS}/${MAX_FREEZE_PER_SCENE_MS}ms"
-echo "BGM mode: ${BGM_MODE:-auto} fallback=${BGM_MODE_FALLBACK:-duck}"
+echo "BGM mode: ${BGM_MODE:-auto} fallback=${BGM_MODE_FALLBACK:-none}"
 echo "ASR split long segments: ${ASR_SPLIT_LONG_SEGMENTS:-1} max_seconds=${ASR_SPLIT_MAX_SECONDS:-10} max_chars=${ASR_SPLIT_MAX_CHARS:-120}"
 echo "Thời gian bắt đầu: $(date '+%F %T')"
 
@@ -4132,6 +4193,14 @@ fi
 fi
 [[ -s "$AUDIO" ]] || fail "Không tạo được audio.wav"
 [[ -s "$WHISPER_AUDIO" ]] || fail "Không tạo được audio ASR cho Whisper"
+case "$(printf '%s' "${BGM_MODE:-auto}" | tr '[:upper:]' '[:lower:]')" in
+  auto|demucs)
+    if [[ "${KEEP_ORIGINAL_MUSIC_BED:-true}" != "false" ]] && ! background_separation_ready; then
+      status_update "needs_attention" "30" "Không tách được nhạc nền sạch" "0" "BackgroundSeparationFailed" "Demucs không tạo được no_vocals.wav hợp lệ; cài/bật Demucs hoặc đặt BGM_MODE=none. Không dùng audio gốc vì sẽ giữ giọng Trung."
+      fail "BackgroundSeparationFailed: Demucs không tạo được no_vocals.wav hợp lệ; dừng trước ASR/TTS để tránh video cuối còn giọng Trung."
+    fi
+    ;;
+esac
 status_update "preprocess" "30" "Tiền xử lý audio xong" "0"
 
 if [[ -s "$ORIGINAL_ASR_SRT" && -s "$ORIGINAL_ASR_RAW_SRT" ]]; then
@@ -4709,6 +4778,15 @@ if ! srt_looks_vietnamese "$TTS_SOURCE_SRT" "$ORIGINAL_SRT"; then
   status_update "needs_attention" "58" "SRT nguồn TTS lỗi ngôn ngữ, cần dán bản dịch thủ công" "0" "TranslateNotVietnamese" "TTS_SOURCE_SRT chứa CJK/rỗng/trùng source; job đã dừng trước generate_vietnamese_voice."
   fail "SRT nguồn TTS không hợp lệ cho giọng Việt. Dán transcript_vi.json thủ công rồi resume."
 fi
+set +e
+python3 "$TTS_VOICE_QUALITY_SCRIPT" text-gate --srt "$TTS_SOURCE_SRT" --report "$TTS_TEXT_QUALITY_REPORT_JSON"
+tts_text_quality_status=$?
+set -e
+if [[ "$tts_text_quality_status" -ne 0 ]]; then
+  create_translate_pending "pre-TTS text quality gate phát hiện câu lỗi; xem tts_text_quality_report.json"
+  status_update "needs_attention" "58" "Văn bản tiếng Việt chưa đạt chất lượng đọc" "0" "VietnameseTextQualityFailed" "Phát hiện CJK, encoding lỗi, câu rỗng hoặc âm tiết lặp; xem tts_text_quality_report.json."
+  fail "Văn bản nguồn TTS không đạt quality gate; dừng trước khi gọi TTS."
+fi
 status_update "optimizer" "65" "Dịch/tối ưu timing xong" "0"
 
 # Dub timing quality gate: dub.srt phải bám từng cue, không có cue TTS quá dài.
@@ -4908,6 +4986,63 @@ PY
   exit "$tts_synth_status"
 fi
 [[ -s "$VIETNAMESE_VOICE_WAV" ]] || fail "Không tạo được vietnamese_voice.wav"
+
+tts_qa_status=0
+if [[ "$TTS_VOICE_QA_ENABLED" == "1" ]]; then
+  echo "Đang kiểm tra phát âm TTS bằng Whisper..."
+  status_update "tts_qa" "76" "Đang kiểm tra phát âm giọng Việt" "0"
+  set +e
+  run_tts_voice_qa
+  tts_qa_status=$?
+  set -e
+  if [[ "$tts_qa_status" -eq 8 ]]; then
+    tts_qa_failed_cues="$(python3 - "$TTS_VOICE_QUALITY_REPORT_JSON" <<'PY'
+import json, sys
+try:
+    data = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    data = {}
+print(",".join(str(value) for value in data.get("critical_cue_ids") or []))
+PY
+)"
+    set +e
+    python3 - "$TTS_STATS_JSON" >/dev/null <<'PY'
+import json, sys
+try:
+    data = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    data = {}
+raise SystemExit(0 if int(data.get("ai33_segments") or 0) > 0 else 1)
+PY
+    tts_qa_ai33=$?
+    set -e
+    if [[ -n "$tts_qa_failed_cues" && "$tts_qa_ai33" -eq 0 && "$TTS_VOICE_QA_RETRY_MAX" -ge 1 ]]; then
+      tts_qa_overrides="$TMP_DIR/tts_spoken_text_overrides.json"
+      python3 "$TTS_VOICE_QUALITY_SCRIPT" retry-overrides --report "$TTS_VOICE_QUALITY_REPORT_JSON" --output "$tts_qa_overrides"
+      echo "Retry AI33 cho cue phát âm lỗi: $tts_qa_failed_cues"
+      set +e
+      TTS_FORCE_CUE_IDS="$tts_qa_failed_cues" \
+      TTS_SPOKEN_TEXT_OVERRIDES_JSON="$tts_qa_overrides" \
+      run_with_status_heartbeat_guarded "tts_qa_retry" "77" "Đang tạo lại cue phát âm lỗi" "$tts_total_timeout" "${OPENCLAW_LONG_STEP_HEARTBEAT_SECONDS:-30}" \
+        generate_vietnamese_voice "$TTS_SOURCE_SRT" "$VIETNAMESE_VOICE_WAV" "$VOICE" "$TMP_DIR" "$VIDEO_DURATION"
+      tts_qa_retry_status=$?
+      set -e
+      cp "$TTS_STATS_JSON" "$OUT_DIR/tts_stats.json" 2>/dev/null || true
+      if [[ "$tts_qa_retry_status" -ne 0 ]]; then
+        status_update "needs_attention" "77" "Tạo lại cue phát âm lỗi thất bại" "0" "TTSPronunciationRetryFailed" "AI33 retry cue=$tts_qa_failed_cues exit=$tts_qa_retry_status; checkpoint cue đạt vẫn được giữ."
+        exit "$tts_qa_retry_status"
+      fi
+      set +e
+      run_tts_voice_qa "$tts_qa_failed_cues"
+      tts_qa_status=$?
+      set -e
+    fi
+  fi
+  if [[ "$tts_qa_status" -ne 0 ]]; then
+    status_update "needs_attention" "78" "Giọng Việt không đạt kiểm tra phát âm" "0" "TTSPronunciationQualityFailed" "Whisper QA exit=$tts_qa_status; xem tts_voice_quality_report.json. Pipeline dừng trước render."
+    exit 8
+  fi
+fi
 status_update "tts" "78" "Tạo giọng Việt xong" "0"
 
 VOICE_DURATION_RAW="$(ffprobe -v error -show_entries format=duration -of default=nk=1:nw=1 "$VIETNAMESE_VOICE_WAV" | tr -d '\r')"
@@ -5652,6 +5787,10 @@ echo "Mux-ready Vietnamese voice duration: ${MUX_VOICE_DURATION}s (${TTS_MASTER_
 echo "Đang ghép audio tiếng Việt vào video..."
 status_update "mux" "80" "Đang ghép audio/video" "0"
 select_bgm_source
+if [[ "$SELECTED_BGM_MODE" == "error" ]]; then
+  status_update "needs_attention" "80" "Không có nhạc nền đã tách giọng" "0" "BackgroundSeparationFailed" "BGM_MODE=$BGM_MODE yêu cầu no_vocals.wav từ Demucs; không fallback sang audio gốc để tránh giữ giọng Trung."
+  fail "BackgroundSeparationFailed: thiếu no_vocals.wav hợp lệ cho final mix."
+fi
 if [[ "${KEEP_ORIGINAL_MUSIC_BED:-true}" != "false" && "$SELECTED_BGM_MODE" == "demucs" && -s "$SELECTED_BGM_SOURCE" ]]; then
   FINAL_MIX_FILTER="$(python3 "$SKILL_DIR/final_mix_quality.py" --ffmpeg-filter --voice-input 1:a --bed-input 2:a --voice-volume "$VOICE_VOLUME" --music-volume "$MUSIC_BED_VOLUME" --ducking "$ENABLE_BGM_DUCKING" --duck-amount "$BGM_DUCK_AMOUNT" --sample-rate "$FINAL_AUDIO_SAMPLE_RATE" --loudness-target "$FINAL_LOUDNESS_TARGET" --true-peak-limit "$FINAL_TRUE_PEAK_LIMIT" --enable-loudness "$ENABLE_FINAL_LOUDNESS_NORMALIZATION")"
   echo "BGM_MODE=demucs: stereo bed + centered voice; ducking=${ENABLE_BGM_DUCKING} amount=${BGM_DUCK_AMOUNT}; $SELECTED_BGM_SOURCE volume=${MUSIC_BED_VOLUME}"
@@ -5674,8 +5813,8 @@ write_fit_adjustments_report
 
 render_policy="${SUBTITLE_RENDER_FAILURE_POLICY:-fail}"
 if [[ "${BURN_VIET_SUBTITLE:-1}" != "0" && -x "$SUBTITLE_MASK_RENDER_SCRIPT" && -s "$VIETNAMESE_SRT" ]]; then
-  echo "Đang detect vị trí sub gốc + render blur band và chèn phụ đề Việt vào video final..."
-  status_update "subtitle_render" "84" "Đang detect vị trí sub gốc + render blur band" "0"
+  echo "Đang detect vị trí sub gốc + blur vùng chữ Trung và chèn phụ đề Việt vào video final..."
+  status_update "subtitle_render" "84" "Đang blur vùng chữ Trung và chèn phụ đề Việt" "0"
   subtitle_render_timeout="${SUBTITLE_RENDER_TIMEOUT_SECONDS:-1800}"
   SUBTITLE_REGION_ARTIFACT="$OUT_DIR/subtitle_region.json"
   # Geometry cache is independent from ASR/OCR-content/translation/TTS/download.

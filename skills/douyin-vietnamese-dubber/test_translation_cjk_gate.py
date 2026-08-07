@@ -75,6 +75,33 @@ def test_valid_vietnamese_translation_passes():
     print("OK: valid Vietnamese translation passes")
     return True
 
+def test_repeated_tts_syllable_is_rejected():
+    optimizer = load_optimizer()
+    try:
+        optimizer.validate_vietnamese_translation(
+            [{"subtitle_text": "Nhân vật quay trở lại."}],
+            "mo mo mo mo",
+        )
+    except RuntimeError as exc:
+        if "translation_repeated_short_token" not in str(exc):
+            print(f"FAIL: repeated syllable rejected for wrong reason: {exc}")
+            return False
+    else:
+        print("FAIL: repeated TTS syllable was accepted")
+        return False
+    print("OK: repeated TTS syllable rejected")
+    return True
+
+def test_review_film_style_is_explicit_in_translation_prompt():
+    source = OPTIMIZER.read_text(encoding="utf-8")
+    required = ("văn phong review phim", "giữ tên riêng", "đại từ nhất quán")
+    missing = [value for value in required if value not in source]
+    if missing:
+        print(f"FAIL: review-film prompt rules missing: {len(missing)}")
+        return False
+    print("OK: review-film prompt rules present")
+    return True
+
 
 def test_batch_and_adaptive_paths_reject_cjk():
     """Batch validation must fail before adaptive routing can hand CJK to TTS."""
@@ -121,6 +148,10 @@ def test_pre_tts_gate_audits_actual_tts_source_before_voice_generation():
     if 'create_translate_pending "pre-TTS/' not in run_sh:
         print("FAIL: pre-TTS CJK rejection does not create manual-translate handoff")
         return False
+    quality_at = run_sh.find('python3 "$TTS_VOICE_QUALITY_SCRIPT" text-gate')
+    if quality_at < 0 or quality_at >= tts_at:
+        print("FAIL: detailed Vietnamese text quality gate is not before TTS")
+        return False
     print("OK: actual TTS source is gated before TTS")
     return True
 
@@ -128,6 +159,8 @@ def test_pre_tts_gate_audits_actual_tts_source_before_voice_generation():
 def main():
     ok = test_optimizer_rejects_five_cjk_cues_without_source_fallback()
     ok = test_valid_vietnamese_translation_passes() and ok
+    ok = test_repeated_tts_syllable_is_rejected() and ok
+    ok = test_review_film_style_is_explicit_in_translation_prompt() and ok
     ok = test_batch_and_adaptive_paths_reject_cjk() and ok
     ok = test_pre_tts_gate_audits_actual_tts_source_before_voice_generation() and ok
     sys.exit(0 if ok else 1)

@@ -592,6 +592,7 @@ def main() -> int:
     ap.add_argument("--provider-state", default=os.environ.get("AI33_PROVIDER_STATE", ""))
     ap.add_argument("--status-json", default=os.environ.get("AI33_STATUS_JSON", ""))
     ap.add_argument("--checkpoint", default=os.environ.get("AI33_TTS_CHECKPOINT", ""))
+    ap.add_argument("--force-regenerate", action="store_true")
     ap.add_argument("--cue-index", type=int, default=0)
     ap.add_argument("--total-cues", type=int, default=0)
     ap.add_argument("--source-fingerprint", default="")
@@ -634,7 +635,7 @@ def main() -> int:
 
     headers = base_headers(token)
     api_base = args.api_base or DEFAULT_API_BASE
-    if checkpoint and reusable_checkpoint_cue(checkpoint, args.cue_index, args.source_fingerprint, text_hash, voice_id, settings_hash, args.sample_rate, args.channels):
+    if checkpoint and not args.force_regenerate and reusable_checkpoint_cue(checkpoint, args.cue_index, args.source_fingerprint, text_hash, voice_id, settings_hash, args.sample_rate, args.channels):
         try:
             materialize_checkpoint_wav(checkpoint, args.cue_index, out_path)
         except OSError as exc:

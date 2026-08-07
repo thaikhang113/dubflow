@@ -40,8 +40,16 @@ def ffmpeg_extract(input_video, audio_wav):
     run(["ffmpeg", "-y", "-i", str(input_video), "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(audio_wav)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def ffmpeg_extract_demucs_input(input_video, audio_wav):
+    run(["ffmpeg", "-y", "-i", str(input_video), "-vn", "-ac", "2", "-ar", "48000", "-c:a", "pcm_s16le", str(audio_wav)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def convert_audio(input_audio, output_audio):
     run(["ffmpeg", "-y", "-i", str(input_audio), "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(output_audio)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def convert_music_bed(input_audio, output_audio):
+    run(["ffmpeg", "-y", "-i", str(input_audio), "-ac", "2", "-ar", "48000", "-c:a", "pcm_s16le", str(output_audio)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def find_demucs_outputs(demucs_dir):
@@ -54,7 +62,7 @@ def demucs_separate(audio_wav, work_dir, vocals_wav, no_vocals_wav):
     demucs_bin = shutil.which("demucs")
     if not CONFIG["demucs_enabled"] or not demucs_bin:
         log("Demucs not available or disabled; using original audio as vocals fallback")
-        shutil.copy2(audio_wav, vocals_wav)
+        convert_audio(audio_wav, vocals_wav)
         silence_like(audio_wav, no_vocals_wav)
         return {"used": False, "reason": "demucs_missing_or_disabled"}
     demucs_out = Path(work_dir) / "demucs"
@@ -62,16 +70,13 @@ def demucs_separate(audio_wav, work_dir, vocals_wav, no_vocals_wav):
     log("running Demucs --two-stems=vocals")
     run([demucs_bin, "--two-stems=vocals", "-o", str(demucs_out), str(audio_wav)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     found_vocals, found_no_vocals = find_demucs_outputs(demucs_out)
-    if not found_vocals:
-        log("Demucs output missing vocals.wav; using original audio as vocals fallback")
-        shutil.copy2(audio_wav, vocals_wav)
+    if not found_vocals or not found_no_vocals:
+        log("Demucs output missing required stem; using original audio as vocals fallback")
+        convert_audio(audio_wav, vocals_wav)
         silence_like(audio_wav, no_vocals_wav)
         return {"used": False, "reason": "demucs_output_missing"}
     convert_audio(found_vocals, vocals_wav)
-    if found_no_vocals:
-        convert_audio(found_no_vocals, no_vocals_wav)
-    else:
-        silence_like(audio_wav, no_vocals_wav)
+    convert_music_bed(found_no_vocals, no_vocals_wav)
     return {"used": True, "reason": "ok"}
 
 
@@ -218,7 +223,10 @@ def main():
     work_dir.mkdir(parents=True, exist_ok=True)
     log("extracting mono 16k audio with ffmpeg")
     ffmpeg_extract(args.input_video, args.audio_wav)
-    demucs_report = demucs_separate(Path(args.audio_wav), work_dir, Path(args.vocals_wav), Path(args.no_vocals_wav))
+    demucs_input = work_dir / "demucs_input.wav"
+    log("extracting stereo 48k audio for Demucs")
+    ffmpeg_extract_demucs_input(args.input_video, demucs_input)
+    demucs_report = demucs_separate(demucs_input, work_dir, Path(args.vocals_wav), Path(args.no_vocals_wav))
     raw_segments = choose_segments(Path(args.vocals_wav))
     speech_segments = merge_speech_segments(raw_segments)
     log(f"speech segments kept: {len(speech_segments)}; raw segments: {len(raw_segments)}")

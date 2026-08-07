@@ -15,6 +15,8 @@ from pathlib import Path
 
 from dialogue_boundary import boundary_after
 from structured_json import extract_first_json_object
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from tts_voice_quality import normalize_spoken_text, text_quality_issues
 
 
 def env_float(name, default):
@@ -74,7 +76,7 @@ CONFIG = {
     "translation_memory_max_chars": env_int("TRANSLATION_MEMORY_MAX_CHARS", 6000),
     # A model occasionally returns the original Chinese despite a successful JSON response.
     # One strict retry per group is enough to correct a formatting lapse; never loop forever.
-    "translation_cjk_retries": max(0, env_int("OPTIMIZER_TRANSLATION_CJK_RETRIES", 1)),
+    "translation_quality_retries": max(0, env_int("OPTIMIZER_TRANSLATION_QUALITY_RETRIES", env_int("OPTIMIZER_TRANSLATION_CJK_RETRIES", 1))),
     # Dub grouping chặt: bám từng cue, chỉ gộp cue cực ngắn để TTS không vụn.
     # Cho phép gộp tối đa 3 cue / group (case Douyin 163 cue ASR có nhiều slot 0.8-1.2s)
     # nhưng group không dài quá 4.5s -> TTS tự nhiên hơn mà không tạo cue dài kiểu 20s.
@@ -89,16 +91,22 @@ CONFIG = {
 }
 
 CJK_RE = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]")
+REVIEW_FILM_STYLE_RULE = (
+    "Dùng văn phong review phim tự nhiên; giữ tên riêng, vai vế và đại từ nhất quán; "
+    "không thêm tình tiết không có trong nguồn."
+)
 
 
 def validate_vietnamese_translation(subtitle_per_cue, dub_text):
-    """Reject empty or CJK translation output before it can reach TTS."""
-    texts = [str(dub_text or "").strip()]
-    texts.extend(str(item.get("subtitle_text") or "").strip() for item in subtitle_per_cue)
+    """Reject malformed Vietnamese before it can reach TTS."""
+    texts = [normalize_spoken_text(dub_text)]
+    texts.extend(normalize_spoken_text(item.get("subtitle_text")) for item in subtitle_per_cue)
     if not texts[0] or any(not text for text in texts[1:]):
         raise RuntimeError("translation_empty")
-    if any(CJK_RE.search(text) for text in texts):
-        raise RuntimeError("translation_contains_cjk")
+    for text in texts:
+        issues = text_quality_issues(text)
+        if issues:
+            raise RuntimeError(f"translation_{issues[0]}")
 
 
 def load_translation_memory_context(path, max_chars=None):
@@ -497,8 +505,9 @@ Yêu cầu:
 
 Câu Trung (segments):
 {json.dumps(segments, ensure_ascii=False)}"""
+    prompt += "\n- " + REVIEW_FILM_STYLE_RULE
     last_error = None
-    for attempt in range(CONFIG["translation_cjk_retries"] + 1):
+    for attempt in range(CONFIG["translation_quality_retries"] + 1):
         strict = "\nBẮT BUỘC: CHỈ tiếng Việt; không được chứa bất kỳ ký tự Trung/CJK nào trong subtitle_segments hoặc dub_text." if attempt else ""
         content = chat(
             api_base,
@@ -525,7 +534,7 @@ Câu Trung (segments):
             return subtitle_per_cue, dub_text
         except RuntimeError as exc:
             last_error = exc
-            if str(exc) != "translation_contains_cjk" or attempt >= CONFIG["translation_cjk_retries"]:
+            if attempt >= CONFIG["translation_quality_retries"]:
                 raise
     raise last_error or RuntimeError("translation_failed")
 
@@ -557,6 +566,7 @@ Trả về JSON duy nhất dạng:
 
 Input:
 """ + json.dumps({"items": prompt_items}, ensure_ascii=False)
+    prompt += "\n- " + REVIEW_FILM_STYLE_RULE
     content = chat(
         api_base,
         api_key,
