@@ -279,6 +279,7 @@ BGM_MODE_FALLBACK="${BGM_MODE_FALLBACK:-duck}"
 ASR_SPLIT_LONG_SEGMENTS="${ASR_SPLIT_LONG_SEGMENTS:-1}"
 ASR_SPLIT_MAX_SECONDS="${ASR_SPLIT_MAX_SECONDS:-10}"
 ASR_SPLIT_MAX_CHARS="${ASR_SPLIT_MAX_CHARS:-120}"
+AI33_TTS_WORKERS="${AI33_TTS_WORKERS:-5}"
 
 resolve_voice() {
   local preset="${1:-}"
@@ -1461,6 +1462,7 @@ generate_vietnamese_voice() {
   RESONA_POLL_INTERVAL_SECONDS="$RESONA_POLL_INTERVAL_SECONDS" RESONA_TIMEOUT_SECONDS="$RESONA_TIMEOUT_SECONDS" \
   RESONA_FALLBACK_VOICE_IDS="${RESONA_FALLBACK_VOICE_IDS:-}" \
   AI33_TTS_WRAPPER="$AI33_TTS_WRAPPER" AI33_API_BASE="$AI33_API_BASE" AI33_API_KEY="$AI33_API_KEY" \
+  AI33_TTS_WORKERS="$AI33_TTS_WORKERS" \
   AI33_MAI_PHUONG_VOICE_ID="$AI33_MAI_PHUONG_VOICE_ID" AI33_PHANH_VOICE_ID="$AI33_PHANH_VOICE_ID" AI33_DEFAULT_VOICE_ID="$AI33_DEFAULT_VOICE_ID" \
   VOICE_REGISTRY_PY="$VOICE_REGISTRY_PY" VOICE_SOURCE_HINT="$VOICE_SOURCE_HINT" OPENCLAW_VOICE_REGISTRY_JSON="${OPENCLAW_VOICE_REGISTRY_JSON:-}" \
   AI33_TTS_SPEED="$AI33_TTS_SPEED" AI33_WITH_TRANSCRIPT="$AI33_WITH_TRANSCRIPT" \
@@ -1490,6 +1492,7 @@ generate_vietnamese_voice() {
   FRAME_STRICT_TOTAL_DRIFT_PER_SEGMENT_MS="${FRAME_STRICT_TOTAL_DRIFT_PER_SEGMENT_MS:-5}" \
   "$tts_python_bin" - "$source_srt" "$voice_wav" "$voice_name" "$tmp_dir" "$target_duration_seconds" "$tts_timeout_seconds" "$tts_circuit_breaker" "$max_tts_speed" "$allow_audio_overhang" <<'PY'
 import hashlib, importlib.util, json, os, re, shutil, subprocess, sys, time, urllib.request, urllib.error, wave
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 source_srt, voice_wav, voice_name, tmp_dir, target_duration_raw, timeout_raw, breaker_raw, max_speed_raw, overhang_raw = sys.argv[1:]
 root = Path(tmp_dir)
@@ -3250,12 +3253,37 @@ stats = {
 
 
 alignment_rows = []
+total_entries = len(entries)
+ai33_tts_workers = max(1, min(5, int(os.environ.get("AI33_TTS_WORKERS", "5") or "5")))
+prefetched_tts_results = {}
+if voice_name.lower().startswith("ai33") and ai33_tts_workers > 1 and entries:
+    prefetch_dir = segments_dir / "_ai33_prefetch"
+    prefetch_dir.mkdir(parents=True, exist_ok=True)
+
+    def prefetch_ai33(entry_index):
+        _start_ms, _end_ms, _text = entries[entry_index - 1]
+        _mp3 = prefetch_dir / f"{entry_index:04d}.mp3"
+        _wav = prefetch_dir / f"{entry_index:04d}.wav"
+        _result = synthesize_tts(
+            _mp3, _wav, _text, voice_name, max(1, _end_ms - _start_ms),
+            skip_network=False, ai33_speed=1.0, cue_index=entry_index,
+        )
+        return _result, _mp3, _wav
+
+    print(f"AI33 TTS workers: {ai33_tts_workers}", flush=True)
+    with ThreadPoolExecutor(max_workers=ai33_tts_workers) as executor:
+        futures = {
+            entry_index: executor.submit(prefetch_ai33, entry_index)
+            for entry_index in range(1, total_entries + 1)
+        }
+        for entry_index in range(1, total_entries + 1):
+            prefetched_tts_results[entry_index] = futures[entry_index].result()
+
 with concat_list.open('w', encoding='utf-8') as manifest:
     current_ms = 0
     segment_index = 0
     consecutive_tts_failures = 0
     consecutive_synthetic_padding_ms = 0
-    total_entries = len(entries)
     if resona_tts_group_meta:
         print(
             f"Resona short-cue grouping: {source_entry_count} dub cues -> {total_entries} TTS units "
@@ -3304,11 +3332,15 @@ with concat_list.open('w', encoding='utf-8') as manifest:
         skip_network = (not voice_name.lower().startswith('ai33')) and consecutive_tts_failures >= circuit_breaker_failures
         # This first synthesis is the mandatory natural probe. AI33 must not inherit a
         # job-level speed override here; adaptation decisions use the measured 1.0 WAV.
-        tts_result = synthesize_tts(
-            mp3_path, wav_path, text, voice_name, slot_ms, skip_network=skip_network,
-            ai33_speed=1.0 if voice_name.lower().startswith("ai33") else None,
-            cue_index=entry_index,
-        )
+        prefetched = prefetched_tts_results.pop(entry_index, None)
+        if prefetched is not None:
+            tts_result, mp3_path, wav_path = prefetched
+        else:
+            tts_result = synthesize_tts(
+                mp3_path, wav_path, text, voice_name, slot_ms, skip_network=skip_network,
+                ai33_speed=1.0 if voice_name.lower().startswith("ai33") else None,
+                cue_index=entry_index,
+            )
         engine = tts_result.get("engine") or ("capcut" if voice_name.lower().startswith("capcut:") and tts_result.get("ok") else "edge-tts")
         if engine and engine not in stats["tts_engines_used"]:
             stats["tts_engines_used"].append(engine)

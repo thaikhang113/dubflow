@@ -6,10 +6,31 @@ import os
 import shutil
 import uuid
 import wave
+from contextlib import contextmanager
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 
 
 SCHEMA_VERSION = 1
+
+@contextmanager
+def _manifest_lock(path):
+    """Serialize cross-process checkpoint manifest updates on POSIX hosts."""
+    lock_path = Path(path).with_name(Path(path).name + ".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    handle = lock_path.open("a+")
+    try:
+        if fcntl is not None:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        yield
+    finally:
+        if fcntl is not None:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        handle.close()
 
 
 class WavValidationError(ValueError):
@@ -126,7 +147,7 @@ def _atomic_write(path, data):
             os.fsync(handle.fileno())
         os.replace(temporary, path)
         try:
-            directory = os.open(str(path.parent), os.O_DIRECTORY)
+            directory = os.open(str(path.parent), getattr(os, "O_DIRECTORY", 0))
             try: os.fsync(directory)
             finally: os.close(directory)
         except OSError:
@@ -170,10 +191,11 @@ def _cue_entry(identity, config, metadata, wav_path, attempts):
 def complete_cue(manifest_path, config, identity, wav_path, attempts):
     _require_valid_identity(identity, config)
     metadata = validate_canonical_wav(wav_path, config)
-    manifest = _manifest_for_config(load_checkpoint(manifest_path), config)
-    entry = _cue_entry(identity, config, metadata, wav_path, attempts)
-    manifest["cues"][str(identity.index)] = entry
-    _atomic_write(manifest_path, manifest)
+    with _manifest_lock(manifest_path):
+        manifest = _manifest_for_config(load_checkpoint(manifest_path), config)
+        entry = _cue_entry(identity, config, metadata, wav_path, attempts)
+        manifest["cues"][str(identity.index)] = entry
+        _atomic_write(manifest_path, manifest)
     return entry
 
 
@@ -200,13 +222,14 @@ def reusable_cue(manifest_path, config, identity):
 
 def record_failure(manifest_path, config, identity, stage, error_code, attempts, _detail=""):
     _require_valid_identity(identity, config)
-    manifest = _manifest_for_config(load_checkpoint(manifest_path), config)
-    entry = {"status": "failed", "validated": False, "index": identity.index,
-             "text_fingerprint": fingerprint_text(identity.text), "voice": identity.voice,
-             "settings_fingerprint": fingerprint_settings(identity.settings), "stage": str(stage),
-             "error_code": str(error_code), "attempts": int(attempts)}
-    manifest["cues"][str(identity.index)] = entry
-    _atomic_write(manifest_path, manifest)
+    with _manifest_lock(manifest_path):
+        manifest = _manifest_for_config(load_checkpoint(manifest_path), config)
+        entry = {"status": "failed", "validated": False, "index": identity.index,
+                 "text_fingerprint": fingerprint_text(identity.text), "voice": identity.voice,
+                 "settings_fingerprint": fingerprint_settings(identity.settings), "stage": str(stage),
+                 "error_code": str(error_code), "attempts": int(attempts)}
+        manifest["cues"][str(identity.index)] = entry
+        _atomic_write(manifest_path, manifest)
     return entry
 
 
@@ -254,7 +277,7 @@ def materialize_completed_wav(manifest_path, cue_index, output_path):
         shutil.copyfile(source, temporary)
         if validate_canonical_wav(temporary, config)["checksum"] != metadata["checksum"]:
             raise WavValidationError("checksum_mismatch")
-        with temporary.open("rb") as handle: os.fsync(handle.fileno())
+        with temporary.open("rb+") as handle: os.fsync(handle.fileno())
         os.replace(temporary, target)
     finally:
         temporary.unlink(missing_ok=True)

@@ -11,7 +11,10 @@ API key chỉ đọc từ env (AI33_API_KEY hoặc AI33_ACCESS_TOKEN), KHÔNG ba
 
 import argparse
 import contextlib
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 import hashlib
 import json
 import os
@@ -20,6 +23,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -30,6 +34,7 @@ from pathlib import Path
 _CHECKPOINT_SPEC = __import__("importlib.util").util.spec_from_file_location("tts_checkpoint", Path(__file__).with_name("tts_checkpoint.py"))
 tts_checkpoint = __import__("importlib.util").util.module_from_spec(_CHECKPOINT_SPEC)
 _CHECKPOINT_SPEC.loader.exec_module(tts_checkpoint)
+_LOCAL_CIRCUIT_LOCK = threading.Lock()
 
 DEFAULT_API_BASE = "https://api.ai33.pro"
 DEFAULT_USER_AGENT = "OpenClaw/AI33TTS"
@@ -75,12 +80,15 @@ class AI33CircuitBreaker:
         """Serialize state transitions across cue subprocesses in one job."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
         lock_path = self.path.with_name(self.path.name + ".lock")
-        with lock_path.open("a+") as lock:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+        with _LOCAL_CIRCUIT_LOCK:
+            with lock_path.open("a+") as lock:
+                if fcntl is not None:
+                    fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    if fcntl is not None:
+                        fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
     def _save(self, data):
         safe = {
@@ -497,18 +505,19 @@ def append_audio_report(path: str, stage: str, audio_path: Path) -> None:
     if not path:
         return
     report_path = Path(path)
-    try:
-        report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.exists() else {}
-    except Exception:
-        report = {}
-    stages = report.get("stages") if isinstance(report.get("stages"), list) else []
-    info = audio_info(audio_path)
-    stages.append({"stage": stage, "file_path": str(audio_path), **info})
-    warnings = report.get("warnings") if isinstance(report.get("warnings"), list) else []
-    if info["sample_rate"] == 16000 and "TTS_MASTER_DOWNGRADED_TO_ASR_FORMAT" not in warnings:
-        warnings.append("TTS_MASTER_DOWNGRADED_TO_ASR_FORMAT")
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(json.dumps({"stages": stages, "warnings": warnings}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    with tts_checkpoint._manifest_lock(report_path):
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.exists() else {}
+        except Exception:
+            report = {}
+        stages = report.get("stages") if isinstance(report.get("stages"), list) else []
+        info = audio_info(audio_path)
+        stages.append({"stage": stage, "file_path": str(audio_path), **info})
+        warnings = report.get("warnings") if isinstance(report.get("warnings"), list) else []
+        if info["sample_rate"] == 16000 and "TTS_MASTER_DOWNGRADED_TO_ASR_FORMAT" not in warnings:
+            warnings.append("TTS_MASTER_DOWNGRADED_TO_ASR_FORMAT")
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(json.dumps({"stages": stages, "warnings": warnings}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def convert_to_wav(src: Path, wav: Path, sample_rate: int, channels: int) -> float:
@@ -537,23 +546,24 @@ def write_provider_status(path: str, state: str, cue_index: int, total_cues: int
     if not path:
         return
     target = Path(path)
-    try:
-        current = json.loads(target.read_text(encoding="utf-8")) if target.exists() else {}
-    except Exception:
-        current = {}
-    if not isinstance(current, dict):
-        current = {}
-    completed = max(0, cue_index - 1) if completed_cues is None else max(0, completed_cues)
-    current.update({
-        "status_schema": current.get("status_schema", 1), "phase": state,
-        "state": state, "provider": "ai33", "tts_cues_completed": completed,
-        "tts_cues_total": total_cues, "tts_cues_reused": int(current.get("tts_cues_reused", 0) if reused is None else reused),
-        "failed_cue": cue_index if error else 0, "failed_stage": error.stage if error else "",
-        "failed_code": error.code if error else "", "failed_attempts": error.attempts if error else 0,
-        "resume_from_cue": cue_index, "updated_at_epoch": time.time(),
-    })
-    target.parent.mkdir(parents=True, exist_ok=True)
-    _atomic_json(target, current)
+    with tts_checkpoint._manifest_lock(target):
+        try:
+            current = json.loads(target.read_text(encoding="utf-8")) if target.exists() else {}
+        except Exception:
+            current = {}
+        if not isinstance(current, dict):
+            current = {}
+        completed = max(0, cue_index - 1) if completed_cues is None else max(0, completed_cues)
+        current.update({
+            "status_schema": current.get("status_schema", 1), "phase": state,
+            "state": state, "provider": "ai33", "tts_cues_completed": completed,
+            "tts_cues_total": total_cues, "tts_cues_reused": int(current.get("tts_cues_reused", 0) if reused is None else reused),
+            "failed_cue": cue_index if error else 0, "failed_stage": error.stage if error else "",
+            "failed_code": error.code if error else "", "failed_attempts": error.attempts if error else 0,
+            "resume_from_cue": cue_index, "updated_at_epoch": time.time(),
+        })
+        target.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_json(target, current)
 
 
 def main() -> int:
