@@ -50,6 +50,8 @@ def test_bilibili_run_sh_no_cookie_copy_to_out_dir():
     # Cookies still allowed in JOB_CACHE for yt-dlp
     assert 'COOKIES_TXT="$JOB_CACHE/bilibili_cookies.txt"' in text
     assert 'yt-dlp --cookies "$COOKIES_TXT"' in text
+    assert "trap cleanup_bilibili_cookie EXIT" in text
+    assert 'rm -f "${COOKIES_TXT:-}"' in text
 
 
 def test_scrub_forbidden_credentials_removes_cookie_file():

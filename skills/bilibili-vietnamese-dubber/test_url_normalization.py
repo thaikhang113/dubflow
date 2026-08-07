@@ -59,6 +59,15 @@ class BilibiliUrlNormalizationTests(unittest.TestCase):
         self.assertIn("OPENCLAW_JOB_STATUS_JSON=", source)
         self.assertIn('if [[ "$child_status" -ne 0 ]]', source)
 
+    def test_child_pipeline_publishes_current_job_before_first_status(self):
+        run_sh = SCRIPT.parents[2] / "douyin-vietnamese-dubber" / "run.sh"
+        source = run_sh.read_text(encoding="utf-8")
+        mkdir_at = source.index('mkdir -p "$OUT_DIR"')
+        latest_at = source.index('printf \'%s\\n\' "$OUT_DIR" > "$LATEST_OUTPUT_TXT"')
+        queued_at = source.index('status_update "queued" "3"')
+        self.assertLess(mkdir_at, latest_at)
+        self.assertLess(latest_at, queued_at)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

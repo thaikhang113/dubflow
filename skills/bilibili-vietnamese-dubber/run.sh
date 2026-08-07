@@ -221,6 +221,11 @@ VIDEO_FILE="$JOB_CACHE/input.mp4"
 COVER_FILE="$JOB_CACHE/thumbnail_reference.jpg"
 LOG_FILE="$JOB_CACHE/bilibili_download.log"
 
+cleanup_bilibili_cookie() {
+  rm -f "${COOKIES_TXT:-}" 2>/dev/null || true
+}
+trap cleanup_bilibili_cookie EXIT
+
 echo "Bắt đầu Bilibili downloader"
 echo "URL: $INPUT"
 echo "Voice preset: $VOICE_PRESET"
@@ -262,6 +267,7 @@ fi
 set +e
 yt-dlp --cookies "$COOKIES_TXT" -f 'bv*+ba/best' --merge-output-format mp4 --no-playlist -o "$VIDEO_FILE" "$INPUT" > "$LOG_FILE" 2>&1
 dl_status=$?
+cleanup_bilibili_cookie
 set -e
 if [[ "$dl_status" -ne 0 || ! -s "$VIDEO_FILE" ]]; then
   echo "BilibiliDownloadFailed: yt-dlp tải Bilibili thất bại. Log: $LOG_FILE" >&2

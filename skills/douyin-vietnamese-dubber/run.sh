@@ -3325,6 +3325,9 @@ if voice_name.lower().startswith("ai33") and ai33_tts_workers > 1 and entries:
                 for entry_index in batch
             }
         prefetched_tts_results.update(batch_results)
+        if any((result[0] or {}).get("ai33_failed") for result in batch_results.values()):
+            print("AI33 prefetch stopped after provider failure", flush=True)
+            break
 
 with concat_list.open('w', encoding='utf-8') as manifest:
     current_ms = 0
@@ -3978,6 +3981,7 @@ API_KEY=${API_KEY:?Set API_KEY in the environment}
 check_api_base "$API_KEY" || fail "Không connect được 9Router API tại $API_BASE. Đặt NINEROUTER_API_BASE đúng runtime."
 
 mkdir -p "$OUT_DIR" "$BASE_DIR/translated" "$BASE_DIR/temp"
+printf '%s\n' "$OUT_DIR" > "$LATEST_OUTPUT_TXT"
 exec > >(tee -a "$LOG") 2>&1
 START_TS="$(date +%s)"
 printf '%s\n' "${SOURCE_URL_OVERRIDE:-$INPUT}" > "$SOURCE_INPUT_TXT"

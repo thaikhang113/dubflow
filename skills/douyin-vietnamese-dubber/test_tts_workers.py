@@ -26,6 +26,14 @@ class TTSWorkerTests(unittest.TestCase):
         self.assertIn('ai33_tts_workers = max(1, min(3, int(os.environ.get("AI33_TTS_WORKERS", "3") or "3")))', source)
         self.assertNotIn("ai33_tts_workers += 1", source)
 
+    def test_prefetch_stops_submitting_batches_after_provider_failure(self):
+        source = RUN_SH.read_text(encoding="utf-8")
+        self.assertIn(
+            'if any((result[0] or {}).get("ai33_failed") for result in batch_results.values()):',
+            source,
+        )
+        self.assertIn('print("AI33 prefetch stopped after provider failure", flush=True)', source)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
