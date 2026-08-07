@@ -279,7 +279,7 @@ BGM_MODE_FALLBACK="${BGM_MODE_FALLBACK:-duck}"
 ASR_SPLIT_LONG_SEGMENTS="${ASR_SPLIT_LONG_SEGMENTS:-1}"
 ASR_SPLIT_MAX_SECONDS="${ASR_SPLIT_MAX_SECONDS:-10}"
 ASR_SPLIT_MAX_CHARS="${ASR_SPLIT_MAX_CHARS:-120}"
-AI33_TTS_WORKERS="${AI33_TTS_WORKERS:-5}"
+AI33_TTS_WORKERS="${AI33_TTS_WORKERS:-3}"
 
 resolve_voice() {
   local preset="${1:-}"
@@ -3259,8 +3259,7 @@ stats = {
 
 alignment_rows = []
 total_entries = len(entries)
-ai33_tts_workers_limit = max(1, min(5, int(os.environ.get("AI33_TTS_WORKERS", "5") or "5")))
-ai33_tts_workers = min(ai33_tts_workers_limit, max(3, ai33_tts_workers_limit))
+ai33_tts_workers = max(1, min(3, int(os.environ.get("AI33_TTS_WORKERS", "3") or "3")))
 prefetched_tts_results = {}
 if voice_name.lower().startswith("ai33") and ai33_tts_workers > 1 and entries:
     prefetch_dir = segments_dir / "_ai33_prefetch"
@@ -3326,17 +3325,6 @@ if voice_name.lower().startswith("ai33") and ai33_tts_workers > 1 and entries:
                 for entry_index in batch
             }
         prefetched_tts_results.update(batch_results)
-        transient_failure = any(
-            str((result[0] or {}).get("error_code") or "") in {
-                "AI33CreateRateLimited", "AI33PollingRateLimited",
-                "AI33Timeout", "AI33CreateTimeout", "AI33PollingTimeout",
-            }
-            for result in batch_results.values()
-        )
-        if transient_failure:
-            ai33_tts_workers = max(3, ai33_tts_workers - 1)
-        elif ai33_tts_workers < ai33_tts_workers_limit:
-            ai33_tts_workers += 1
 
 with concat_list.open('w', encoding='utf-8') as manifest:
     current_ms = 0

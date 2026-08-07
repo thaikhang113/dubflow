@@ -249,7 +249,7 @@ def materialize_cue(manifest_path, config, identity, output_path):
         copied_metadata = validate_canonical_wav(temporary, config)
         if copied_metadata["checksum"] != source_metadata["checksum"]:
             raise WavValidationError("checksum_mismatch")
-        with temporary.open("rb") as handle:
+        with temporary.open("rb+") as handle:
             os.fsync(handle.fileno())
         os.replace(temporary, target)
     finally:
@@ -293,14 +293,14 @@ def import_legacy_wav(manifest_path, config, identity, legacy_wav_path, canonica
     temporary = target.with_name(target.name + ".tmp-" + uuid.uuid4().hex)
     try:
         shutil.copyfile(legacy_wav_path, temporary)
-        with temporary.open("rb") as handle:
+        with temporary.open("rb+") as handle:
             os.fsync(handle.fileno())
         promoted = validate_canonical_wav(temporary, config)
         if promoted["checksum"] != metadata["checksum"]:
             raise WavValidationError("checksum_mismatch")
         os.replace(temporary, target)
         try:
-            directory = os.open(str(target.parent), os.O_DIRECTORY)
+            directory = os.open(str(target.parent), getattr(os, "O_DIRECTORY", 0))
             try: os.fsync(directory)
             finally: os.close(directory)
         except OSError:
