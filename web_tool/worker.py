@@ -10,6 +10,17 @@ from .pipeline import build_job_command, build_job_environment, read_job_status
 from .secrets import SecretStore, sanitize
 from .store import Store
 
+EXIT_ERRORS = {
+    20: (
+        "BilibiliLoginRequired",
+        "Cookie Bilibili bị thiếu, hết hạn hoặc đang yêu cầu xác minh.",
+    ),
+    21: (
+        "BilibiliDownloadFailed",
+        "Tải video Bilibili thất bại.",
+    ),
+}
+
 
 class Worker:
     def __init__(
@@ -224,6 +235,8 @@ class Worker:
         if return_code == 0:
             error_code = "FinalVideoInvalid"
             message = "Pipeline did not produce a decodable final_video_vi.mp4."
+        elif not error_code and return_code in EXIT_ERRORS:
+            error_code, message = EXIT_ERRORS[return_code]
         needs_attention = bool(
             status.get("retry_action")
             or status.get("resume_from_cue")

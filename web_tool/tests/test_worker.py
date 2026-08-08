@@ -127,6 +127,33 @@ subprocess.run([
             self.store.get_job(job["id"])["state"],
         )
 
+    def test_bilibili_login_exit_has_structured_error(self):
+        script = self.write_script(
+            "bilibili-login-required.py",
+            "raise SystemExit(20)\n",
+        )
+        job = self.store.enqueue_job(
+            {
+                "platform": "bilibili",
+                "source": "https://www.bilibili.com/video/BV1",
+            }
+        )
+        worker = Worker(self.store, self.settings, self.secrets)
+        with patch(
+            "web_tool.worker.build_job_command",
+            return_value=[sys.executable, str(script)],
+        ):
+            worker.start()
+            worker.notify()
+            failed = wait_for(
+                self.store,
+                job["id"],
+                {"needs_attention", "failed"},
+            )
+            worker.stop()
+        self.assertEqual("needs_attention", failed["state"])
+        self.assertEqual("BilibiliLoginRequired", failed["error_code"])
+
 
 if __name__ == "__main__":
     unittest.main()

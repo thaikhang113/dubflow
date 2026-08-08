@@ -180,6 +180,9 @@ def build_job_environment(
         if not _inside(resume_path, settings.jobs_dir):
             raise ValueError("resume directory is outside jobs directory")
         environment["OPENCLAW_RESUME_JOB_DIR"] = str(resume_path)
+    cookie_path = settings.secrets_dir / "bilibili-cookies.txt"
+    if cookie_path.is_file():
+        environment["BILIBILI_COOKIES_FILE"] = str(cookie_path)
     return environment
 
 

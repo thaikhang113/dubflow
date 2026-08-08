@@ -87,11 +87,17 @@ function showView(name) {
   document.querySelectorAll(".nav-item[data-target]").forEach((item) => {
     item.classList.toggle("active", item.dataset.target === name);
   });
-  const providers = name === "providers";
-  document.querySelector("#view-eyebrow").textContent = providers ? "Cấu hình" : "Queue";
-  document.querySelector("#view-title").textContent = providers ? "Providers" : "Jobs";
-  document.querySelector("#queue-pause").hidden = providers;
-  document.querySelector("#focus-new-job").hidden = providers;
+  const headings = {
+    jobs: ["Queue", "Jobs"],
+    providers: ["Cấu hình", "Providers"],
+    "bilibili-login": ["Tài khoản", "Bilibili Login"],
+  };
+  const heading = headings[name] || headings.jobs;
+  document.querySelector("#view-eyebrow").textContent = heading[0];
+  document.querySelector("#view-title").textContent = heading[1];
+  document.querySelector("#queue-pause").hidden = name !== "jobs";
+  document.querySelector("#focus-new-job").hidden = name !== "jobs";
+  if (name === "bilibili-login") loadBilibiliStatus();
 }
 
 function providerOptions(select, providers, emptyLabel) {
@@ -418,6 +424,85 @@ async function checkHealth() {
   }
 }
 
+function loginStateLabel(stateName) {
+  return {
+    logged_out: "Chưa đăng nhập",
+    connecting: "Đang kết nối Chromium",
+    waiting_scan: "Đang chờ quét QR",
+    logged_in: "Đã đăng nhập",
+    needs_attention: "Cần xử lý",
+  }[stateName] || stateName;
+}
+
+function renderBilibiliStatus(status) {
+  document.querySelector("#bilibili-login-state").textContent =
+    loginStateLabel(status.state);
+  const details = [
+    `${status.cookie_count || 0} cookie`,
+    status.error_code || "",
+    status.last_checked ? formatTime(status.last_checked) : "",
+  ].filter(Boolean);
+  document.querySelector("#bilibili-login-meta").textContent = details.join(" · ");
+  const qr = document.querySelector("#bilibili-login-qr");
+  qr.hidden = !status.qr_available;
+  if (status.qr_available) {
+    qr.src = `/api/bilibili/login/qr?t=${Date.now()}`;
+  } else {
+    qr.removeAttribute("src");
+  }
+}
+
+async function loadBilibiliStatus() {
+  try {
+    renderBilibiliStatus(await api("/api/bilibili/login/status"));
+  } catch (error) {
+    notify(`Không đọc được trạng thái Bilibili: ${error.message}`, true);
+  }
+}
+
+async function startBilibiliLogin() {
+  try {
+    renderBilibiliStatus(
+      await api("/api/bilibili/login/start", {method: "POST"}),
+    );
+    notify("Đang mở trang đăng nhập Bilibili.");
+  } catch (error) {
+    notify(`Không tạo được QR: ${error.message}`, true);
+  }
+}
+
+async function importBilibiliCookies(event) {
+  event.preventDefault();
+  const file = document.querySelector("#bilibili-cookie-file").files[0];
+  let text = document.querySelector("#bilibili-cookie-text").value;
+  if (file) text = await file.text();
+  try {
+    const status = await api("/api/bilibili/login/cookies", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({text}),
+    });
+    document.querySelector("#bilibili-cookie-file").value = "";
+    document.querySelector("#bilibili-cookie-text").value = "";
+    renderBilibiliStatus(status);
+    notify("Đã lưu đăng nhập Bilibili.");
+  } catch (error) {
+    notify(`Cookies không hợp lệ: ${error.message}`, true);
+  }
+}
+
+async function clearBilibiliLogin() {
+  if (!window.confirm("Xóa cookies và profile Bilibili trong tool?")) return;
+  try {
+    renderBilibiliStatus(
+      await api("/api/bilibili/login/cookies", {method: "DELETE"}),
+    );
+    notify("Đã xóa đăng nhập Bilibili.");
+  } catch (error) {
+    notify(`Không xóa được đăng nhập: ${error.message}`, true);
+  }
+}
+
 function connectEvents() {
   const events = new EventSource("/api/events");
   events.addEventListener("job", (event) => {
@@ -445,6 +530,9 @@ document.querySelector("#provider-reset").addEventListener("click", resetProvide
 document.querySelector("#refresh-jobs").addEventListener("click", loadJobs);
 document.querySelector("#refresh-providers").addEventListener("click", loadProviders);
 document.querySelector("#queue-pause").addEventListener("click", toggleQueue);
+document.querySelector("#bilibili-login-start").addEventListener("click", startBilibiliLogin);
+document.querySelector("#bilibili-cookie-form").addEventListener("submit", importBilibiliCookies);
+document.querySelector("#bilibili-login-clear").addEventListener("click", clearBilibiliLogin);
 document.querySelector("#focus-new-job").addEventListener("click", () => {
   showView("jobs");
   document.querySelector("#job-source").focus();
@@ -454,9 +542,13 @@ document.querySelector("#job-file").addEventListener("change", (event) => {
 });
 
 const initialView = new URLSearchParams(window.location.search).get("view");
-if (initialView === "providers") showView("providers");
+if (["providers", "bilibili-login"].includes(initialView)) showView(initialView);
 checkHealth();
 loadProviders();
 loadJobs();
 connectEvents();
 window.setInterval(loadJobs, 10000);
+window.setInterval(() => {
+  const view = document.querySelector('.view[data-view="bilibili-login"]');
+  if (!view.hidden) loadBilibiliStatus();
+}, 3000);

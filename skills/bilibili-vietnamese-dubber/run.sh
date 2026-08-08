@@ -226,12 +226,48 @@ echo "URL: $INPUT"
 echo "Voice preset: $VOICE_PRESET"
 echo "Cache: $JOB_CACHE"
 
-set +e
-"$CDP_HELPER" --cdp "$CDP_URL" cookies --out "$COOKIES_TXT" --require-login > "$JOB_CACHE/cookies_status.json"
-cookie_status=$?
-"$CDP_HELPER" --cdp "$CDP_URL" meta "$INPUT" --out "$META_JSON" --require-login > "$JOB_CACHE/meta_status.json"
-meta_status=$?
-set -e
+MANAGED_COOKIES="${BILIBILI_COOKIES_FILE:-}"
+if [[ -n "$MANAGED_COOKIES" ]]; then
+  [[ -s "$MANAGED_COOKIES" ]] || fail "BilibiliLoginRequired: managed cookies file is missing or empty."
+  cp -- "$MANAGED_COOKIES" "$COOKIES_TXT"
+  RAW_META_JSON="$JOB_CACHE/yt_dlp_meta.json"
+  set +e
+  yt-dlp --cookies "$COOKIES_TXT" --dump-single-json --skip-download "$INPUT" > "$RAW_META_JSON" 2> "$JOB_CACHE/meta_status.log"
+  meta_status=$?
+  set -e
+  cookie_status=0
+  if [[ "$meta_status" -eq 0 && -s "$RAW_META_JSON" ]]; then
+    set +e
+    python3 - "$RAW_META_JSON" "$META_JSON" <<'PY'
+import json, sys
+from pathlib import Path
+
+source = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+payload = {
+    "ok": True,
+    "logged_in": True,
+    "title": source.get("title") or "",
+    "cover": source.get("thumbnail") or "",
+    "url": source.get("webpage_url") or source.get("original_url") or "",
+    "needs_attention": False,
+}
+Path(sys.argv[2]).write_text(
+    json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+)
+PY
+    meta_status=$?
+    set -e
+  fi
+  rm -f "$RAW_META_JSON"
+else
+  set +e
+  "$CDP_HELPER" --cdp "$CDP_URL" cookies --out "$COOKIES_TXT" --require-login > "$JOB_CACHE/cookies_status.json"
+  cookie_status=$?
+  "$CDP_HELPER" --cdp "$CDP_URL" meta "$INPUT" --out "$META_JSON" --require-login > "$JOB_CACHE/meta_status.json"
+  meta_status=$?
+  set -e
+fi
 if [[ "$cookie_status" -ne 0 || "$meta_status" -ne 0 ]]; then
   echo "BilibiliLoginRequired: Chrome CDP chưa sẵn sàng hoặc Bilibili đang yêu cầu login/captcha/verify." >&2
   echo "Hãy mở Chrome thật CDP, đăng nhập/xử lý xác minh Bilibili rồi chạy lại." >&2

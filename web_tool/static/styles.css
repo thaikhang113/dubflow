@@ -348,6 +348,80 @@ h3 {
   gap: 16px;
 }
 
+.login-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.8fr) minmax(420px, 1.2fr);
+  gap: 16px;
+}
+
+.login-state {
+  display: grid;
+  min-height: 300px;
+  place-items: center;
+  gap: 18px;
+  text-align: center;
+}
+
+.login-state > div {
+  display: grid;
+  gap: 5px;
+}
+
+.login-state-label,
+.login-state small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.login-state strong {
+  font-size: 17px;
+}
+
+#bilibili-login-qr {
+  width: min(260px, 100%);
+  aspect-ratio: 1;
+  border: 10px solid #ffffff;
+  border-radius: 6px;
+  background: #ffffff;
+  object-fit: contain;
+}
+
+.cookie-fields {
+  display: grid;
+  gap: 14px;
+}
+
+.field textarea {
+  width: 100%;
+  min-height: 210px;
+  resize: vertical;
+  padding: 10px;
+  border: 1px solid #3a443e;
+  border-radius: 5px;
+  background: #111614;
+  color: #eef2ef;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 0;
+}
+
+.cookie-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.cookie-footer p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.danger-control {
+  color: #ffaaa4;
+}
+
 .data-section,
 .detail-panel {
   min-width: 0;
@@ -528,6 +602,10 @@ h3 {
     grid-template-columns: 1fr;
   }
 
+  .login-layout {
+    grid-template-columns: 1fr;
+  }
+
   .job-row {
     grid-template-columns: minmax(180px, 1fr) minmax(100px, 0.6fr) 110px;
   }
@@ -609,6 +687,11 @@ h3 {
 
   .provider-row {
     align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .cookie-footer {
+    align-items: stretch;
     flex-direction: column;
   }
 }

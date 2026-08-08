@@ -6,10 +6,11 @@ import threading
 import uuid
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile, status
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from .bilibili_login import BilibiliLogin
 from .config import Settings
 from .pipeline import build_job_command, build_job_environment
 from .secrets import SecretStore, sanitize, test_provider_connection, validate_provider
@@ -87,6 +88,10 @@ class JobRequest(BaseModel):
     preset: str = ""
 
 
+class CookieImportRequest(BaseModel):
+    text: str
+
+
 def _public_value(value):
     if isinstance(value, str):
         return sanitize(value)
@@ -107,6 +112,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     store = Store(settings.database_path)
     secrets = SecretStore(settings.secrets_dir)
     events = EventBroker()
+    bilibili_login = BilibiliLogin(settings, secrets)
     worker = Worker(store, settings, secrets, on_update=events.publish)
 
     @asynccontextmanager
@@ -124,6 +130,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.secrets = secrets
     app.state.worker = worker
     app.state.events = events
+    app.state.bilibili_login = bilibili_login
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
     @app.get("/api/health")
@@ -176,6 +183,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if provider is None:
             raise HTTPException(status_code=404, detail="provider not found")
         return test_provider_connection(provider, secrets)
+
+    @app.post("/api/bilibili/login/start")
+    def start_bilibili_login():
+        return bilibili_login.start()
+
+    @app.get("/api/bilibili/login/qr")
+    def bilibili_login_qr():
+        try:
+            image = bilibili_login.qr_png()
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="QR code is not available") from exc
+        return Response(image, media_type="image/png")
+
+    @app.get("/api/bilibili/login/status")
+    def bilibili_login_status():
+        return bilibili_login.status()
+
+    @app.post("/api/bilibili/login/cookies")
+    def import_bilibili_cookies(request: CookieImportRequest):
+        try:
+            return bilibili_login.import_netscape(request.text)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.delete("/api/bilibili/login/cookies")
+    def clear_bilibili_login():
+        return bilibili_login.clear()
 
     @app.get("/api/jobs")
     def list_jobs(limit: int = 100):

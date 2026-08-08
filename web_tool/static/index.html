@@ -19,10 +19,10 @@
       <nav aria-label="Điều hướng chính">
         <button class="nav-item active" type="button" data-target="jobs">Jobs</button>
         <button class="nav-item" type="button" data-target="providers">Providers</button>
+        <button class="nav-item" type="button" data-target="bilibili-login">Bilibili Login</button>
         <button class="nav-item" type="button" disabled>Channels</button>
         <button class="nav-item" type="button" disabled>Series</button>
         <button class="nav-item" type="button" disabled>Trend</button>
-        <button class="nav-item" type="button" disabled>Bilibili Login</button>
         <button class="nav-item" type="button" disabled>Settings</button>
       </nav>
       <div class="runtime-status">
@@ -179,6 +179,52 @@
             </div>
             <div id="provider-list" class="provider-list" aria-live="polite"></div>
           </section>
+        </div>
+      </section>
+
+      <section class="view" data-view="bilibili-login" hidden>
+        <div class="login-layout">
+          <section class="data-section" aria-labelledby="bilibili-login-heading">
+            <div class="section-heading">
+              <div>
+                <h2 id="bilibili-login-heading">Đăng nhập bằng QR</h2>
+                <p>QR lấy trực tiếp từ trang Bilibili trong Chromium cục bộ.</p>
+              </div>
+              <button class="primary" id="bilibili-login-start" type="button">Tạo QR</button>
+            </div>
+            <div class="login-state">
+              <div>
+                <span class="login-state-label">Trạng thái</span>
+                <strong id="bilibili-login-state">Đang kiểm tra</strong>
+                <small id="bilibili-login-meta"></small>
+              </div>
+              <img id="bilibili-login-qr" alt="Mã QR đăng nhập Bilibili" hidden>
+            </div>
+          </section>
+
+          <form id="bilibili-cookie-form" class="form-band">
+            <div class="section-heading">
+              <div>
+                <h2>Nhập cookies.txt</h2>
+                <p>Fallback thủ công khi QR hoặc Chromium chưa sẵn sàng.</p>
+              </div>
+              <button class="primary" type="submit">Lưu cookies</button>
+            </div>
+            <div class="cookie-fields">
+              <label class="field">
+                <span>Chọn file Netscape</span>
+                <input id="bilibili-cookie-file" type="file" accept=".txt,text/plain">
+              </label>
+              <label class="field">
+                <span>Hoặc dán nội dung</span>
+                <textarea id="bilibili-cookie-text" rows="10" placeholder="# Netscape HTTP Cookie File"></textarea>
+              </label>
+            </div>
+            <div class="cookie-footer">
+              <p>Giá trị cookie không được hiển thị lại trong dashboard hoặc log.</p>
+              <button class="secondary danger-control" id="bilibili-login-clear" type="button">Xóa đăng nhập</button>
+            </div>
+          </form>
         </div>
       </section>
     </main>

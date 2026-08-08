@@ -13,8 +13,11 @@ class StaticUiTests(unittest.TestCase):
         for marker in (
             'data-view="jobs"',
             'data-view="providers"',
+            'data-view="bilibili-login"',
             'id="new-job-form"',
             'id="provider-form"',
+            'id="bilibili-login-start"',
+            'id="bilibili-cookie-form"',
             'id="queue-pause"',
             'id="job-list"',
         ):

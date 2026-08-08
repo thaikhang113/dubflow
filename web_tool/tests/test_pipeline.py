@@ -69,6 +69,8 @@ class PipelineTests(unittest.TestCase):
                 build_job_command(job, self.settings)
 
     def test_maps_validated_ollama_and_ai33_environment(self):
+        cookie_path = self.settings.secrets_dir / "bilibili-cookies.txt"
+        cookie_path.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
         environment = build_job_environment(
             {
                 "id": "job-test",
@@ -99,6 +101,10 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual("tts-secret", environment["AI33_API_KEY"])
         self.assertEqual("3", environment["AI33_TTS_WORKERS"])
         self.assertEqual(
+            str(cookie_path),
+            environment["BILIBILI_COOKIES_FILE"],
+        )
+        self.assertEqual(
             "ai33:vbee_hn_female_ngochuyen_full_48k-fhg",
             environment["VOICE"],
         )
@@ -127,6 +133,19 @@ class PipelineTests(unittest.TestCase):
         self.assertNotIn("secret", repr(status))
         self.assertNotIn("abc", repr(status))
         self.assertNotIn("private", status)
+
+    def test_bilibili_wrapper_uses_managed_cookie_file_without_cdp(self):
+        wrapper = (
+            self.settings.repo_root
+            / "skills"
+            / "bilibili-vietnamese-dubber"
+            / "run.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn("BILIBILI_COOKIES_FILE", wrapper)
+        self.assertIn(
+            '--cookies "$COOKIES_TXT" --dump-single-json',
+            wrapper,
+        )
 
 
 if __name__ == "__main__":

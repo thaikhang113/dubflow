@@ -649,7 +649,7 @@ git commit -m "feat: add jobs and provider web interface"
 - Produces: `login.import_netscape(text: str) -> dict`
 - API: `/api/bilibili/login/start`, `/qr`, `/status`, `/cookies`
 
-- [ ] **Step 1: Write failing cookie validation tests**
+- [x] **Step 1: Write failing cookie validation tests**
 
 Validate:
 
@@ -659,13 +659,13 @@ Validate:
 - cookie values never appear in status or exception text;
 - malformed lines and files over 1 MiB fail.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```powershell
 python -m unittest -v web_tool.tests.test_bilibili_login
 ```
 
-- [ ] **Step 3: Implement QR login**
+- [x] **Step 3: Implement QR login**
 
 Use Playwright to connect to `http://127.0.0.1:9222`, open a dedicated Bilibili
 login page, locate the visible QR element, and screenshot only that element.
@@ -678,7 +678,7 @@ No captcha solving. A captcha page returns:
 {"state":"needs_attention","error_code":"BilibiliCaptchaRequired"}
 ```
 
-- [ ] **Step 4: Add UI**
+- [x] **Step 4: Add UI**
 
 The Bilibili Login view must show:
 
@@ -688,13 +688,13 @@ The Bilibili Login view must show:
 - upload/paste fallback;
 - clear login button that deletes only container cookie/profile state after confirmation.
 
-- [ ] **Step 5: Run GREEN**
+- [x] **Step 5: Run GREEN**
 
 ```powershell
 python -m unittest -v web_tool.tests.test_bilibili_login web_tool.tests.test_static_ui
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add web_tool/bilibili_login.py web_tool/tests/test_bilibili_login.py web_tool/app.py web_tool/static
