@@ -156,6 +156,8 @@ def build_job_environment(
             environment["NINEROUTER_MODEL"] = translation["model"]
             if translation["api_key"]:
                 environment["NINEROUTER_API_KEY"] = translation["api_key"]
+        else:
+            raise ValueError("translation provider must be Ollama or OpenAI-compatible")
 
     tts = _provider(providers.get("tts") or {})
     if tts:

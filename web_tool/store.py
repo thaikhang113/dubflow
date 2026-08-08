@@ -219,6 +219,56 @@ class Store:
             ).fetchone()
         return bool(row and row["value"] == "1")
 
+    def requeue_for_resume(self, job_id: str, request: dict) -> dict:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE jobs
+                SET state = 'queued',
+                    action = '',
+                    request_json = ?,
+                    pid = NULL,
+                    error_code = '',
+                    message = 'Queued for resume.',
+                    updated_at = ?
+                WHERE id = ? AND state IN ('needs_attention', 'failed', 'cancelled')
+                """,
+                (
+                    json.dumps(request, ensure_ascii=False, sort_keys=True),
+                    _now(),
+                    job_id,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("job cannot be resumed")
+            row = connection.execute(
+                "SELECT * FROM jobs WHERE id = ?",
+                (job_id,),
+            ).fetchone()
+        return self._job(row)
+
+    def cancel_waiting_job(self, job_id: str) -> dict:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE jobs
+                SET state = 'cancelled',
+                    action = '',
+                    pid = NULL,
+                    message = 'Cancelled by user.',
+                    updated_at = ?
+                WHERE id = ? AND state IN ('queued', 'paused', 'needs_attention')
+                """,
+                (_now(), job_id),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("job cannot be cancelled")
+            row = connection.execute(
+                "SELECT * FROM jobs WHERE id = ?",
+                (job_id,),
+            ).fetchone()
+        return self._job(row)
+
     @staticmethod
     def _provider(row: sqlite3.Row | None) -> dict | None:
         if row is None:

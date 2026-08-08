@@ -514,7 +514,7 @@ git commit -m "feat: run pipeline jobs through durable worker"
 - API: `GET /api/events`
 - API: `GET /api/jobs/{id}/artifacts/{name}`
 
-- [ ] **Step 1: Write failing API contract tests**
+- [x] **Step 1: Write failing API contract tests**
 
 Tests must verify:
 
@@ -527,13 +527,13 @@ Tests must verify:
 - cookies, `.env`, browser profile, provider state secrets, and arbitrary logs are not downloadable;
 - SSE emits a job state event after update.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```powershell
 python -m unittest -v web_tool.tests.test_api
 ```
 
-- [ ] **Step 3: Implement API and event broker**
+- [x] **Step 3: Implement API and event broker**
 
 Use an in-process subscriber set of bounded `asyncio.Queue` objects. Publish only
 sanitized job snapshots. Send a keepalive comment every 15 seconds.
@@ -552,13 +552,13 @@ ARTIFACTS = {
 }
 ```
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 ```powershell
 python -m unittest -v web_tool.tests.test_api
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add web_tool/app.py web_tool/store.py web_tool/worker.py web_tool/tests/test_api.py

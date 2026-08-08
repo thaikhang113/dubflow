@@ -18,15 +18,18 @@ class Worker:
         settings: Settings,
         secrets: SecretStore,
         cancel_grace: float = 5,
+        on_update=None,
     ):
         self.store = store
         self.settings = settings
         self.secrets = secrets
         self.cancel_grace = max(0.1, float(cancel_grace))
+        self.on_update = on_update
         self._wake = threading.Event()
         self._stop = threading.Event()
         self._thread = None
         self._lock = threading.Lock()
+        self._active_changed = threading.Condition(self._lock)
         self._active = None
 
     def start(self) -> None:
@@ -43,26 +46,30 @@ class Worker:
     def stop(self) -> None:
         self._stop.set()
         self._wake.set()
-        with self._lock:
+        with self._active_changed:
             active = self._active
-        if active:
+        if active and active[1]:
             self._terminate(active[1])
         if self._thread:
             self._thread.join(self.cancel_grace + 5)
 
     def cancel(self, job_id: str) -> bool:
-        with self._lock:
+        with self._active_changed:
+            if not self._active:
+                self._active_changed.wait(timeout=self.cancel_grace)
             active = self._active
-        if not active or active[0] != job_id:
-            return False
-        self.store.update_job(
-            job_id,
-            state="cancelled",
-            action="",
-            message="Cancelled by user.",
-            pid=None,
-        )
-        self._terminate(active[1])
+            if not active or active[0] != job_id:
+                return False
+            self._update(
+                job_id,
+                state="cancelled",
+                action="",
+                message="Cancelled by user.",
+                pid=None,
+            )
+            process = active[1]
+        if process:
+            self._terminate(process)
         return True
 
     def _loop(self) -> None:
@@ -74,6 +81,9 @@ class Worker:
                 continue
             if self._stop.is_set():
                 return
+            with self._active_changed:
+                self._active = (job["id"], None)
+                self._active_changed.notify_all()
             self._execute(job)
 
     def _providers(self, job: dict) -> dict:
@@ -120,13 +130,14 @@ class Worker:
                 self.settings,
             )
         except ValueError as exc:
-            self.store.update_job(
+            self._update(
                 job["id"],
                 state="failed",
                 error_code="JobConfigurationInvalid",
                 message=sanitize(exc),
                 job_dir=str(job_root),
             )
+            self._clear_active(job["id"])
             return
 
         process_environment = os.environ.copy()
@@ -145,20 +156,28 @@ class Worker:
 
         with log_path.open("ab", buffering=0) as log:
             popen_options["stdout"] = log
-            try:
-                process = subprocess.Popen(command, **popen_options)
-            except OSError as exc:
-                self.store.update_job(
-                    job["id"],
-                    state="failed",
-                    error_code="WorkerStartFailed",
-                    message=sanitize(exc),
-                    job_dir=str(job_root),
-                )
-                return
-            with self._lock:
+            with self._active_changed:
+                current = self.store.get_job(job["id"])
+                if self._stop.is_set() or current["state"] == "cancelled":
+                    self._active = None
+                    self._active_changed.notify_all()
+                    return
+                try:
+                    process = subprocess.Popen(command, **popen_options)
+                except OSError as exc:
+                    self._active = None
+                    self._active_changed.notify_all()
+                    self._update(
+                        job["id"],
+                        state="failed",
+                        error_code="WorkerStartFailed",
+                        message=sanitize(exc),
+                        job_dir=str(job_root),
+                    )
+                    return
                 self._active = (job["id"], process)
-            self.store.update_job(
+                self._active_changed.notify_all()
+            self._update(
                 job["id"],
                 job_dir=str(job_root),
                 pid=process.pid,
@@ -171,9 +190,7 @@ class Worker:
                 self._refresh(job["id"], job_root)
             return_code = process.wait()
 
-        with self._lock:
-            if self._active and self._active[0] == job["id"]:
-                self._active = None
+        self._clear_active(job["id"])
         if self._stop.is_set():
             return
         current = self.store.get_job(job["id"])
@@ -185,7 +202,7 @@ class Worker:
         if return_code == 0 and output_dir and self._valid_video(
             output_dir / "final_video_vi.mp4"
         ):
-            self.store.update_job(
+            self._update(
                 job["id"],
                 state="completed",
                 action="",
@@ -213,7 +230,7 @@ class Worker:
             or error_code
             or return_code in {7, 8, 20, 21}
         )
-        self.store.update_job(
+        self._update(
             job["id"],
             state="needs_attention" if needs_attention else "failed",
             action="resume" if needs_attention else "",
@@ -238,7 +255,19 @@ class Worker:
         error_code = status.get("error_code")
         if error_code:
             fields["error_code"] = str(error_code)[:200]
-        self.store.update_job(job_id, **fields)
+        self._update(job_id, **fields)
+
+    def _update(self, job_id: str, **fields) -> dict:
+        job = self.store.update_job(job_id, **fields)
+        if self.on_update:
+            self.on_update(job)
+        return job
+
+    def _clear_active(self, job_id: str) -> None:
+        with self._active_changed:
+            if self._active and self._active[0] == job_id:
+                self._active = None
+                self._active_changed.notify_all()
 
     @staticmethod
     def _progress(status: dict) -> int:
