@@ -178,10 +178,19 @@ class AI33PollingTests(unittest.TestCase):
                 {"codec": "mp3", "duration_ms": 1000, "sample_rate": 24000},
                 requested_sample_rate=48000,
                 attempts=1,
+                voice_id="vbee_hn_female_ngochuyen_full_48k-fhg",
             )
         self.assertEqual("AI33SourceSampleRateLow", raised.exception.code)
         self.assertEqual("source_quality", raised.exception.stage)
         self.assertNotIn("http", raised.exception.detail.lower())
+
+    def test_native_24k_voice_is_accepted_for_48k_output_resampling(self):
+        ai33.validate_source_audio(
+            {"codec": "mp3", "duration_ms": 1000, "sample_rate": 24000},
+            requested_sample_rate=48000,
+            attempts=1,
+            voice_id="vbee_hn_female_ngochuyen_full_24k-st",
+        )
 
     def test_polling_busy_429_retries_then_returns_completed_task(self):
         busy = urllib.error.HTTPError(

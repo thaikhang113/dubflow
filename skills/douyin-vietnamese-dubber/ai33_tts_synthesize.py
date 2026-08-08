@@ -501,14 +501,16 @@ def audio_info(path: Path) -> dict:
         return {"sample_rate": 0, "channels": 0, "codec": "", "duration_ms": 0}
 
 
-def validate_source_audio(info: dict, requested_sample_rate: int, attempts: int = 0) -> None:
+def validate_source_audio(info: dict, requested_sample_rate: int, attempts: int = 0, voice_id: str = "") -> None:
     actual = int(info.get("sample_rate") or 0)
     requested = int(requested_sample_rate or 48000)
-    if actual and actual < requested:
+    match = re.search(r"(?:^|[_-])(24|48)k(?:[_-]|$)", str(voice_id).lower())
+    minimum = min(requested, int(match.group(1)) * 1000) if match else requested
+    if actual and actual < minimum:
         raise AI33Error(
             "AI33SourceSampleRateLow",
             "source_quality",
-            f"expected>={requested} actual={actual}",
+            f"expected>={minimum} actual={actual}",
             attempts,
         )
 
@@ -755,7 +757,7 @@ def main() -> int:
         downloaded_info = audio_info(tmp_audio)
         if not downloaded_info.get("codec") or downloaded_info.get("duration_ms", 0) <= 0:
             raise AI33Error("AI33DownloadCorrupt", "download_validate", "ffprobe could not decode downloaded media", download_attempts)
-        validate_source_audio(downloaded_info, args.sample_rate, download_attempts)
+        validate_source_audio(downloaded_info, args.sample_rate, download_attempts, voice_id)
         wav_tmp = out_path.with_name(out_path.stem + ".tmp-" + uuid.uuid4().hex + ".wav")
         duration_ms = convert_to_wav(tmp_audio, wav_tmp, args.sample_rate, args.channels)
         validate_wav(wav_tmp, args.sample_rate, args.channels)
