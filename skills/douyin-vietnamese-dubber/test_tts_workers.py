@@ -67,6 +67,14 @@ class TTSWorkerTests(unittest.TestCase):
         self.assertIn("'pronunciation_dictionary_id': ai33_pronunciation_dictionary_id", source)
         self.assertIn("'--pronunciation-dictionary-id', ai33_pronunciation_dictionary_id", source)
 
+    def test_ai33_low_source_sample_rate_retries_only_the_failed_cue_once(self):
+        source = RUN_SH.read_text(encoding="utf-8")
+        self.assertIn("AI33SourceSampleRateLow", source)
+        self.assertIn("AI33_SOURCE_QUALITY_RETRIES", source)
+        self.assertIn("cmd.append('--force-regenerate')", source)
+        wrapper = Path(__file__).with_name("ai33_tts_synthesize.py").read_text(encoding="utf-8")
+        self.assertIn('if error.code != "AI33SourceSampleRateLow":', wrapper)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

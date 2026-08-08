@@ -501,6 +501,18 @@ def audio_info(path: Path) -> dict:
         return {"sample_rate": 0, "channels": 0, "codec": "", "duration_ms": 0}
 
 
+def validate_source_audio(info: dict, requested_sample_rate: int, attempts: int = 0) -> None:
+    actual = int(info.get("sample_rate") or 0)
+    requested = int(requested_sample_rate or 48000)
+    if actual and actual < requested:
+        raise AI33Error(
+            "AI33SourceSampleRateLow",
+            "source_quality",
+            f"expected>={requested} actual={actual}",
+            attempts,
+        )
+
+
 def append_audio_report(path: str, stage: str, audio_path: Path) -> None:
     if not path:
         return
@@ -738,6 +750,7 @@ def main() -> int:
         downloaded_info = audio_info(tmp_audio)
         if not downloaded_info.get("codec") or downloaded_info.get("duration_ms", 0) <= 0:
             raise AI33Error("AI33DownloadCorrupt", "download_validate", "ffprobe could not decode downloaded media", download_attempts)
+        validate_source_audio(downloaded_info, args.sample_rate, download_attempts)
         wav_tmp = out_path.with_name(out_path.stem + ".tmp-" + uuid.uuid4().hex + ".wav")
         duration_ms = convert_to_wav(tmp_audio, wav_tmp, args.sample_rate, args.channels)
         validate_wav(wav_tmp, args.sample_rate, args.channels)
@@ -745,7 +758,8 @@ def main() -> int:
         append_audio_report(args.report_json, "tts_raw", out_path)
     except Exception as exc:
         error = exc if isinstance(exc, AI33Error) else AI33Error("AI33ConvertFailed", "convert", _safe_detail(exc), 1)
-        breaker.record_failure(error)
+        if error.code != "AI33SourceSampleRateLow":
+            breaker.record_failure(error)
         write_provider_status(args.status_json, "needs_attention", args.cue_index, args.total_cues, error)
         if checkpoint:
             fail_checkpoint_cue(checkpoint, args.cue_index, args.source_fingerprint, text_hash, voice_id, settings_hash, error, args.total_cues)

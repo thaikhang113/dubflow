@@ -172,6 +172,17 @@ class AI33PollingTests(unittest.TestCase):
         self.assertIn("aresample=48000", conversion)
         self.assertNotIn("asetrate", conversion)
 
+    def test_source_below_requested_sample_rate_is_rejected_before_upsample(self):
+        with self.assertRaises(ai33.AI33Error) as raised:
+            ai33.validate_source_audio(
+                {"codec": "mp3", "duration_ms": 1000, "sample_rate": 24000},
+                requested_sample_rate=48000,
+                attempts=1,
+            )
+        self.assertEqual("AI33SourceSampleRateLow", raised.exception.code)
+        self.assertEqual("source_quality", raised.exception.stage)
+        self.assertNotIn("http", raised.exception.detail.lower())
+
     def test_polling_busy_429_retries_then_returns_completed_task(self):
         busy = urllib.error.HTTPError(
             "https://example.invalid/v1/task/task-1",

@@ -1956,6 +1956,10 @@ except Exception:
 ai33_with_transcript = (os.environ.get('AI33_WITH_TRANSCRIPT', 'false') or 'false').lower()
 ai33_context_chaining = (os.environ.get('AI33_CONTEXT_CHAINING', 'false') or 'false').lower()
 ai33_pronunciation_dictionary_id = (os.environ.get('AI33_PRONUNCIATION_DICTIONARY_ID', '') or '').strip()
+try:
+    ai33_source_quality_retries = max(0, min(2, int(os.environ.get('AI33_SOURCE_QUALITY_RETRIES', '1') or '1')))
+except Exception:
+    ai33_source_quality_retries = 1
 ai33_poll_interval = max(1.0, float(os.environ.get('AI33_POLL_INTERVAL_SECONDS', '2')))
 ai33_timeout_seconds = max(30, int(os.environ.get('AI33_TIMEOUT_SECONDS', '180')))
 ai33_debug_dir = root / 'ai33_tts_debug'
@@ -2135,19 +2139,34 @@ def synthesize_ai33_tts(mp3_path: Path, wav_path: Path, text: str, voice_spec: s
         cmd.extend(['--pronunciation-dictionary-id', ai33_pronunciation_dictionary_id])
     if cue_index in forced_cue_ids:
         cmd.append('--force-regenerate')
-    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    if proc.returncode == 0 and wav_path.exists() and wav_path.stat().st_size > 256:
-        try:
-            wrapper_result = json.loads((proc.stdout or '').strip().splitlines()[-1])
-        except Exception:
-            wrapper_result = {}
-        return {
-            "ok": True, "fallback_silence": False, "engine": "ai33",
-            "ai33_failed": False, "attempts": 1, "ai33_voice": voice_id,
-            "ai33_speed": round(speed_value, 4),
-            "checkpoint_reused": bool(wrapper_result.get('reused')),
-            "attempts": int(wrapper_result.get('attempts') or 1),
-        }
+    proc = None
+    source_quality_retry_count = 0
+    for source_quality_attempt in range(ai33_source_quality_retries + 1):
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if proc.returncode == 0 and wav_path.exists() and wav_path.stat().st_size > 256:
+            try:
+                wrapper_result = json.loads((proc.stdout or '').strip().splitlines()[-1])
+            except Exception:
+                wrapper_result = {}
+            return {
+                "ok": True, "fallback_silence": False, "engine": "ai33",
+                "ai33_failed": False, "attempts": int(wrapper_result.get('attempts') or 1),
+                "ai33_voice": voice_id, "ai33_speed": round(speed_value, 4),
+                "checkpoint_reused": bool(wrapper_result.get('reused')),
+                "source_quality_retries": source_quality_retry_count,
+            }
+        stderr = (proc.stderr or '')[:500]
+        if 'AI33SourceSampleRateLow' not in stderr or source_quality_attempt >= ai33_source_quality_retries:
+            break
+        source_quality_retry_count += 1
+        print(
+            f"WARN: AI33 source sample rate below {tts_master_sample_rate}Hz; "
+            f"regenerating cue={cue_index} retry={source_quality_retry_count}/{ai33_source_quality_retries}",
+            flush=True,
+        )
+        wav_path.unlink(missing_ok=True)
+        if '--force-regenerate' not in cmd:
+            cmd.append('--force-regenerate')
     stderr = (proc.stderr or '')[:500]
     error_code = "TTSAI33Failed"
     if 'AI33AuthMissing' in stderr:
@@ -2161,7 +2180,7 @@ def synthesize_ai33_tts(mp3_path: Path, wav_path: Path, text: str, voice_spec: s
     elif 'AI33NoAudioUrl' in stderr or 'No generated' in stderr or 'no generated' in stderr:
         error_code = "AI33NoAudioUrl"
     else:
-        for candidate in ('AI33InputEmpty', 'AI33VoiceInvalid', 'AI33CreateRateLimited', 'AI33CreateHttp5xx', 'AI33CreateTimeout', 'AI33PollingBusy', 'AI33PollingRateLimited', 'AI33PollingHttp5xx', 'AI33PollingTimeout', 'AI33TaskFailed', 'AI33DownloadRateLimited', 'AI33DownloadHttp5xx', 'AI33DownloadHttp4xx', 'AI33DownloadTimeout', 'AI33DownloadNetwork', 'AI33DownloadEmpty', 'AI33DownloadCorrupt', 'AI33ConvertFailed', 'AI33WavInvalid', 'AI33WavSilent', 'AI33WavDurationInvalid', 'AI33CircuitOpen'):
+        for candidate in ('AI33InputEmpty', 'AI33VoiceInvalid', 'AI33CreateRateLimited', 'AI33CreateHttp5xx', 'AI33CreateTimeout', 'AI33PollingBusy', 'AI33PollingRateLimited', 'AI33PollingHttp5xx', 'AI33PollingTimeout', 'AI33TaskFailed', 'AI33DownloadRateLimited', 'AI33DownloadHttp5xx', 'AI33DownloadHttp4xx', 'AI33DownloadTimeout', 'AI33DownloadNetwork', 'AI33DownloadEmpty', 'AI33DownloadCorrupt', 'AI33SourceSampleRateLow', 'AI33ConvertFailed', 'AI33WavInvalid', 'AI33WavSilent', 'AI33WavDurationInvalid', 'AI33CircuitOpen'):
             if candidate in stderr:
                 error_code = candidate; break
     print(f"WARN: AI33 TTS fail voice={voice_spec} code={error_code} rc={proc.returncode} stderr={stderr[:200]}", flush=True)
