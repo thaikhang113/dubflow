@@ -3,7 +3,9 @@
 import importlib.util
 import json
 import re
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -17,6 +19,23 @@ def load_optimizer():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+def run_srt_gate(vietnamese_text, source_text):
+    source = RUN_SH.read_text(encoding="utf-8")
+    function = source.split("srt_looks_vietnamese() {", 1)[1].split("\nPY\n}", 1)[0]
+    script = function.split("<<'PY'\n", 1)[1]
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        vi_srt = root / "vietnamese.srt"
+        src_srt = root / "original.srt"
+        template = "1\n00:00:00,000 --> 00:00:01,000\n{}\n"
+        vi_srt.write_text(template.format(vietnamese_text), encoding="utf-8")
+        src_srt.write_text(template.format(source_text), encoding="utf-8")
+        return subprocess.run(
+            [sys.executable, "-c", script, str(vi_srt), str(src_srt)],
+            capture_output=True,
+            text=True,
+        )
 
 
 def five_cjk_group():
@@ -73,6 +92,18 @@ def test_valid_vietnamese_translation_passes():
         print(f"FAIL: valid Vietnamese translation was rejected or altered: {subtitle!r} / {dub!r}")
         return False
     print("OK: valid Vietnamese translation passes")
+    return True
+
+def test_non_cjk_name_identical_to_source_passes_srt_gate():
+    result = run_srt_gate("AI33", "AI33")
+    if result.returncode != 0:
+        print(f"FAIL: non-CJK name was rejected: {result.stdout.strip()}")
+        return False
+    cjk_result = run_srt_gate("中文", "中文")
+    if cjk_result.returncode == 0:
+        print("FAIL: CJK cue passed Vietnamese SRT gate")
+        return False
+    print("OK: non-CJK name passes while CJK remains rejected")
     return True
 
 def test_repeated_tts_syllable_is_rejected():
@@ -159,6 +190,7 @@ def test_pre_tts_gate_audits_actual_tts_source_before_voice_generation():
 def main():
     ok = test_optimizer_rejects_five_cjk_cues_without_source_fallback()
     ok = test_valid_vietnamese_translation_passes() and ok
+    ok = test_non_cjk_name_identical_to_source_passes_srt_gate() and ok
     ok = test_repeated_tts_syllable_is_rejected() and ok
     ok = test_review_film_style_is_explicit_in_translation_prompt() and ok
     ok = test_batch_and_adaptive_paths_reject_cjk() and ok
