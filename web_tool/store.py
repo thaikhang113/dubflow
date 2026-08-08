@@ -251,6 +251,27 @@ class Store:
             ).fetchone()
         return bool(row and row["value"] == "1")
 
+    def get_settings(self, defaults: dict) -> dict:
+        with self._connect() as connection:
+            rows = connection.execute("SELECT key, value FROM settings").fetchall()
+        values = dict(defaults)
+        values.update({
+            row["key"]: row["value"]
+            for row in rows
+            if row["key"] in defaults
+        })
+        return values
+
+    def set_settings(self, values: dict) -> None:
+        with self._connect() as connection:
+            connection.executemany(
+                """
+                INSERT INTO settings(key, value) VALUES(?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """,
+                [(str(key), str(value)) for key, value in values.items()],
+            )
+
     def requeue_for_resume(self, job_id: str, request: dict) -> dict:
         with self._connect() as connection:
             cursor = connection.execute(

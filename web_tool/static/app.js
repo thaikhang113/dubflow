@@ -2,6 +2,8 @@ const state = {
   jobs: [],
   providers: [],
   channels: [],
+  series: [],
+  settings: null,
   selectedJobId: "",
   queuePaused: false,
 };
@@ -93,6 +95,9 @@ function showView(name) {
     providers: ["Cấu hình", "Providers"],
     "bilibili-login": ["Tài khoản", "Bilibili Login"],
     channels: ["Tự động", "Channels"],
+    series: ["Nội dung", "Series"],
+    trend: ["Khám phá", "Trend"],
+    settings: ["Hệ thống", "Settings"],
   };
   const heading = headings[name] || headings.jobs;
   document.querySelector("#view-eyebrow").textContent = heading[0];
@@ -101,6 +106,8 @@ function showView(name) {
   document.querySelector("#focus-new-job").hidden = name !== "jobs";
   if (name === "bilibili-login") loadBilibiliStatus();
   if (name === "channels") loadChannels();
+  if (name === "series") loadSeries();
+  if (name === "settings") loadSettings();
 }
 
 function providerOptions(select, providers, emptyLabel) {
@@ -138,6 +145,15 @@ function renderProviders() {
     state.providers,
     "Pipeline mặc định",
   );
+  providerOptions(
+    document.querySelector("#settings-provider"),
+    state.providers,
+    "Pipeline mặc định",
+  );
+  if (state.settings?.default_provider_id) {
+    document.querySelector("#settings-provider").value =
+      state.settings.default_provider_id;
+  }
   providerOptions(
     document.querySelector("#job-tts-provider"),
     state.providers.filter((provider) => provider.kind === "ai33"),
@@ -637,6 +653,189 @@ async function deleteChannel(id) {
   }
 }
 
+function renderJson(selector, payload) {
+  document.querySelector(selector).textContent = JSON.stringify(payload, null, 2);
+}
+
+function renderSeries(payload) {
+  const list = document.querySelector("#series-list");
+  clear(list);
+  state.series = payload.series || payload.items || [];
+  if (!state.series.length) {
+    list.append(element("p", "empty-inline", "Chưa có series."));
+    return;
+  }
+  state.series.forEach((series) => {
+    const row = element("article", "channel-row");
+    const body = element("div", "provider-main");
+    body.append(element("strong", "", series.name || series.title || series.series_id));
+    body.append(element("span", "muted", series.series_id || "Không có ID"));
+    body.append(element(
+      "span",
+      "provider-meta",
+      `${(series.episodes || []).length} tập · ${series.keyword || ""}`,
+    ));
+    const actions = element("div", "row-actions");
+    actions.append(button("Cập nhật", "text-button", () => seriesQuickAction("update", series.series_id)));
+    actions.append(button("Plan", "text-button", () => {
+      document.querySelector("#series-action-id").value = series.series_id || "";
+      runSeriesAction("plan");
+    }));
+    actions.append(button("Xóa", "text-button danger", () => removeSeries(series.series_id)));
+    row.append(body, actions);
+    list.append(row);
+  });
+}
+
+async function loadSeries() {
+  try {
+    renderSeries(await api("/api/series/list"));
+  } catch (error) {
+    notify(`Không tải được series: ${error.message}`, true);
+  }
+}
+
+async function addSeries(event) {
+  event.preventDefault();
+  try {
+    await api("/api/series/add", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({payload: {
+        name: document.querySelector("#series-name").value.trim(),
+        keyword: document.querySelector("#series-keyword").value.trim(),
+        source_url: document.querySelector("#series-source-url").value.trim(),
+        channel_url: document.querySelector("#series-channel-url").value.trim(),
+        series_id: document.querySelector("#series-id-new").value.trim(),
+      }}),
+    });
+    document.querySelector("#series-form").reset();
+    await loadSeries();
+    notify("Đã thêm series.");
+  } catch (error) {
+    notify(`Không thêm được series: ${error.message}`, true);
+  }
+}
+
+async function seriesQuickAction(action, seriesId) {
+  try {
+    const result = await api(`/api/series/${action}`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({payload: {series_id: seriesId}}),
+    });
+    renderJson("#series-result", result);
+    await loadSeries();
+  } catch (error) {
+    notify(`Series ${action} lỗi: ${error.message}`, true);
+  }
+}
+
+async function removeSeries(seriesId) {
+  if (!window.confirm("Xóa series này?")) return;
+  await seriesQuickAction("remove", seriesId);
+}
+
+async function runSeriesAction(action) {
+  const payload = {
+    series_id: document.querySelector("#series-action-id").value.trim(),
+    selector: document.querySelector("#series-selector").value.trim(),
+    compilation_id: document.querySelector("#series-compilation-id").value.trim(),
+  };
+  try {
+    renderJson("#series-result", await api(`/api/series/${action}`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({payload}),
+    }));
+  } catch (error) {
+    notify(`Series ${action} lỗi: ${error.message}`, true);
+  }
+}
+
+async function trendAction(action, payload) {
+  try {
+    const result = await api(`/api/trend/${action}`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({payload}),
+    });
+    renderJson("#trend-result", result);
+    if (result.scan_id) document.querySelector("#trend-scan-id").value = result.scan_id;
+  } catch (error) {
+    notify(`Trend lỗi: ${error.message}`, true);
+  }
+}
+
+async function startTrend(event) {
+  event.preventDefault();
+  await trendAction("scan", {
+    query: document.querySelector("#trend-query").value.trim(),
+    mode: document.querySelector("#trend-mode").value,
+    days: Number(document.querySelector("#trend-days").value),
+  });
+}
+
+async function loadSettings() {
+  try {
+    const settings = await api("/api/settings");
+    state.settings = settings;
+    document.querySelector("#settings-provider").value = settings.default_provider_id || "";
+    document.querySelector("#settings-model").value = settings.default_model || "";
+    document.querySelector("#settings-voice").value = settings.default_voice || "";
+    document.querySelector("#settings-queue-poll").value = settings.queue_poll_seconds;
+    document.querySelector("#settings-telegram-chat").value = settings.telegram_chat_id || "";
+    document.querySelector("#settings-telegram-thread").value = settings.telegram_thread_id || "";
+    document.querySelector("#settings-telegram-token").value = "";
+    document.querySelector("#job-voice").value = settings.default_voice || "";
+    document.querySelector("#channel-provider").value = settings.default_provider_id || "";
+    document.querySelector("#channel-model").value = settings.default_model || "";
+    document.querySelector("#channel-voice").value = settings.default_voice || "";
+    const provider = state.providers.find(
+      (item) => item.id === settings.default_provider_id,
+    );
+    if (provider?.kind === "ai33") {
+      document.querySelector("#job-tts-provider").value = provider.id;
+    } else if (provider) {
+      document.querySelector("#job-translation-provider").value = provider.id;
+    }
+  } catch (error) {
+    notify(`Không tải được settings: ${error.message}`, true);
+  }
+}
+
+async function saveSettings(event) {
+  event.preventDefault();
+  try {
+    await api("/api/settings", {
+      method: "PUT",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        default_provider_id: document.querySelector("#settings-provider").value,
+        default_model: document.querySelector("#settings-model").value.trim(),
+        default_voice: document.querySelector("#settings-voice").value.trim(),
+        queue_poll_seconds: Number(document.querySelector("#settings-queue-poll").value),
+        telegram_chat_id: document.querySelector("#settings-telegram-chat").value.trim(),
+        telegram_thread_id: document.querySelector("#settings-telegram-thread").value.trim(),
+        telegram_bot_token: document.querySelector("#settings-telegram-token").value,
+      }),
+    });
+    document.querySelector("#settings-telegram-token").value = "";
+    await loadSettings();
+    notify("Đã lưu settings.");
+  } catch (error) {
+    notify(`Không lưu được settings: ${error.message}`, true);
+  }
+}
+
+async function showRuntime(path) {
+  try {
+    renderJson("#settings-result", await api(path, {method: path.includes("/test") ? "POST" : "GET"}));
+  } catch (error) {
+    notify(`Runtime lỗi: ${error.message}`, true);
+  }
+}
+
 function connectEvents() {
   const events = new EventSource("/api/events");
   events.addEventListener("job", (event) => {
@@ -670,6 +869,33 @@ document.querySelector("#bilibili-login-clear").addEventListener("click", clearB
 document.querySelector("#channel-form").addEventListener("submit", saveChannel);
 document.querySelector("#channel-reset").addEventListener("click", resetChannelForm);
 document.querySelector("#refresh-channels").addEventListener("click", loadChannels);
+document.querySelector("#series-form").addEventListener("submit", addSeries);
+document.querySelector("#refresh-series").addEventListener("click", loadSeries);
+document.querySelectorAll("[data-series-action]").forEach((item) => {
+  item.addEventListener("click", () => runSeriesAction(item.dataset.seriesAction));
+});
+document.querySelector("#trend-form").addEventListener("submit", startTrend);
+document.querySelector("#trend-status").addEventListener("click", () => {
+  trendAction("status", {scan_id: document.querySelector("#trend-scan-id").value.trim()});
+});
+document.querySelector("#trend-candidates").addEventListener("click", () => {
+  trendAction("top-candidates", {
+    scan_id: document.querySelector("#trend-scan-id").value.trim(),
+    limit: 5,
+  });
+});
+document.querySelector("#trend-tick").addEventListener("click", () => trendAction("collection-tick", {}));
+document.querySelector("#trend-mode").addEventListener("change", (event) => {
+  document.querySelector("#trend-days").max = event.target.value === "archive" ? "180" : "30";
+});
+document.querySelector("#settings-form").addEventListener("submit", saveSettings);
+document.querySelector("#settings-doctor").addEventListener("click", () => showRuntime("/api/runtime/doctor"));
+document.querySelector("#settings-telegram-test").addEventListener("click", () => showRuntime("/api/telegram/test"));
+document.querySelector("#settings-hyperframes").addEventListener("click", () => showRuntime("/api/hyperframes/status"));
+document.querySelector("#settings-thumbnail").addEventListener("click", () => showRuntime("/api/thumbnail/status"));
+document.querySelector("#settings-export").addEventListener("click", () => {
+  window.location.assign("/api/runtime/export");
+});
 document.querySelector("#focus-new-job").addEventListener("click", () => {
   showView("jobs");
   document.querySelector("#job-source").focus();
@@ -679,11 +905,12 @@ document.querySelector("#job-file").addEventListener("change", (event) => {
 });
 
 const initialView = new URLSearchParams(window.location.search).get("view");
-if (["providers", "bilibili-login", "channels"].includes(initialView)) showView(initialView);
+if (["providers", "bilibili-login", "channels", "series", "trend", "settings"].includes(initialView)) showView(initialView);
 checkHealth();
 loadProviders();
 loadJobs();
 loadChannels();
+loadSettings();
 connectEvents();
 window.setInterval(loadJobs, 10000);
 window.setInterval(loadChannels, 10000);

@@ -2,16 +2,28 @@ import asyncio
 from contextlib import asynccontextmanager
 import json
 from pathlib import Path
+import re
+import tempfile
 import threading
 import uuid
+import zipfile
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.background import BackgroundTask
 
 from .bilibili_login import BilibiliLogin
 from .config import Settings
+from .integrations import (
+    hyperframes_status,
+    run_series_action,
+    run_trend_action,
+    runtime_doctor,
+    test_telegram,
+    thumbnail_status,
+)
 from .monitor import MonitorScheduler
 from .pipeline import build_job_command, build_job_environment
 from .secrets import SecretStore, sanitize, test_provider_connection, validate_provider
@@ -105,6 +117,21 @@ class ChannelRequest(BaseModel):
     series_id: str = Field(default="", max_length=200)
     preset: dict = Field(default_factory=dict)
 
+class IntegrationRequest(BaseModel):
+    payload: dict = Field(default_factory=dict)
+
+class RuntimeSettingsRequest(BaseModel):
+    default_provider_id: str = ""
+    default_model: str = Field(default="qwen2.5:3b", max_length=200)
+    default_voice: str = Field(
+        default="ai33:vbee_hn_female_ngochuyen_full_48k-fhg",
+        max_length=200,
+    )
+    queue_poll_seconds: int = Field(default=2, ge=1, le=60)
+    telegram_chat_id: str = Field(default="", max_length=100)
+    telegram_thread_id: str = Field(default="", max_length=100)
+    telegram_bot_token: str = Field(default="", max_length=500)
+
 
 def _public_value(value):
     if isinstance(value, str):
@@ -127,7 +154,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     secrets = SecretStore(settings.secrets_dir)
     events = EventBroker()
     bilibili_login = BilibiliLogin(settings, secrets)
-    worker = Worker(store, settings, secrets, on_update=events.publish)
+    initial_runtime = store.get_settings({"queue_poll_seconds": "2"})
+    worker = Worker(
+        store,
+        settings,
+        secrets,
+        poll_seconds=float(initial_runtime["queue_poll_seconds"]),
+        on_update=events.publish,
+    )
     monitor = MonitorScheduler(
         store,
         settings,
@@ -296,6 +330,128 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="channel not found")
         return channel
 
+    def integration_call(function, action, payload):
+        try:
+            return function(action, payload, settings)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/api/series/list")
+    def series_list():
+        return integration_call(run_series_action, "list", {})
+
+    @app.post("/api/series/{action}")
+    def series_action(action: str, request: IntegrationRequest):
+        return integration_call(run_series_action, action, request.payload)
+
+    @app.post("/api/trend/{action}")
+    def trend_action(action: str, request: IntegrationRequest):
+        return integration_call(run_trend_action, action, request.payload)
+
+    def public_settings():
+        values = store.get_settings(
+            {
+                "default_provider_id": "",
+                "default_model": "qwen2.5:3b",
+                "default_voice": "ai33:vbee_hn_female_ngochuyen_full_48k-fhg",
+                "queue_poll_seconds": "2",
+                "telegram_chat_id": "",
+                "telegram_thread_id": "",
+            }
+        )
+        values["queue_poll_seconds"] = int(values["queue_poll_seconds"])
+        values["telegram_configured"] = secrets.read_status("telegram-bot")["configured"]
+        values["ai33_workers"] = 3
+        return values
+
+    @app.get("/api/settings")
+    def get_runtime_settings():
+        return public_settings()
+
+    @app.put("/api/settings")
+    def update_runtime_settings(request: RuntimeSettingsRequest):
+        values = request.model_dump()
+        provider_id = values["default_provider_id"].strip()
+        if provider_id and store.get_provider(provider_id) is None:
+            raise HTTPException(status_code=422, detail="default_provider_id not found")
+        for key, pattern in (
+            ("telegram_chat_id", r"-?[0-9]+"),
+            ("telegram_thread_id", r"[0-9]+"),
+        ):
+            value = values[key].strip()
+            if value and not re.fullmatch(pattern, value):
+                raise HTTPException(status_code=422, detail=f"invalid {key}")
+        token = values.pop("telegram_bot_token").strip()
+        if token:
+            secrets.write("telegram-bot", token)
+        store.set_settings(
+            {
+                key: str(value).strip()
+                for key, value in values.items()
+            }
+        )
+        worker.set_poll_seconds(values["queue_poll_seconds"])
+        return public_settings()
+
+    @app.get("/api/runtime/doctor")
+    def doctor():
+        return runtime_doctor(settings, store.list_providers())
+
+    @app.post("/api/telegram/test")
+    def telegram_test():
+        values = public_settings()
+        return test_telegram(
+            secrets,
+            values["telegram_chat_id"],
+            values["telegram_thread_id"],
+        )
+
+    @app.get("/api/hyperframes/status")
+    def get_hyperframes_status():
+        try:
+            return hyperframes_status(settings)
+        except ValueError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @app.get("/api/thumbnail/status")
+    def get_thumbnail_status():
+        return thumbnail_status(settings)
+
+    @app.get("/api/runtime/export")
+    def export_output():
+        temporary = tempfile.NamedTemporaryFile(
+            prefix="auto-vietsub-output-",
+            suffix=".zip",
+            dir=settings.data_dir,
+            delete=False,
+        )
+        temporary.close()
+        archive_path = Path(temporary.name)
+        output_root = settings.output_dir.resolve()
+        try:
+            with zipfile.ZipFile(
+                archive_path,
+                "w",
+                compression=zipfile.ZIP_DEFLATED,
+            ) as archive:
+                for path in sorted(settings.output_dir.rglob("*")):
+                    if not path.is_file() or path.is_symlink():
+                        continue
+                    resolved = path.resolve()
+                    try:
+                        relative = resolved.relative_to(output_root)
+                    except ValueError:
+                        continue
+                    archive.write(resolved, relative.as_posix())
+        except Exception:
+            archive_path.unlink(missing_ok=True)
+            raise
+        return FileResponse(
+            archive_path,
+            filename="auto-vietsub-output.zip",
+            background=BackgroundTask(archive_path.unlink, missing_ok=True),
+        )
+
     @app.get("/api/jobs")
     def list_jobs(limit: int = 100):
         return [_public_job(job) for job in store.list_jobs(limit)]
@@ -326,6 +482,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/jobs", status_code=status.HTTP_201_CREATED)
     def create_job(request: JobRequest):
         values = request.model_dump()
+        defaults = store.get_settings(
+            {
+                "default_provider_id": "",
+                "default_model": "qwen2.5:3b",
+                "default_voice": "ai33:vbee_hn_female_ngochuyen_full_48k-fhg",
+            }
+        )
+        if not any(
+            values[key].strip()
+            for key in ("translation_provider_id", "tts_provider_id", "provider_id")
+        ):
+            default_provider_id = defaults["default_provider_id"].strip()
+            provider = store.get_provider(default_provider_id) if default_provider_id else None
+            if provider:
+                role = (
+                    "tts_provider_id"
+                    if provider["kind"] == "ai33"
+                    else "translation_provider_id"
+                )
+                values[role] = provider["id"]
+        if not values["model"].strip():
+            values["model"] = defaults["default_model"]
+        if not values["voice"].strip():
+            values["voice"] = defaults["default_voice"]
         try:
             build_job_command(values, settings)
             providers = {}

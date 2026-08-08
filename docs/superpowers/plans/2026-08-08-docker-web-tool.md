@@ -812,7 +812,7 @@ git commit -m "feat: add channel monitoring queue"
 - API: `POST /api/telegram/test`
 - API: `GET /api/hyperframes/status`
 
-- [ ] **Step 1: Write failing allowlist tests**
+- [x] **Step 1: Write failing allowlist tests**
 
 Series allowlist:
 
@@ -829,13 +829,13 @@ scan, status, top-candidates, topic-details, video-risk, collection-tick
 Reject arbitrary action, payload path, shell metacharacter, oversized query,
 unsupported scan days, and compile path outside tool volumes.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```powershell
 python -m unittest -v web_tool.tests.test_integrations
 ```
 
-- [ ] **Step 3: Implement series adapter**
+- [x] **Step 3: Implement series adapter**
 
 Invoke existing commands with fixed arguments, for example:
 
@@ -849,19 +849,19 @@ python3 skills/series-compilation-orchestrator/scripts/compilation_job.py status
 
 Use fixed argument construction only. Parse JSON output; sanitize stderr.
 
-- [ ] **Step 4: Implement trend adapter**
+- [x] **Step 4: Implement trend adapter**
 
 Trend tab reports `configured: false` until database endpoint and required
 runtime are available. Once configured, invoke only fixed Trend Scout actions
 and preserve scan mode/day validation from existing contracts.
 
-- [ ] **Step 5: Add Series and Trend UI**
+- [x] **Step 5: Add Series and Trend UI**
 
 Series view: series list, episodes, missing items, plan/compile/resume.
 
 Trend view: query, mode, days, scan status, candidates, details, risk.
 
-- [ ] **Step 6: Add Settings and optional integration status**
+- [x] **Step 6: Add Settings and optional integration status**
 
 Settings view must expose:
 
@@ -878,13 +878,13 @@ Settings view must expose:
 The Telegram token must never appear in `GET /api/settings`, SQLite, status,
 logs, or test response.
 
-- [ ] **Step 7: Run GREEN**
+- [x] **Step 7: Run GREEN**
 
 ```powershell
 python -m unittest -v web_tool.tests.test_integrations web_tool.tests.test_static_ui
 ```
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```powershell
 git add web_tool/integrations.py web_tool/app.py web_tool/static web_tool/tests/test_integrations.py

@@ -173,6 +173,10 @@ main {
   gap: 8px;
 }
 
+.inline-actions {
+  flex-wrap: wrap;
+}
+
 .eyebrow {
   margin: 0 0 4px;
   color: var(--amber);
@@ -346,6 +350,14 @@ h3 {
 .check-field input {
   width: 17px;
   height: 17px;
+}
+
+.command-field {
+  display: flex;
+  min-height: 39px;
+  align-items: end;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .field input[type="file"] {
@@ -623,6 +635,21 @@ h3 {
   color: var(--muted);
   font-size: 13px;
   text-align: center;
+}
+
+.integration-result {
+  max-height: 420px;
+  overflow: auto;
+  margin: 16px 0 0;
+  padding: 12px;
+  border: 1px solid #303933;
+  border-radius: 6px;
+  background: #0d110f;
+  color: #c8d3cd;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 1080px) {

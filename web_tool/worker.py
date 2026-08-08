@@ -29,12 +29,14 @@ class Worker:
         settings: Settings,
         secrets: SecretStore,
         cancel_grace: float = 5,
+        poll_seconds: float = 1,
         on_update=None,
     ):
         self.store = store
         self.settings = settings
         self.secrets = secrets
         self.cancel_grace = max(0.1, float(cancel_grace))
+        self.poll_seconds = max(0.1, float(poll_seconds))
         self.on_update = on_update
         self._wake = threading.Event()
         self._stop = threading.Event()
@@ -53,6 +55,10 @@ class Worker:
 
     def notify(self) -> None:
         self._wake.set()
+
+    def set_poll_seconds(self, value: float) -> None:
+        self.poll_seconds = max(0.1, float(value))
+        self.notify()
 
     def stop(self) -> None:
         self._stop.set()
@@ -87,7 +93,7 @@ class Worker:
         while not self._stop.is_set():
             job = self.store.claim_next_job()
             if job is None:
-                self._wake.wait(1)
+                self._wake.wait(self.poll_seconds)
                 self._wake.clear()
                 continue
             if self._stop.is_set():

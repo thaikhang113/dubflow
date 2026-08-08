@@ -21,9 +21,9 @@
         <button class="nav-item" type="button" data-target="providers">Providers</button>
         <button class="nav-item" type="button" data-target="bilibili-login">Bilibili Login</button>
         <button class="nav-item" type="button" data-target="channels">Channels</button>
-        <button class="nav-item" type="button" disabled>Series</button>
-        <button class="nav-item" type="button" disabled>Trend</button>
-        <button class="nav-item" type="button" disabled>Settings</button>
+        <button class="nav-item" type="button" data-target="series">Series</button>
+        <button class="nav-item" type="button" data-target="trend">Trend</button>
+        <button class="nav-item" type="button" data-target="settings">Settings</button>
       </nav>
       <div class="runtime-status">
         <span class="status-dot" aria-hidden="true"></span>
@@ -304,6 +304,194 @@
               <button class="secondary" id="refresh-channels" type="button">Làm mới</button>
             </div>
             <div id="channel-list" class="channel-list" aria-live="polite"></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" data-view="series" hidden>
+        <div class="providers-layout">
+          <form id="series-form" class="form-band">
+            <div class="section-heading">
+              <div>
+                <h2>Thêm series</h2>
+                <p>Theo dõi danh sách tập Bilibili bằng series tracker hiện có.</p>
+              </div>
+              <button class="primary" type="submit">Thêm series</button>
+            </div>
+            <div class="form-grid jobs-form-grid">
+              <label class="field">
+                <span>Tên</span>
+                <input id="series-name" type="text" required maxlength="100">
+              </label>
+              <label class="field">
+                <span>Từ khóa</span>
+                <input id="series-keyword" type="text" required maxlength="200">
+              </label>
+              <label class="field field-wide">
+                <span>URL nguồn</span>
+                <input id="series-source-url" type="url" required>
+              </label>
+              <label class="field">
+                <span>URL kênh</span>
+                <input id="series-channel-url" type="url">
+              </label>
+              <label class="field">
+                <span>Series ID</span>
+                <input id="series-id-new" type="text" maxlength="200">
+              </label>
+            </div>
+          </form>
+
+          <section class="data-section">
+            <div class="section-heading">
+              <div>
+                <h2>Series đã lưu</h2>
+                <p>Cập nhật tập, lập kế hoạch và quản lý compilation.</p>
+              </div>
+              <button class="secondary" id="refresh-series" type="button">Làm mới</button>
+            </div>
+            <div id="series-list" class="channel-list" aria-live="polite"></div>
+          </section>
+
+          <form id="series-action-form" class="form-band">
+            <div class="section-heading">
+              <div>
+                <h2>Compilation</h2>
+                <p>Plan trước, sau đó compile hoặc resume theo ID.</p>
+              </div>
+            </div>
+            <div class="form-grid jobs-form-grid">
+              <label class="field">
+                <span>Series ID</span>
+                <input id="series-action-id" type="text" required maxlength="200">
+              </label>
+              <label class="field">
+                <span>Selector</span>
+                <input id="series-selector" type="text" value="all" maxlength="200">
+              </label>
+              <label class="field">
+                <span>Compilation ID</span>
+                <input id="series-compilation-id" type="text" value="compilation-main" maxlength="200">
+              </label>
+              <div class="command-field">
+                <button class="secondary" data-series-action="plan" type="button">Plan</button>
+                <button class="secondary" data-series-action="compile" type="button">Compile</button>
+                <button class="secondary" data-series-action="resume" type="button">Resume</button>
+                <button class="secondary" data-series-action="status" type="button">Status</button>
+              </div>
+            </div>
+            <pre id="series-result" class="integration-result">Chưa chạy action.</pre>
+          </form>
+        </div>
+      </section>
+
+      <section class="view" data-view="trend" hidden>
+        <div class="providers-layout">
+          <form id="trend-form" class="form-band">
+            <div class="section-heading">
+              <div>
+                <h2>Trend Scout</h2>
+                <p>Tìm ứng viên nội dung qua host-runner cố định.</p>
+              </div>
+              <button class="primary" type="submit">Bắt đầu scan</button>
+            </div>
+            <div class="form-grid jobs-form-grid">
+              <label class="field field-wide">
+                <span>Yêu cầu tìm kiếm</span>
+                <input id="trend-query" type="text" maxlength="200" required>
+              </label>
+              <label class="field">
+                <span>Chế độ</span>
+                <select id="trend-mode">
+                  <option value="trend">Trend</option>
+                  <option value="archive">Archive</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Số ngày</span>
+                <input id="trend-days" type="number" value="7" min="1" max="30">
+              </label>
+              <label class="field">
+                <span>Scan ID</span>
+                <input id="trend-scan-id" type="text" value="latest" maxlength="200">
+              </label>
+              <div class="command-field">
+                <button class="secondary" id="trend-status" type="button">Xem trạng thái</button>
+                <button class="secondary" id="trend-candidates" type="button">Top candidates</button>
+                <button class="secondary" id="trend-tick" type="button">Collection tick</button>
+              </div>
+            </div>
+          </form>
+          <section class="data-section">
+            <div class="section-heading">
+              <div>
+                <h2>Kết quả Trend</h2>
+                <p>Chỉ hiển thị dữ liệu trả về, không tự suy diễn.</p>
+              </div>
+            </div>
+            <pre id="trend-result" class="integration-result">Chưa chạy scan.</pre>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" data-view="settings" hidden>
+        <div class="providers-layout">
+          <form id="settings-form" class="form-band">
+            <div class="section-heading">
+              <div>
+                <h2>Cấu hình mặc định</h2>
+                <p>Dùng cho job và tích hợp cục bộ sau khi restart.</p>
+              </div>
+              <button class="primary" type="submit">Lưu cài đặt</button>
+            </div>
+            <div class="form-grid jobs-form-grid">
+              <label class="field">
+                <span>Provider mặc định</span>
+                <select id="settings-provider">
+                  <option value="">Pipeline mặc định</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Model mặc định</span>
+                <input id="settings-model" type="text" maxlength="200">
+              </label>
+              <label class="field">
+                <span>Giọng mặc định</span>
+                <input id="settings-voice" type="text" maxlength="200">
+              </label>
+              <label class="field">
+                <span>Queue poll (giây)</span>
+                <input id="settings-queue-poll" type="number" min="1" max="60">
+              </label>
+              <label class="field">
+                <span>Telegram chat ID</span>
+                <input id="settings-telegram-chat" type="text" maxlength="100">
+              </label>
+              <label class="field">
+                <span>Telegram thread ID</span>
+                <input id="settings-telegram-thread" type="text" maxlength="100">
+              </label>
+              <label class="field field-wide">
+                <span>Telegram bot token</span>
+                <input id="settings-telegram-token" type="password" autocomplete="new-password" placeholder="Để trống để giữ token cũ">
+              </label>
+            </div>
+          </form>
+          <section class="data-section">
+            <div class="section-heading">
+              <div>
+                <h2>Runtime</h2>
+                <p>AI33 cố định 3 worker. HyperFrames chỉ status/dry-run.</p>
+              </div>
+              <div class="inline-actions">
+                <button class="secondary" id="settings-doctor" type="button">Chạy doctor</button>
+                <button class="secondary" id="settings-telegram-test" type="button">Test Telegram</button>
+                <button class="secondary" id="settings-hyperframes" type="button">HyperFrames</button>
+                <button class="secondary" id="settings-thumbnail" type="button">Thumbnail</button>
+                <button class="secondary" id="settings-export" type="button">Export output</button>
+              </div>
+            </div>
+            <pre id="settings-result" class="integration-result">Chưa kiểm tra runtime.</pre>
           </section>
         </div>
       </section>
