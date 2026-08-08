@@ -417,7 +417,7 @@ git commit -m "feat: add persistent provider profiles"
 - Produces: `read_job_status(job_dir: Path) -> dict`
 - Produces: `Worker.start()`, `Worker.stop()`, `Worker.cancel(job_id: str) -> bool`
 
-- [ ] **Step 1: Write failing command allowlist tests**
+- [x] **Step 1: Write failing command allowlist tests**
 
 Expected commands:
 
@@ -436,13 +436,13 @@ Reject:
 - source containing newline or NUL;
 - resume directory outside `jobs_dir`.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```powershell
 python -m unittest -v web_tool.tests.test_pipeline web_tool.tests.test_worker
 ```
 
-- [ ] **Step 3: Implement adapter**
+- [x] **Step 3: Implement adapter**
 
 Environment mapping must include only validated values and secret data loaded
 inside the worker process:
@@ -464,7 +464,7 @@ CHROME_CDP_URL=http://127.0.0.1:9222
 
 Never persist the expanded environment in SQLite or logs.
 
-- [ ] **Step 4: Implement worker process lifecycle**
+- [x] **Step 4: Implement worker process lifecycle**
 
 Requirements:
 
@@ -478,7 +478,7 @@ Requirements:
 - preserve job directory/checkpoint;
 - shutdown leaves current job recoverable.
 
-- [ ] **Step 5: Run GREEN**
+- [x] **Step 5: Run GREEN**
 
 Use a temporary fake wrapper that writes status and a small fixture file:
 
@@ -486,7 +486,7 @@ Use a temporary fake wrapper that writes status and a small fixture file:
 python -m unittest -v web_tool.tests.test_pipeline web_tool.tests.test_worker
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add web_tool/pipeline.py web_tool/worker.py web_tool/tests/test_pipeline.py web_tool/tests/test_worker.py web_tool/app.py

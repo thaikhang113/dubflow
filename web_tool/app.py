@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from .config import Settings
 from .secrets import SecretStore, test_provider_connection, validate_provider
 from .store import Store
+from .worker import Worker
 
 
 class ProviderRequest(BaseModel):
@@ -25,16 +26,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     static_dir = Path(__file__).with_name("static")
     store = Store(settings.database_path)
     secrets = SecretStore(settings.secrets_dir)
+    worker = Worker(store, settings, secrets)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         store.recover_running_jobs()
-        yield
+        worker.start()
+        try:
+            yield
+        finally:
+            worker.stop()
 
     app = FastAPI(title="Auto Vietsub Tool", version="1", lifespan=lifespan)
     app.state.settings = settings
     app.state.store = store
     app.state.secrets = secrets
+    app.state.worker = worker
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
     @app.get("/api/health")
