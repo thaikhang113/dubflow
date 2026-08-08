@@ -212,6 +212,15 @@ def _fallback_registry() -> dict[str, Any]:
                 "timing_profile": "ai33_balanced_fast",
                 "min_slow_ratio": 0.85,
             },
+            {
+                "provider": "ai33",
+                "voice_id": "vbee_hn_female_ngochuyen_full_48k-fhg",
+                "label": "Ngoc Huyen - Vbee",
+                "aliases": ["ngoc-huyen", "ngoc_huyen", "ngochuyen", "vbee-ngochuyen"],
+                "enabled": True,
+                "timing_profile": "ai33_balanced_fast",
+                "min_slow_ratio": 0.85,
+            },
         ],
     }
 
@@ -378,6 +387,11 @@ def normalize_ai33_voice(value: str | None, registry: dict[str, Any] | None = No
     registry = registry or load_registry()
     raw = str(value or "").strip()
     item = _find_ai33(registry, raw)
+    if not item and raw:
+        # Runtime registries created before a bundled voice was introduced may
+        # not yet contain it. Preserve those registries while accepting bundled
+        # aliases until they are explicitly re-seeded.
+        item = _find_ai33(load_registry(DEFAULT_REGISTRY), raw)
     if item:
         return str(item["canonical_voice"])
     if looks_like_ai33(raw):

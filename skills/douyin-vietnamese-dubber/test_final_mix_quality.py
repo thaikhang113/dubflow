@@ -16,6 +16,21 @@ def check(value, message):
 
 
 def main():
+    canonical_stage_aliases = (
+        "tts_normalized",
+        "voice_master",
+        "final_mp4",
+    )
+    for stage in canonical_stage_aliases:
+        mismatch = module.canonical_sample_rate_error(stage, 44100)
+        check(mismatch == f"TTS_CANONICAL_SAMPLE_RATE_MISMATCH stage={stage} expected=48000 actual=44100", mismatch)
+        check(module.canonical_sample_rate_error(stage, 48000) is None, stage)
+    check(module.canonical_sample_rate_error("ai33_response", 16000) is None, "provider input remains diagnostic-only")
+    run_script = (SKILL_DIR / "run.sh").read_text(encoding="utf-8")
+    check("final_mix_quality.canonical_sample_rate_error" in run_script, "TTS stage gate must use canonical helper")
+    check("raise RuntimeError(sample_rate_error)" in run_script, "TTS stage mismatch must fail closed")
+    check("raise SystemExit(sample_rate_error)" in run_script, "final stage mismatch must fail closed")
+
     for mode in ("aggressive_legacy", "balanced_dub", "quality_dub"):
         policy = module.build_final_mix_policy({"SYNC_MODE": mode})
         check(policy["final_sample_rate"] == 48000, (mode, policy))

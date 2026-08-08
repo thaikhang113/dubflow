@@ -8,10 +8,10 @@ Dùng cho hai mục đích trong pipeline OpenClaw:
 
 Cấu hình qua env (phù hợp cách run.sh truyền env):
   NINEROUTER_API_BASE          / OCR_VISION_API_BASE        base url OpenAI-compatible (vd http://127.0.0.1:20128/v1)
-  NINEROUTER_API_KEY           / OCR_VISION_API_KEY         bearer key (có thể rỗng nếu 9router không yêu cầu)
+  OCR_VISION_API_KEY / NINEROUTER_API_KEY                  bearer key (dedicated key first)
   OCR_VISION_MODEL / NINEROUTER_VISION_MODEL / OPENCLAW_VISION_MODEL
                                                         vision model id (vd ollama/minimax-m3:cloud)
-  OPENCLAW_AI_PROVIDER                                       "ninerouter" (mặc định) hoặc "ollama"
+  OCR_VISION_PROVIDER                                         "ninerouter" (mặc định), "ollama", hoặc "local"
 
 Quan trọng:
   - Dùng stream:false để 9router trả JSON gọn trong choices[].message.content (probe thực tế
@@ -51,16 +51,30 @@ def _pick(*names, default=None):
 
 def resolve_config():
     """Trả dict {api_base, api_key, model, provider} từ env."""
-    provider = _pick("OPENCLAW_AI_PROVIDER", default="ninerouter")
+    # OCR routing must not inherit OPENCLAW_AI_PROVIDER: translation may be
+    # Ollama while OCR remains on 9Router vision (or vice versa).
+    provider = _pick("OCR_VISION_PROVIDER", "NINEROUTER_VISION_PROVIDER",
+                     "OPENCLAW_VISION_PROVIDER", default="ninerouter").strip().lower()
+    if provider in ("9router", "ninerouter"):
+        provider = "ninerouter"
+    elif provider not in ("ollama", "local", "paddleocr", "cv"):
+        provider = "ninerouter"
     # Do not inherit NINEROUTER_MODEL here: it commonly selects the text/chat
     # model and may be a route that cannot accept image content.
-    model = _pick("OCR_VISION_MODEL", "NINEROUTER_VISION_MODEL", "OPENCLAW_VISION_MODEL",
-                  default="ollama/minimax-m3:cloud")
-    api_key = _pick("OCR_VISION_API_KEY", "NINEROUTER_API_KEY", default="")
     if provider == "ollama":
-        api_base = _pick("OCR_VISION_API_BASE", "NINEROUTER_API_BASE", "OLLAMA_API_BASE",
+        model = _pick("OCR_VISION_MODEL", "OLLAMA_VISION_MODEL", "OLLAMA_MODEL",
+                      default="ollama/minimax-m3:cloud")
+    else:
+        model = _pick("OCR_VISION_MODEL", "NINEROUTER_VISION_MODEL", "OPENCLAW_VISION_MODEL",
+                      default="ollama/minimax-m3:cloud")
+    if provider == "ollama":
+        api_base = _pick("OCR_VISION_API_BASE", "OLLAMA_API_BASE",
                           default="http://127.0.0.1:11434")
         return {"api_base": api_base, "api_key": "", "model": model, "provider": provider}
+    if provider in ("local", "paddleocr", "cv"):
+        api_base = _pick("OCR_VISION_API_BASE", default="")
+        return {"api_base": api_base, "api_key": "", "model": model, "provider": "local"}
+    api_key = _pick("OCR_VISION_API_KEY", "NINEROUTER_API_KEY", default="")
     api_base = _pick("OCR_VISION_API_BASE", "NINEROUTER_API_BASE",
                       default="http://127.0.0.1:20128/v1")
     return {"api_base": api_base, "api_key": api_key, "model": model, "provider": provider}

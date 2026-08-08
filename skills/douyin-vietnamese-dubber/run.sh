@@ -263,8 +263,26 @@ SUBTITLE_OCR_REBUILD="${SUBTITLE_OCR_REBUILD:-0}"
 # runners may deliberately set that to a text-only translation/chat route.
 # OCR_VISION_MODEL is the most specific override, followed by dedicated shared
 # vision settings; the final default is the known vision-capable MiniMax route.
-OCR_VISION_MODEL="${OCR_VISION_MODEL:-${NINEROUTER_VISION_MODEL:-${OPENCLAW_VISION_MODEL:-ollama/minimax-m3:cloud}}}"
-OCR_VISION_API_BASE="${OCR_VISION_API_BASE:-${NINEROUTER_API_BASE:-$API_BASE}}"
+# OCR routing is deliberately independent from translation routing.
+OCR_VISION_PROVIDER="${OCR_VISION_PROVIDER:-ninerouter}"
+case "${OCR_VISION_PROVIDER,,}" in
+  ollama)
+    OCR_VISION_PROVIDER="ollama"
+    OCR_VISION_MODEL="${OCR_VISION_MODEL:-${OLLAMA_VISION_MODEL:-${OLLAMA_MODEL:-ollama/minimax-m3:cloud}}}"
+    OCR_VISION_API_BASE="${OCR_VISION_API_BASE:-${OLLAMA_API_BASE:-http://127.0.0.1:11434}}"
+    OCR_VISION_API_KEY=""
+    ;;
+  local|paddleocr|cv)
+    OCR_VISION_PROVIDER="local"
+    OCR_VISION_API_KEY=""
+    ;;
+  *)
+    OCR_VISION_PROVIDER="ninerouter"
+    OCR_VISION_MODEL="${OCR_VISION_MODEL:-${NINEROUTER_VISION_MODEL:-${OPENCLAW_VISION_MODEL:-ollama/minimax-m3:cloud}}}"
+    OCR_VISION_API_BASE="${OCR_VISION_API_BASE:-${NINEROUTER_API_BASE:-$API_BASE}}"
+    OCR_VISION_API_KEY="${OCR_VISION_API_KEY:-${NINEROUTER_API_KEY:-}}"
+    ;;
+esac
 OCR_VISION_MIN_CONFIDENCE="${OCR_VISION_MIN_CONFIDENCE:-0.45}"
 OCR_VISION_DEDUP_THRESHOLD="${OCR_VISION_DEDUP_THRESHOLD:-0.97}"
 # Bounded fast mode: giới hạn OCR transcript để không quét mù toàn video tới timeout 900s.
@@ -751,10 +769,7 @@ PY
 }
 trap on_pipeline_exit EXIT
 
-get_api_key() {
-  if [[ "${OPENCLAW_AI_PROVIDER:-ninerouter}" == "ollama" ]]; then
-    return 0
-  fi
+get_ninerouter_api_key() {
   if [[ -n "${NINEROUTER_API_KEY:-}" ]]; then
     printf '%s' "$NINEROUTER_API_KEY"
     return 0
@@ -803,6 +818,13 @@ for raw in ('~/.openclaw/openclaw.json', '~/.openclaw/agents/main/agent/models.j
             sys.exit(0)
 sys.exit(1)
 PY
+}
+
+get_api_key() {
+  if [[ "${OPENCLAW_AI_PROVIDER:-ninerouter}" == "ollama" ]]; then
+    return 0
+  fi
+  get_ninerouter_api_key
 }
 
 check_api_base() {
@@ -4321,11 +4343,14 @@ if [[ "$SUBTITLE_TRANSCRIPT_SOURCE" == "auto" || "$SUBTITLE_TRANSCRIPT_SOURCE" =
     export SUBTITLE_OCR_MIN_CONFIDENCE
     export OCR_VISION_MODEL
     export OCR_VISION_API_BASE
-    OCR_VISION_API_KEY="${OCR_VISION_API_KEY:-$API_KEY}"
-    if [[ "$SUBTITLE_OCR_ENGINE" == "9router_vision" ]]; then
+    export OCR_VISION_PROVIDER
+    if [[ "$OCR_VISION_PROVIDER" == "ninerouter" && -z "$OCR_VISION_API_KEY" ]]; then
+      OCR_VISION_API_KEY="$(get_ninerouter_api_key)"
+    fi
+    if [[ "$SUBTITLE_OCR_ENGINE" == "9router_vision" && "$OCR_VISION_PROVIDER" == "ninerouter" ]]; then
       [[ -n "$OCR_VISION_API_KEY" ]] || fail "Thiếu OCR_VISION_API_KEY cho OCR 9Router vision."
     fi
-    export OCR_VISION_API_KEY
+    export OCR_VISION_API_KEY="$OCR_VISION_API_KEY"
     export OCR_VISION_MIN_CONFIDENCE
     export OCR_VISION_DEDUP_THRESHOLD
     export OCR_TRANSCRIPT_FRAME_STRIDE

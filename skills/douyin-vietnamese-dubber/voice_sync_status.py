@@ -18,6 +18,25 @@ def build_voice_sync_fallback_report(error_text="", stats_available=False):
         "block_organization": True,
     }
 
+def normalize_resona_grouped_source_cue_ids(stats):
+    """Return only serialized, list-shaped grouping metadata from TTS stats."""
+    groups = stats.get("resona_short_grouped_source_cue_ids") if isinstance(stats, dict) else None
+    if not isinstance(groups, list):
+        return []
+    return [group for group in groups if isinstance(group, list)]
+
+
+def build_voice_sync_fallback_report(_error_text="", stats_available=False):
+    """Build a secret-free, fail-closed report if the checker itself crashes."""
+    return {
+        "status": "fail",
+        "error_code": "VoiceSyncReportBuildFailed",
+        "error_message": "Voice-sync checker failed before writing its quality report.",
+        "stats_available": bool(stats_available),
+        "block_organization": True,
+    }
+
+
 def gate_terminal_status(exit_status):
     """Map unexpected gate failures to a safe, non-organizing terminal status."""
     if int(exit_status) not in (0, 7, 8):
