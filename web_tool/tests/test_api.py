@@ -94,6 +94,50 @@ class ApiTests(unittest.TestCase):
                     self.client.post("/api/jobs", json=payload).status_code,
                 )
 
+    def test_updates_provider_without_echoing_or_clearing_existing_key(self):
+        created = self.client.post(
+            "/api/providers",
+            json={
+                "name": "Main",
+                "kind": "openai_compatible",
+                "endpoint": "https://api.example.com/v1",
+                "model": "old-model",
+                "api_key": "super-secret",
+            },
+        ).json()
+        response = self.client.put(
+            f"/api/providers/{created['id']}",
+            json={
+                "name": "Main updated",
+                "kind": "openai_compatible",
+                "endpoint": "https://api.example.com/v1",
+                "model": "new-model",
+                "api_key": "",
+            },
+        )
+        self.assertEqual(200, response.status_code, response.text)
+        updated = response.json()
+        self.assertEqual("new-model", updated["model"])
+        self.assertTrue(updated["configured"])
+        self.assertNotIn("super-secret", repr(updated))
+
+    def test_upload_uses_server_generated_managed_path(self):
+        response = self.client.post(
+            "/api/uploads",
+            files={"file": ("personal-name.mp4", b"small-video", "video/mp4")},
+        )
+        self.assertEqual(201, response.status_code, response.text)
+        source = Path(response.json()["source"])
+        self.assertTrue(source.is_file())
+        self.assertEqual(self.settings.jobs_dir / "uploads", source.parent)
+        self.assertNotEqual("personal-name.mp4", source.name)
+
+        rejected = self.client.post(
+            "/api/uploads",
+            files={"file": ("secret.txt", b"no", "text/plain")},
+        )
+        self.assertEqual(422, rejected.status_code)
+
     def test_resume_reuses_checkpoint_and_retry_links_new_job(self):
         job = self.create_job()
         job_dir = self.settings.jobs_dir / job["id"] / "output"

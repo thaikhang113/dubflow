@@ -321,6 +321,50 @@ class Store:
             ).fetchall()
         return [self._provider(row) for row in rows]
 
+    def update_provider(
+        self,
+        provider_id: str,
+        values: dict,
+        has_secret: bool | None = None,
+    ) -> dict | None:
+        timestamp = _now()
+        with self._connect() as connection:
+            current = connection.execute(
+                "SELECT has_secret FROM providers WHERE id = ?",
+                (provider_id,),
+            ).fetchone()
+            if current is None:
+                return None
+            configured = current["has_secret"] if has_secret is None else int(has_secret)
+            connection.execute(
+                """
+                UPDATE providers
+                SET name = ?,
+                    kind = ?,
+                    endpoint = ?,
+                    model = ?,
+                    timeout_seconds = ?,
+                    has_secret = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    values["name"],
+                    values["kind"],
+                    values["endpoint"],
+                    values["model"],
+                    values["timeout_seconds"],
+                    configured,
+                    timestamp,
+                    provider_id,
+                ),
+            )
+            row = connection.execute(
+                "SELECT * FROM providers WHERE id = ?",
+                (provider_id,),
+            ).fetchone()
+        return self._provider(row)
+
     def delete_provider(self, provider_id: str) -> bool:
         with self._connect() as connection:
             cursor = connection.execute(

@@ -13,35 +13,172 @@
         <span class="brand-mark" aria-hidden="true">AV</span>
         <div>
           <strong>Auto Vietsub</strong>
-          <small>Local tool</small>
+          <small>Cá nhân · chạy cục bộ</small>
         </div>
       </div>
       <nav aria-label="Điều hướng chính">
-        <button class="nav-item active" type="button">Jobs</button>
-        <button class="nav-item" type="button">Channels</button>
-        <button class="nav-item" type="button">Series</button>
-        <button class="nav-item" type="button">Trend</button>
-        <button class="nav-item" type="button">Providers</button>
-        <button class="nav-item" type="button">Bilibili Login</button>
-        <button class="nav-item" type="button">Settings</button>
+        <button class="nav-item active" type="button" data-target="jobs">Jobs</button>
+        <button class="nav-item" type="button" data-target="providers">Providers</button>
+        <button class="nav-item" type="button" disabled>Channels</button>
+        <button class="nav-item" type="button" disabled>Series</button>
+        <button class="nav-item" type="button" disabled>Trend</button>
+        <button class="nav-item" type="button" disabled>Bilibili Login</button>
+        <button class="nav-item" type="button" disabled>Settings</button>
       </nav>
       <div class="runtime-status">
         <span class="status-dot" aria-hidden="true"></span>
         <span id="runtime-label">Đang kiểm tra</span>
       </div>
     </aside>
+
     <main>
       <header class="topbar">
         <div>
-          <p class="eyebrow">Queue</p>
-          <h1>Jobs</h1>
+          <p class="eyebrow" id="view-eyebrow">Queue</p>
+          <h1 id="view-title">Jobs</h1>
         </div>
-        <button class="primary" type="button">Thêm video</button>
+        <div class="topbar-actions">
+          <button class="secondary" id="queue-pause" type="button">Tạm dừng queue</button>
+          <button class="primary" id="focus-new-job" type="button">Thêm video</button>
+        </div>
       </header>
-      <section class="workspace" aria-live="polite">
-        <div class="empty-state">
-          <strong>Chưa có job</strong>
-          <span>Thêm URL hoặc video để bắt đầu.</span>
+
+      <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+
+      <section class="view active" data-view="jobs">
+        <form id="new-job-form" class="form-band">
+          <div class="section-heading">
+            <div>
+              <h2>Tạo job</h2>
+              <p>URL Bilibili, Douyin hoặc video trên máy.</p>
+            </div>
+            <button class="primary" type="submit">Đưa vào queue</button>
+          </div>
+          <div class="form-grid jobs-form-grid">
+            <label class="field field-wide">
+              <span>URL video</span>
+              <input id="job-source" name="source" type="url" placeholder="https://www.bilibili.com/video/BV..." autocomplete="off" required>
+            </label>
+            <label class="field">
+              <span>Video trên máy</span>
+              <input id="job-file" name="file" type="file" accept="video/mp4,video/webm,video/quicktime,video/x-matroska">
+            </label>
+            <label class="field">
+              <span>Nền tảng</span>
+              <select id="job-platform" name="platform">
+                <option value="bilibili">Bilibili</option>
+                <option value="douyin">Douyin</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Provider dịch</span>
+              <select id="job-translation-provider" name="translation_provider_id">
+                <option value="">Ollama mặc định</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Provider giọng</span>
+              <select id="job-tts-provider" name="tts_provider_id">
+                <option value="">Theo cấu hình pipeline</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Giọng</span>
+              <input id="job-voice" name="voice" type="text" value="ai33:vbee_hn_female_ngochuyen_full_48k-fhg" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Preset</span>
+              <select id="job-preset" name="preset">
+                <option value="exact_sync">Khớp hình chính xác</option>
+                <option value="quality_dub">Ưu tiên giọng tự nhiên</option>
+                <option value="balanced_dub">Cân bằng</option>
+              </select>
+            </label>
+          </div>
+        </form>
+
+        <div class="jobs-layout">
+          <section class="data-section" aria-labelledby="queue-heading">
+            <div class="section-heading">
+              <div>
+                <h2 id="queue-heading">Queue</h2>
+                <p id="queue-summary">Đang tải danh sách.</p>
+              </div>
+              <button class="secondary" id="refresh-jobs" type="button">Làm mới</button>
+            </div>
+            <div id="job-list" class="job-list" aria-live="polite"></div>
+          </section>
+
+          <aside class="detail-panel" aria-labelledby="detail-heading">
+            <div class="section-heading">
+              <div>
+                <h2 id="detail-heading">Chi tiết job</h2>
+                <p id="detail-subtitle">Chọn một job để xem.</p>
+              </div>
+            </div>
+            <div id="job-detail" class="detail-content">
+              <p class="muted">Chưa chọn job.</p>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="view" data-view="providers" hidden>
+        <div class="providers-layout">
+          <form id="provider-form" class="form-band">
+            <div class="section-heading">
+              <div>
+                <h2 id="provider-form-title">Thêm provider</h2>
+                <p>Key được lưu trong volume bí mật, không hiện lại.</p>
+              </div>
+              <div class="inline-actions">
+                <button class="secondary" id="provider-reset" type="button" hidden>Hủy sửa</button>
+                <button class="primary" type="submit">Lưu provider</button>
+              </div>
+            </div>
+            <input id="provider-id" type="hidden">
+            <div class="form-grid">
+              <label class="field">
+                <span>Tên</span>
+                <input id="provider-name" name="name" type="text" required maxlength="80" autocomplete="off">
+              </label>
+              <label class="field">
+                <span>Loại</span>
+                <select id="provider-kind" name="kind">
+                  <option value="ollama">Ollama</option>
+                  <option value="openai_compatible">OpenAI-compatible</option>
+                  <option value="ai33">AI33 TTS</option>
+                </select>
+              </label>
+              <label class="field field-wide">
+                <span>Endpoint</span>
+                <input id="provider-endpoint" name="endpoint" type="url" required placeholder="http://host.docker.internal:11434" autocomplete="off">
+              </label>
+              <label class="field">
+                <span>Model</span>
+                <input id="provider-model" name="model" type="text" placeholder="qwen2.5:3b" autocomplete="off">
+              </label>
+              <label class="field">
+                <span>Timeout (giây)</span>
+                <input id="provider-timeout" name="timeout_seconds" type="number" value="90" min="1" max="600">
+              </label>
+              <label class="field field-wide">
+                <span>API key</span>
+                <input id="provider-key" name="api_key" type="password" autocomplete="new-password" placeholder="Để trống nếu không cần hoặc muốn giữ key cũ">
+              </label>
+            </div>
+          </form>
+
+          <section class="data-section" aria-labelledby="providers-heading">
+            <div class="section-heading">
+              <div>
+                <h2 id="providers-heading">Provider đã lưu</h2>
+                <p id="provider-summary">Đang tải danh sách.</p>
+              </div>
+              <button class="secondary" id="refresh-providers" type="button">Làm mới</button>
+            </div>
+            <div id="provider-list" class="provider-list" aria-live="polite"></div>
+          </section>
         </div>
       </section>
     </main>

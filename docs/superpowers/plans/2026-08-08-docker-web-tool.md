@@ -579,7 +579,7 @@ git commit -m "feat: expose queue and job control api"
 - Consumes APIs from Tasks 3 and 5.
 - Produces visible Jobs and Providers screens.
 
-- [ ] **Step 1: Write failing static UI contract test**
+- [x] **Step 1: Write failing static UI contract test**
 
 Assert HTML/JS contains:
 
@@ -596,13 +596,13 @@ new EventSource("/api/events")
 Assert no landing-page hero, API-key value echo, raw log HTML injection, or
 inline secret serialization.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```powershell
 python -m unittest -v web_tool.tests.test_static_ui
 ```
 
-- [ ] **Step 3: Implement operational UI**
+- [x] **Step 3: Implement operational UI**
 
 Required behavior:
 
@@ -616,13 +616,13 @@ Required behavior:
 - HTML escaping through DOM `textContent`, never untrusted `innerHTML`;
 - responsive layout without nested cards or decorative landing content.
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 ```powershell
 python -m unittest -v web_tool.tests.test_static_ui
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add web_tool/static web_tool/tests/test_static_ui.py

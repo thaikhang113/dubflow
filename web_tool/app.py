@@ -3,8 +3,9 @@ from contextlib import asynccontextmanager
 import json
 from pathlib import Path
 import threading
+import uuid
 
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -24,6 +25,8 @@ ARTIFACTS = {
     "final_mix_quality_report.json",
     "bilibili_branding_proof.json",
 }
+UPLOAD_EXTENSIONS = {".avi", ".mkv", ".mov", ".mp4", ".webm"}
+UPLOAD_MAX_BYTES = 20 * 1024 * 1024 * 1024
 
 
 class EventBroker:
@@ -152,6 +155,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="provider not found")
         secrets.delete(provider_id)
 
+    @app.put("/api/providers/{provider_id}")
+    def update_provider(provider_id: str, request: ProviderRequest):
+        if store.get_provider(provider_id) is None:
+            raise HTTPException(status_code=404, detail="provider not found")
+        try:
+            values = validate_provider(request.model_dump())
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        has_secret = None
+        if request.api_key.strip():
+            secrets.write(provider_id, request.api_key)
+            has_secret = True
+        provider = store.update_provider(provider_id, values, has_secret)
+        return provider
+
     @app.post("/api/providers/{provider_id}/test")
     def test_provider(provider_id: str):
         provider = store.get_provider(provider_id)
@@ -162,6 +180,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/jobs")
     def list_jobs(limit: int = 100):
         return [_public_job(job) for job in store.list_jobs(limit)]
+
+    @app.post("/api/uploads", status_code=status.HTTP_201_CREATED)
+    def upload_video(file: UploadFile = File(...)):
+        suffix = Path(file.filename or "").suffix.lower()
+        if suffix not in UPLOAD_EXTENSIONS:
+            raise HTTPException(status_code=422, detail="unsupported video file type")
+        upload_dir = settings.jobs_dir / "uploads"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        upload_id = uuid.uuid4().hex
+        target = upload_dir / f"{upload_id}{suffix}"
+        temporary = upload_dir / f".{upload_id}.tmp"
+        total = 0
+        try:
+            with temporary.open("xb") as output:
+                while chunk := file.file.read(1024 * 1024):
+                    total += len(chunk)
+                    if total > UPLOAD_MAX_BYTES:
+                        raise HTTPException(status_code=413, detail="video file is too large")
+                    output.write(chunk)
+            temporary.replace(target)
+        finally:
+            temporary.unlink(missing_ok=True)
+        return {"source": str(target.resolve())}
 
     @app.post("/api/jobs", status_code=status.HTTP_201_CREATED)
     def create_job(request: JobRequest):

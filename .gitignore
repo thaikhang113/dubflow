@@ -94,6 +94,7 @@ skills/content-monitor/daemon.pid
 skills/content-monitor/seen_videos.json
 
 .gitnexus/
+.tool-runtime/
 
 # Claude local agent files
 .claude/
