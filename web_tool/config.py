@@ -58,4 +58,3 @@ class Settings:
             bind_port=port,
             repo_root=repo_root.resolve(),
         )
-

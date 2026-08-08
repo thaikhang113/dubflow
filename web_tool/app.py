@@ -23,4 +23,3 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return FileResponse(static_dir / "index.html")
 
     return app
-

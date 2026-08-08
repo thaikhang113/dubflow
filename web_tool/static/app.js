@@ -11,4 +11,3 @@ async function checkHealth() {
 }
 
 checkHealth();
-
