@@ -140,8 +140,19 @@ def load_json(filepath, default):
 
 def save_json(filepath, data):
     """Ghi du lieu vao file JSON de doc ve sau."""
-    with open(filepath, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    directory = os.path.dirname(os.path.abspath(filepath))
+    os.makedirs(directory, exist_ok=True)
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=directory, suffix=".tmp", delete=False) as f:
+            tmp_path = f.name
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, filepath)
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
 
 # =========================================================
@@ -710,7 +721,6 @@ def run_check_cycle():
                 continue  # Video nay da xu ly roi, bo qua
 
             log(f"  -> Video MOI: {vid_title} ({vid_url})")
-            new_count += 1
 
             # Phan tich video
             report_text = analyze_video(vid_url)
@@ -722,11 +732,12 @@ def run_check_cycle():
             else:
                 msg = build_telegram_message(name, vid_url, report, vid_title)
 
-            # Gui Telegram
-            send_telegram(msg)
-
-            # Danh dau da xu ly
+            # Chi mark seen sau khi Telegram xac nhan thanh cong.
+            if not send_telegram(msg):
+                log(f"  -> Gui Telegram that bai, se thu lai video {vid_id} o chu ky sau.", "WARN")
+                continue
             mark_seen(vid_id)
+            new_count += 1
 
             # Nghi 5 giay giua moi video de tranh spam API
             time.sleep(5)

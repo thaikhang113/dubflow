@@ -16,6 +16,20 @@ SPEC.loader.exec_module(series_tracker)
 
 
 class SeriesTrackerStateTests(unittest.TestCase):
+    def test_corrupt_state_fails_closed_without_overwriting_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state_dir = Path(tmp)
+            state_file = state_dir / "series.json"
+            original = '{"series": ['
+            state_file.write_text(original, encoding="utf-8")
+
+            with patch.object(series_tracker, "STATE_DIR", state_dir), \
+                 patch.object(series_tracker, "STATE_FILE", state_file), \
+                 self.assertRaisesRegex(RuntimeError, "SeriesStateInvalid"):
+                series_tracker.load_state()
+
+            self.assertEqual(original, state_file.read_text(encoding="utf-8"))
+
     def test_normalize_ngoc_huyen_voice_alias(self):
         self.assertEqual(
             "ai33:vbee_hn_female_ngochuyen_full_48k-fhg",

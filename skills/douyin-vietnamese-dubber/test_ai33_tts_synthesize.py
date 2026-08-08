@@ -208,7 +208,7 @@ class AI33PollingTests(unittest.TestCase):
         self.assertEqual(1, len(sleeps))
         self.assertGreaterEqual(sleeps[0], 0.25)
 
-    def test_true_quota_429_remains_terminal(self):
+    def test_true_quota_429_is_classified_without_exiting_process(self):
         quota = urllib.error.HTTPError(
             "https://example.invalid/v1/task/task-1",
             429,
@@ -216,14 +216,12 @@ class AI33PollingTests(unittest.TestCase):
             {},
             io.BytesIO(b'{"success":false,"message":"Insufficient credit"}'),
         )
-        stderr = io.StringIO()
         with patch.object(ai33.urllib.request, "urlopen", side_effect=quota), \
-             contextlib.redirect_stderr(stderr), \
-             self.assertRaises(SystemExit) as exited:
+             self.assertRaises(ai33.AI33Error) as raised:
             ai33.get_json("https://example.invalid/v1/task/task-1", {}, timeout=1)
 
-        self.assertEqual(3, exited.exception.code)
-        self.assertIn(ai33.MARKER_QUOTA, stderr.getvalue())
+        self.assertEqual(ai33.MARKER_QUOTA, raised.exception.code)
+        self.assertNotIn("example.invalid", raised.exception.detail)
 
 
 class AI33ResilienceTests(unittest.TestCase):
@@ -236,6 +234,28 @@ class AI33ResilienceTests(unittest.TestCase):
     def _download_fixture(self, _url, destination, *_args, **_kwargs):
         Path(destination).write_bytes(b"ID3" + b"x" * 300)
         return 1
+
+    def test_create_429_updates_circuit_breaker_instead_of_exiting_worker(self):
+        quota = urllib.error.HTTPError(
+            "https://example.invalid/v3/text-to-speech",
+            429,
+            "Too Many Requests",
+            {},
+            io.BytesIO(b'{"message":"Insufficient credit"}'),
+        )
+        with tempfile.TemporaryDirectory() as td:
+            output = Path(td) / "out.wav"
+            provider_state = Path(td) / "provider.json"
+            args = self._main_args(output) + ["--provider-state", str(provider_state)]
+            with patch.dict(os.environ, {"AI33_API_KEY": "test-token"}, clear=False), \
+                 patch.object(sys, "argv", args), \
+                 patch.object(ai33.urllib.request, "urlopen", side_effect=quota), \
+                 contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(3, ai33.main())
+
+            state = json.loads(provider_state.read_text(encoding="utf-8"))
+            self.assertEqual("open", state["state"])
+            self.assertEqual(ai33.MARKER_QUOTA, state["open_code"])
 
     def test_atomic_conversion_passes_ffmpeg_a_wav_suffixed_temporary_output(self):
         with tempfile.TemporaryDirectory() as td:

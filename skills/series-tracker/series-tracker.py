@@ -132,8 +132,8 @@ def load_state():
     try:
         data = json.loads(STATE_FILE.read_text(encoding="utf-8"))
         return migrate_state_v2(data)
-    except Exception:
-        return migrate_state_v2({})
+    except Exception as exc:
+        raise RuntimeError(f"SeriesStateInvalid: không đọc được {STATE_FILE}: {exc}") from exc
 
 
 def save_state(data):
@@ -141,6 +141,10 @@ def save_state(data):
     tmp = STATE_FILE.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(migrate_state_v2(data), ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(STATE_FILE)
+
+
+def print_json(data):
+    print(json.dumps(data, ensure_ascii=True, indent=2))
 
 
 def make_series_id(name, keyword, source_url):
@@ -450,7 +454,7 @@ def items_to_episodes(items, keyword):
 
 
 def cmd_list(_args):
-    print(json.dumps(load_state(), ensure_ascii=False, indent=2))
+    print_json(load_state())
 
 
 def cmd_add(args):
@@ -481,7 +485,7 @@ def cmd_add(args):
         data["series"].append(payload)
         result = payload
     save_state(data)
-    print(json.dumps({"ok": True, "series": result}, ensure_ascii=False, indent=2))
+    print_json({"ok": True, "series": result})
 
 
 def cmd_remove(args):
@@ -489,7 +493,7 @@ def cmd_remove(args):
     before = len(data.get("series", []))
     data["series"] = [item for item in data.get("series", []) if item.get("series_id") != args.series_id]
     save_state(data)
-    print(json.dumps({"ok": True, "removed": before - len(data["series"])}, ensure_ascii=False, indent=2))
+    print_json({"ok": True, "removed": before - len(data["series"])})
 
 
 OPERATIONAL_EPISODE_FIELDS = {
@@ -547,12 +551,12 @@ def cmd_refresh(args):
         series["last_refresh_at"] = now_iso()
         series["updated_at"] = now_iso()
         save_state(data)
-        print(json.dumps({"ok": True, "series": series, "source_title": dom.get("title"), "source_url": dom.get("url")}, ensure_ascii=False, indent=2))
+        print_json({"ok": True, "series": series, "source_title": dom.get("title"), "source_url": dom.get("url")})
     except Exception as exc:
         series["last_error"] = f"needs_attention: {exc}"
         series["updated_at"] = now_iso()
         save_state(data)
-        print(json.dumps({"ok": False, "series": series, "error": series["last_error"]}, ensure_ascii=False, indent=2))
+        print_json({"ok": False, "series": series, "error": series["last_error"]})
         raise SystemExit(20)
 
 
@@ -612,7 +616,7 @@ def cmd_download(args):
                 break
         series["updated_at"] = now_iso()
         save_state(data)
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print_json(result)
 
 
 def parse_job_output_paths(text):
@@ -668,7 +672,7 @@ def cmd_job_status(args):
         if output_dir:
             episode["last_output_dir"] = output_dir
         save_state(data)
-    print(json.dumps({"ok": True, "job_id": job_id, "status": status, "request": str(req), "log": str(log), "log_tail": text}, ensure_ascii=False, indent=2))
+    print_json({"ok": True, "job_id": job_id, "status": status, "request": str(req), "log": str(log), "log_tail": text})
 
 
 def main():

@@ -187,6 +187,8 @@ def materialize_checkpoint_wav(manifest_path: Path, cue_index: int, output_path:
 
 def classified_error(stage: str, exc: Exception, attempts: int = 0) -> AI33Error:
     """Map boundary failures without leaking provider bodies or signed URLs."""
+    if isinstance(exc, AI33Error):
+        return exc
     detail = _safe_detail(exc)
     lowered = detail.lower()
     if "timed out" in lowered:
@@ -272,13 +274,11 @@ def handle_http_error(exc: urllib.error.HTTPError, retry_polling_busy: bool = Fa
     except Exception:
         pass
     if exc.code in (401, 403):
-        print(f"{MARKER_AUTH_FAILED} http_{exc.code} body={body_text}", file=sys.stderr)
-        sys.exit(3)
+        raise AI33Error(MARKER_AUTH_FAILED, "request", f"http_{exc.code}")
     if exc.code == 429 and retry_polling_busy and is_transient_polling_busy(body_text):
         raise AI33PollingBusy(f"http_429 polling_busy body={body_text}")
     if exc.code == 429:
-        print(f"{MARKER_QUOTA} http_429 body={body_text}", file=sys.stderr)
-        sys.exit(3)
+        raise AI33Error(MARKER_QUOTA, "request", "http_429")
     raise RuntimeError(f"http_{exc.code} body={body_text}")
 
 
@@ -661,8 +661,13 @@ def main() -> int:
         breaker.before_create()
         create_resp = create_task(api_base, headers, args)
     except AI33Error as error:
-        # Open circuits block before create and deliberately retain checkpoints/output choices.
-        write_provider_status(args.status_json, "waiting_provider", args.cue_index, args.total_cues, error)
+        # Open circuits retain checkpoints; provider failures update breaker/checkpoint once.
+        if error.code != "AI33CircuitOpen":
+            breaker.record_failure(error)
+            if checkpoint:
+                fail_checkpoint_cue(checkpoint, args.cue_index, args.source_fingerprint, text_hash, voice_id, settings_hash, error, args.total_cues)
+        state = "waiting_provider" if error.code in TRANSIENT_CODES or error.code == "AI33CircuitOpen" else "needs_attention"
+        write_provider_status(args.status_json, state, args.cue_index, args.total_cues, error)
         print(f"{error.code} stage={error.stage} attempts=0", file=sys.stderr)
         return 3
     except SystemExit:

@@ -10,6 +10,20 @@ BASE_DIR="${DOUYIN_VIDEOS_DIR:-$HOME/video douyin vietsub}"
 WHISPER_DIR="${WHISPER_DIR:-$HOME/whisper.cpp}"
 WHISPER_BIN="${WHISPER_BIN:-$WHISPER_DIR/build/bin/whisper-cli}"
 WHISPER_MODEL="${WHISPER_MODEL:-$WHISPER_DIR/models/ggml-small.bin}"
+OPENCLAW_RUNTIME_PROFILE="${OPENCLAW_RUNTIME_PROFILE:-standard}"
+if [[ "${OPENCLAW_RUNTIME_PROFILE,,}" == "free_low_gpu" ]]; then
+  OPENCLAW_AI_PROVIDER="${OPENCLAW_AI_PROVIDER:-ollama}"
+  OLLAMA_MODEL="${OLLAMA_MODEL:-qwen2.5:3b}"
+  if [[ -z "${EDGE_TTS_VOICE:-}" && -z "${EDGE_TTS_VOICE_PRESET:-}" && -z "${DOUYIN_TTS_VOICE_PRESET:-}" && -z "${OPENCLAW_DEFAULT_TTS_VOICE:-}" ]]; then
+    EDGE_TTS_VOICE="${EDGE_TTS_VOICE:-vi-VN-HoaiMyNeural}"
+  fi
+  SUBTITLE_OCR_ENGINE="${SUBTITLE_OCR_ENGINE:-paddleocr}"
+  SUBTITLE_BAND_DETECT_ENGINE="${SUBTITLE_BAND_DETECT_ENGINE:-cv}"
+  BGM_MODE="${BGM_MODE:-none}"
+  SPEECH_ONLY_PREPROCESS="${SPEECH_ONLY_PREPROCESS:-0}"
+  AI33_TTS_WORKERS="${AI33_TTS_WORKERS:-1}"
+  TTS_VOICE_QA_ENABLED="${TTS_VOICE_QA_ENABLED:-0}"
+fi
 if [[ -z "${VK_ICD_FILENAMES:-}" && -f /usr/share/vulkan/icd.d/radeon_icd.json ]]; then
   export VK_ICD_FILENAMES="/usr/share/vulkan/icd.d/radeon_icd.json"
 fi
@@ -33,11 +47,12 @@ export EDGE_TTS_BIN
 # Translation routing is deliberately isolated from host-wide OpenClaw provider
 # settings.  See translation_route.sh for validation and the Ollama fallback.
 source "$SKILL_DIR/translation_route.sh"
+export OPENCLAW_AI_PROVIDER
 KOKORO_DEFAULT_VOICE="${KOKORO_DEFAULT_VOICE:-mai_linh}"
 AI33_MAI_PHUONG_VOICE_ID="${AI33_MAI_PHUONG_VOICE_ID:-vbee_hn_female_maiphuong_vdts_48k-fhg}"
 AI33_PHANH_VOICE_ID="${AI33_PHANH_VOICE_ID:-elevenlabs_UuMSQK8FdLwaY2M8ZAnh}"
 AI33_DEFAULT_VOICE_ID="${AI33_DEFAULT_VOICE_ID:-$AI33_MAI_PHUONG_VOICE_ID}"
-if [[ -f "$VOICE_REGISTRY_PY" ]]; then
+if [[ -z "${OPENCLAW_DEFAULT_TTS_VOICE:-}" && -f "$VOICE_REGISTRY_PY" ]]; then
   if _voice_registry_default="$(python3 "$VOICE_REGISTRY_PY" default 2>/dev/null)" && [[ -n "$_voice_registry_default" ]]; then
     OPENCLAW_DEFAULT_TTS_VOICE="$_voice_registry_default"
   fi
@@ -376,7 +391,7 @@ KOKORO_TTS_VOICEPACK="${KOKORO_TTS_VOICEPACK:-}"
 # Comma-separated Resona voice IDs to try if the primary voice fails the pre-TTS probe.
 # Empty = single voice (fail loud on probe fail). No silent Edge fallback.
 RESONA_FALLBACK_VOICE_IDS="${RESONA_FALLBACK_VOICE_IDS:-}"
-RESONA_API_TOKEN=${RESONA_API_TOKEN:?Set RESONA_API_TOKEN in the environment}
+: "${RESONA_API_TOKEN:=${RESONA_ACCESS_TOKEN:-}}"
 RESONA_MIN_CHARS="${RESONA_MIN_CHARS:-50}"
 RESONA_MAX_CHARS="${RESONA_MAX_CHARS:-2000}"
 RESONA_SHORT_TEXT_POLICY="${RESONA_SHORT_TEXT_POLICY:-group_or_fail}"
@@ -388,7 +403,7 @@ RESONA_SHORT_GROUP_MAX_INTERNAL_GAP_MS="${RESONA_SHORT_GROUP_MAX_INTERNAL_GAP_MS
 RESONA_SHORT_GROUP_MAX_DURATION_SECONDS="${RESONA_SHORT_GROUP_MAX_DURATION_SECONDS:-12}"
 RESONA_POLL_INTERVAL_SECONDS="${RESONA_POLL_INTERVAL_SECONDS:-2}"
 RESONA_TIMEOUT_SECONDS="${RESONA_TIMEOUT_SECONDS:-180}"
-AI33_API_KEY=${AI33_API_KEY:?Set AI33_API_KEY in the environment}
+: "${AI33_API_KEY:=${AI33_ACCESS_TOKEN:-}}"
 AI33_TTS_SPEED="${AI33_TTS_SPEED:-1.0}"
 AI33_WITH_TRANSCRIPT="${AI33_WITH_TRANSCRIPT:-false}"
 AI33_CONTEXT_CHAINING="${AI33_CONTEXT_CHAINING:-false}"
@@ -1470,7 +1485,7 @@ generate_vietnamese_voice() {
   fi
   DOUYIN_DUBBER_SKILL_DIR="$SKILL_DIR" CAPCUT_TTS_WRAPPER="$CAPCUT_TTS_WRAPPER" CAPCUT_TTS_VOICES_JSON="$CAPCUT_TTS_VOICES_JSON" CAPCUT_TTS_EDGE_FALLBACK_VOICE="$CAPCUT_TTS_EDGE_FALLBACK_VOICE" \
   RESONA_TTS_WRAPPER="$RESONA_TTS_WRAPPER" RESONA_API_BASE="$RESONA_API_BASE" RESONA_DEFAULT_VOICE_ID="$RESONA_DEFAULT_VOICE_ID" \
-  RESONA_API_TOKEN=${RESONA_API_TOKEN:?Set RESONA_API_TOKEN in the environment}
+  RESONA_API_TOKEN="$RESONA_API_TOKEN" \
   RESONA_SHORT_TEXT_POLICY="$RESONA_SHORT_TEXT_POLICY" RESONA_SHORT_GROUP_ENABLED="$RESONA_SHORT_GROUP_ENABLED" \
   RESONA_SHORT_GROUP_MAX_CUES="$RESONA_SHORT_GROUP_MAX_CUES" RESONA_SHORT_GROUP_MAX_DURATION_SECONDS="$RESONA_SHORT_GROUP_MAX_DURATION_SECONDS" \
   RESONA_SHORT_GROUP_SOFT_MAX_DURATION_SECONDS="$RESONA_SHORT_GROUP_SOFT_MAX_DURATION_SECONDS" \
@@ -4048,15 +4063,20 @@ need_cmd ffmpeg
 need_cmd python3
 need_cmd curl
 voice_lower="${VOICE,,}"
-if [[ "$voice_lower" == kokoro:* ]]; then
+if [[ "$voice_lower" == ai33:* ]]; then
+  [[ -n "$AI33_API_KEY" ]] || fail "Thiếu AI33_API_KEY cho voice $VOICE."
+elif [[ "$voice_lower" == resona:* ]]; then
+  [[ -n "$RESONA_API_TOKEN" ]] || fail "Thiếu RESONA_API_TOKEN cho voice $VOICE."
+elif [[ "$voice_lower" == kokoro:* ]]; then
   [[ -x "$KOKORO_TTS_PYTHON" ]] || fail "Kokoro TTS runtime chưa sẵn sàng: không thấy executable $KOKORO_TTS_PYTHON"
-elif [[ "$voice_lower" != resona:* ]]; then
+else
   need_cmd edge-tts
 fi
 [[ -x "$WHISPER_BIN" ]] || fail "Không tìm thấy whisper-cli tại $WHISPER_BIN. Chạy: bash run.sh --doctor"
 [[ -f "$WHISPER_MODEL" ]] || fail "Không tìm thấy model Whisper tại $WHISPER_MODEL. Chạy: bash run.sh --doctor"
-API_KEY=${API_KEY:?Set API_KEY in the environment}
-check_api_base "$API_KEY" || fail "Không connect được 9Router API tại $API_BASE. Đặt NINEROUTER_API_BASE đúng runtime."
+API_KEY="$(get_api_key)" || fail "Thiếu API key cho provider $OPENCLAW_AI_PROVIDER."
+[[ "$OPENCLAW_AI_PROVIDER" == "ollama" ]] || [[ -n "$API_KEY" ]] || fail "Thiếu API key cho provider $OPENCLAW_AI_PROVIDER."
+check_api_base "$API_KEY" || fail "Không connect được $OPENCLAW_AI_PROVIDER tại $API_BASE."
 
 mkdir -p "$OUT_DIR" "$BASE_DIR/translated" "$BASE_DIR/temp"
 printf '%s\n' "$OUT_DIR" > "$LATEST_OUTPUT_TXT"
@@ -4310,7 +4330,11 @@ if [[ "$SUBTITLE_TRANSCRIPT_SOURCE" == "auto" || "$SUBTITLE_TRANSCRIPT_SOURCE" =
     export SUBTITLE_OCR_MIN_CONFIDENCE
     export OCR_VISION_MODEL
     export OCR_VISION_API_BASE
-    export OCR_VISION_API_KEY="${OCR_VISION_API_KEY:?Set OCR_VISION_API_KEY in the environment}"
+    OCR_VISION_API_KEY="${OCR_VISION_API_KEY:-$API_KEY}"
+    if [[ "$SUBTITLE_OCR_ENGINE" == "9router_vision" ]]; then
+      [[ -n "$OCR_VISION_API_KEY" ]] || fail "Thiếu OCR_VISION_API_KEY cho OCR 9Router vision."
+    fi
+    export OCR_VISION_API_KEY
     export OCR_VISION_MIN_CONFIDENCE
     export OCR_VISION_DEDUP_THRESHOLD
     export OCR_TRANSCRIPT_FRAME_STRIDE
@@ -4922,10 +4946,9 @@ status_update "tts" "66" "Đang tạo giọng Việt bằng TTS" "0"
 # Đặt đường dẫn report voice-sync ra job dir để dashboard đọc được cả khi gate fail.
 export TRANSCRIPT_DECISION_JSON="$TRANSCRIPT_DECISION_JSON"
 export VOICE_SYNC_REPORT_JSON="$OUT_DIR/voice_sync_quality_report.json"
-# Inline rewrite câu TTS quá dài cần API creds + source_text Trung từ dubbing_segments.json.
-# Heredoc TTS đọc qua os.environ; nếu thiếu API creds thì max_rewrite_attempts=0 (skip rewrite).
+# Inline rewrite câu TTS quá dài dùng cùng route dịch; Ollama không cần API key.
 export DOUYIN_DUBBER_API_BASE="$API_BASE"
-export DOUYIN_DUBBER_API_KEY=${DOUYIN_DUBBER_API_KEY:?Set DOUYIN_DUBBER_API_KEY in the environment}
+export DOUYIN_DUBBER_API_KEY="${DOUYIN_DUBBER_API_KEY:-$API_KEY}"
 export DOUYIN_DUBBER_MODEL="$MODEL"
 export DOUYIN_DUBBER_SEGMENTS_JSON="${DUBBING_SEGMENTS_JSON:-}"
 export TTS_REWRITE_MAX_ATTEMPTS="${TTS_REWRITE_MAX_ATTEMPTS:-1}"
@@ -5848,7 +5871,11 @@ if [[ "${BURN_VIET_SUBTITLE:-1}" != "0" && -x "$SUBTITLE_MASK_RENDER_SCRIPT" && 
     "$SUBTITLE_MASK_RENDER_PYTHON" "$SUBTITLE_MASK_RENDER_SCRIPT" --input-video "$AUDIO_ONLY_VIDEO" --srt "$VIETNAMESE_SRT" --output-video "$FINAL_VIDEO" --font "$SUBTITLE_FONT" --subtitle-region "$SUBTITLE_REGION_ARTIFACT" --detect-subtitle-region-only
   fi
   set +e
-  export OCR_VISION_API_KEY="${OCR_VISION_API_KEY:?Set OCR_VISION_API_KEY in the environment}"
+  OCR_VISION_API_KEY="${OCR_VISION_API_KEY:-$API_KEY}"
+  if [[ "$SUBTITLE_BAND_DETECT_ENGINE" == "9router_vision" ]]; then
+    [[ -n "$OCR_VISION_API_KEY" ]] || fail "Thiếu OCR_VISION_API_KEY cho subtitle band 9Router vision."
+  fi
+  export OCR_VISION_API_KEY
   run_with_status_heartbeat "subtitle_render" "84" "Đang detect vị trí sub gốc + render blur band" "$subtitle_render_timeout" "${OPENCLAW_LONG_STEP_HEARTBEAT_SECONDS:-30}" \
     timeout "$subtitle_render_timeout" \
     env \

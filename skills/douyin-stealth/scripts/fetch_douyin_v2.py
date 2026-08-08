@@ -106,8 +106,6 @@ async def progress_reporter():
         elapsed = now - task_data["started_at"]
         if elapsed > 240:
             task_data["timeout_triggered"] = True
-        elif elapsed > 180 and task_data.get("timeout_triggered") is not True:
-            task_data["timeout_triggered"] = True
 
         if elapsed >= 60 and (now - last_report_time) >= 60:
             last_report_time = now

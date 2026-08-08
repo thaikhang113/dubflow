@@ -1160,6 +1160,36 @@ bash skills/douyin-vietnamese-dubber/run.sh --doctor
 bash skills/bilibili-vietnamese-dubber/run.sh --doctor
 ```
 
+### Profile miễn phí cho GPU yếu
+
+Chuẩn bị local runtime một lần:
+
+```bash
+ollama pull qwen2.5:3b
+python3 -m pip install --user edge-tts
+```
+
+Chạy doctor và video:
+
+```bash
+OPENCLAW_RUNTIME_PROFILE=free_low_gpu \
+bash skills/douyin-vietnamese-dubber/run.sh --doctor
+
+OPENCLAW_RUNTIME_PROFILE=free_low_gpu \
+bash skills/douyin-vietnamese-dubber/run.sh "/path/to/video.mp4"
+```
+
+Profile đặt default:
+
+- dịch bằng Ollama local `qwen2.5:3b`;
+- TTS bằng Edge `vi-VN-HoaiMyNeural`;
+- Whisper.cpp model `small`;
+- OCR transcript bằng PaddleOCR, detect vùng subtitle bằng CV;
+- bỏ Demucs/nhạc nền và lượt Whisper voice-QA thứ hai;
+- không yêu cầu key AI33, Resona hoặc 9Router.
+
+Biến môi trường truyền rõ vẫn thắng profile. Muốn giữ nhạc nền đã tách, đặt lại `SPEECH_ONLY_PREPROCESS=1 BGM_MODE=demucs`; bước này tốn CPU/GPU và cần Demucs.
+
 ### Video local
 
 ```bash
