@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Auto Vietsub</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">AV</span>
+        <div>
+          <strong>Auto Vietsub</strong>
+          <small>Local tool</small>
+        </div>
+      </div>
+      <nav aria-label="Điều hướng chính">
+        <button class="nav-item active" type="button">Jobs</button>
+        <button class="nav-item" type="button">Channels</button>
+        <button class="nav-item" type="button">Series</button>
+        <button class="nav-item" type="button">Trend</button>
+        <button class="nav-item" type="button">Providers</button>
+        <button class="nav-item" type="button">Bilibili Login</button>
+        <button class="nav-item" type="button">Settings</button>
+      </nav>
+      <div class="runtime-status">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="runtime-label">Đang kiểm tra</span>
+      </div>
+    </aside>
+    <main>
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Queue</p>
+          <h1>Jobs</h1>
+        </div>
+        <button class="primary" type="button">Thêm video</button>
+      </header>
+      <section class="workspace" aria-live="polite">
+        <div class="empty-state">
+          <strong>Chưa có job</strong>
+          <span>Thêm URL hoặc video để bắt đầu.</span>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>
+

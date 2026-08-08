@@ -97,7 +97,7 @@ README.md
 - Produces: `create_app(settings: Settings | None = None) -> FastAPI`
 - Produces: `GET /api/health -> {"ok": true, "version": 1}`
 
-- [ ] **Step 1: Write failing configuration and health tests**
+- [x] **Step 1: Write failing configuration and health tests**
 
 ```python
 # web_tool/tests/test_config.py
@@ -142,7 +142,7 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 2: Run the tests and verify RED**
+- [x] **Step 2: Run the tests and verify RED**
 
 Run:
 
@@ -152,7 +152,7 @@ python -m unittest -v web_tool.tests.test_config
 
 Expected: import failure because `web_tool.app` and `web_tool.config` do not exist.
 
-- [ ] **Step 3: Implement validated settings and minimal app**
+- [x] **Step 3: Implement validated settings and minimal app**
 
 `Settings` must be a frozen dataclass with fields `root`, `data_dir`,
 `secrets_dir`, `jobs_dir`, `output_dir`, `models_dir`, `browser_dir`,
@@ -171,7 +171,7 @@ Validation:
 `create_app()` must mount `web_tool/static`, return JSON health, and serve
 `index.html` at `/`.
 
-- [ ] **Step 4: Add exact web dependencies**
+- [x] **Step 4: Add exact web dependencies**
 
 ```text
 fastapi==0.116.1
@@ -183,7 +183,7 @@ yt-dlp
 edge-tts
 ```
 
-- [ ] **Step 5: Run GREEN checks**
+- [x] **Step 5: Run GREEN checks**
 
 ```powershell
 python -m unittest -v web_tool.tests.test_config
@@ -192,7 +192,7 @@ python -m compileall -q web_tool
 
 Expected: all tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add web_tool requirements-web.txt
