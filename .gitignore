@@ -95,6 +95,8 @@ skills/content-monitor/seen_videos.json
 
 .gitnexus/
 .tool-runtime/
+.tool-runtime-qa/
+.tool-secrets/
 
 # Claude local agent files
 .claude/

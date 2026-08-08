@@ -908,7 +908,7 @@ git commit -m "feat: expose series trend and runtime settings"
 - Produces: `docker compose up -d tool`
 - Produces: `GET http://127.0.0.1:18793/api/health`
 
-- [ ] **Step 1: Write failing Docker contract test**
+- [x] **Step 1: Write failing Docker contract test**
 
 Test source must assert:
 
@@ -922,13 +922,13 @@ Test source must assert:
 - optional `ollama` and `trend-db` profiles;
 - entrypoint uses `exec`, not background orphaning.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```powershell
 python -m unittest -v web_tool.tests.test_docker_contract
 ```
 
-- [ ] **Step 3: Implement image**
+- [x] **Step 3: Implement image**
 
 Base:
 
@@ -949,7 +949,7 @@ whisper.cpp CLI in `/opt/whisper.cpp`; store downloaded model in
 
 Create non-root user and grant write access only to runtime volume mount points.
 
-- [ ] **Step 4: Implement entrypoint**
+- [x] **Step 4: Implement entrypoint**
 
 Entrypoint:
 
@@ -964,14 +964,14 @@ exec uvicorn web_tool.app:create_app --factory --host "${TOOL_BIND_HOST:-0.0.0.0
 
 Compose maps host `127.0.0.1:18793` to container `18793`.
 
-- [ ] **Step 5: Implement optional profiles**
+- [x] **Step 5: Implement optional profiles**
 
 `ollama` uses official Ollama image and `tool-models`-independent model volume.
 
 `trend-db` uses PostgreSQL with password supplied through a local secret file,
 not committed Compose defaults.
 
-- [ ] **Step 6: Run Docker validation**
+- [x] **Step 6: Run Docker validation**
 
 ```powershell
 python -m unittest -v web_tool.tests.test_docker_contract
@@ -981,7 +981,7 @@ docker build -t auto-vietsub-tool:test .
 
 Expected: all pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add Dockerfile compose.yaml .dockerignore docker .gitignore web_tool/tests/test_docker_contract.py
@@ -1001,7 +1001,7 @@ git commit -m "feat: package web tool with Docker Compose"
 **Interfaces:**
 - Proves the design success criteria except paid/external provider quality.
 
-- [ ] **Step 1: Add fake pipeline integration fixture**
+- [x] **Step 1: Add fake pipeline integration fixture**
 
 Fixture must:
 
@@ -1011,7 +1011,7 @@ Fixture must:
 - resume from the same job directory;
 - trap termination and preserve checkpoint.
 
-- [ ] **Step 2: Write end-to-end API tests**
+- [x] **Step 2: Write end-to-end API tests**
 
 Cover:
 
@@ -1025,7 +1025,7 @@ Cover:
 8. channel discovery enqueues once;
 9. series/trend disabled state is explicit when dependency absent.
 
-- [ ] **Step 3: Run full portable suite**
+- [x] **Step 3: Run full portable suite**
 
 ```powershell
 $env:PYTHONUTF8='1'
@@ -1039,7 +1039,7 @@ git diff --check
 Run existing script-style tests from their directories where module names with
 hyphens prevent package import.
 
-- [ ] **Step 4: Start local server and verify UI**
+- [x] **Step 4: Start local server and verify UI**
 
 ```powershell
 python -m uvicorn web_tool.app:create_app --factory --host 127.0.0.1 --port 18793
@@ -1055,7 +1055,7 @@ Use browser automation at desktop `1440x900` and mobile `390x844`:
 - Channels, Series, Trend, Login and Settings views open;
 - longest Vietnamese labels fit their controls.
 
-- [ ] **Step 5: Validate container runtime**
+- [x] **Step 5: Validate container runtime**
 
 ```powershell
 docker compose up -d --build tool
@@ -1068,7 +1068,7 @@ curl.exe http://127.0.0.1:18793/api/health
 Verify queue/provider/login metadata persists. Real API keys and cookies are not
 required for this offline acceptance.
 
-- [ ] **Step 6: Document end-user setup**
+- [x] **Step 6: Document end-user setup**
 
 README must include:
 
@@ -1083,7 +1083,7 @@ README must include:
 - update/restart commands;
 - exact limitations for HyperFrames, Google Flow, captcha and external quotas.
 
-- [ ] **Step 7: Run security scan and final verification**
+- [x] **Step 7: Run security scan and final verification**
 
 ```powershell
 git grep -n -E 'sk_[A-Za-z0-9]{20,}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY'
@@ -1094,7 +1094,7 @@ git status --short --branch
 Expected: no credential match, tests pass, only intended plan checkbox edits
 remain.
 
-- [ ] **Step 8: Commit and push**
+- [x] **Step 8: Commit and push**
 
 ```powershell
 git add README.md web_tool/tests docs/superpowers/plans/2026-08-08-docker-web-tool.md

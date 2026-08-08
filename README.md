@@ -2,7 +2,7 @@
 
 Hệ thống tự động tải video Trung Quốc, lấy transcript, dịch sang tiếng Việt, tạo giọng lồng tiếng, giữ hoặc tách nhạc nền, đồng bộ âm thanh theo timeline, che phụ đề Trung, chèn phụ đề Việt, tạo thumbnail và tổng hợp nhiều tập thành video dài.
 
-Tài liệu này mô tả hệ thống xử lý video trên nhánh `khang`. Các thư mục tích hợp Grok không thuộc phạm vi tài liệu.
+Tài liệu này mô tả pipeline lõi từ nhánh `khang` và ứng dụng web Docker trên nhánh `tool`. Các thư mục tích hợp Grok không thuộc phạm vi tài liệu.
 
 ## Trạng thái hiện tại
 
@@ -18,10 +18,11 @@ Tài liệu này mô tả hệ thống xử lý video trên nhánh `khang`. Các
 - Nhạc nền: ưu tiên stem `no_vocals.wav` từ Demucs, có ducking khi giọng Việt phát.
 - Subtitle final: detect vùng chữ Trung, blur vùng đó và burn-in phụ đề Việt.
 - Output chính: `final_video_vi.mp4`.
+- Web local: queue FIFO, provider, Bilibili QR/cookie, theo dõi kênh, Series, Trend, Telegram và Settings tại `http://127.0.0.1:18793`.
 - Series: theo dõi tập, tải tập thiếu, kiểm quality gate, lập plan và compile theo thứ tự nguồn.
 - HyperFrames: hiện chỉ có kiểm tra availability và dry-run; chưa phải renderer book-video hoàn chỉnh.
 
-> Trạng thái code không thay thế kiểm thử runtime. AI33, Ollama/9Router, Chrome CDP, Google Flow và E2E video thật chỉ được xác nhận trên máy Linux host có dịch vụ, tài khoản và secret tương ứng.
+> Trạng thái code không thay thế kiểm thử runtime. AI33, Ollama/9Router, Bilibili, Google Flow và E2E video thật còn phụ thuộc dịch vụ, tài khoản, quota và secret tương ứng.
 
 ## Mục lục
 
@@ -1120,9 +1121,139 @@ SEND_TELEGRAM_RESULT=0
 
 ## Cài đặt và chạy
 
-### Hệ điều hành
+### Web Docker cho người dùng cuối
 
-Pipeline production nhắm Linux host. Windows checkout phù hợp cho đọc code, compile Python và regression test offline; không đại diện cho E2E multimedia host.
+Nhánh `tool` giữ pipeline gốc và thêm web local. Queue chỉ chạy một video tại một thời điểm; bên trong một job, AI33 vẫn bị giới hạn tối đa 3 worker.
+
+#### Windows
+
+Yêu cầu Docker Desktop chạy Linux containers. Mở PowerShell tại thư mục repository:
+
+```powershell
+git switch tool
+docker compose up -d --build tool
+```
+
+#### Linux
+
+Yêu cầu Docker Engine và Docker Compose plugin:
+
+```bash
+git switch tool
+docker compose up -d --build tool
+```
+
+Lần build đầu tải Chromium, FFmpeg, Whisper, Demucs, PaddleOCR và runtime CPU nên lâu và cần nhiều dung lượng. Lần khởi động đầu tải model Whisper `small` vào volume `tool-models`. Kiểm tra:
+
+```bash
+docker compose ps
+docker compose logs -f tool
+```
+
+Mở:
+
+```text
+http://127.0.0.1:18793
+```
+
+#### Thiết lập lần đầu
+
+1. Mở **Providers**, thêm provider dịch Ollama hoặc OpenAI-compatible.
+2. Nếu dùng AI33, thêm provider TTS riêng với endpoint, API key và voice.
+3. Mở **Settings**, chọn provider/model/voice mặc định.
+4. Mở **Bilibili Login**, bấm bắt đầu Bilibili QR rồi quét bằng ứng dụng Bilibili.
+5. Nếu QR không dùng được, nhập file cookie Netscape trong cùng màn hình.
+6. Mở **Jobs**, dán URL hoặc upload video, sau đó thêm job vào queue.
+7. Mở **Channels** để theo dõi kênh; video mới được dedupe và tự thêm queue với provider/model/voice đã chọn.
+
+API key, Telegram token, cookie và browser profile nằm trong Docker-managed volumes. Web chỉ trả trạng thái `configured`, không trả lại giá trị secret.
+
+#### Ollama
+
+Nếu Ollama chạy trên máy host, endpoint dùng trong provider:
+
+```text
+http://host.docker.internal:11434
+```
+
+Khởi động Ollama bằng Compose:
+
+```bash
+docker compose --profile ollama up -d --build
+docker compose exec ollama ollama pull qwen2.5:3b
+```
+
+Khi dùng service Compose, endpoint provider là:
+
+```text
+http://ollama:11434
+```
+
+Profile Ollama không tự bật GPU. Docker Desktop/NVIDIA Container Toolkit phải được cấu hình riêng nếu muốn Ollama dùng GPU.
+
+#### Trend Scout
+
+Trend cần host runner và PostgreSQL. Tạo file password local không commit rồi chạy:
+
+```bash
+docker compose --profile trend up -d
+```
+
+Nếu host runner chưa được cấu hình, web trả rõ `TrendRuntimeUnavailable`; các tab video, queue, channel và Series vẫn dùng bình thường.
+
+#### Dừng, restart và cập nhật
+
+```bash
+docker compose stop
+docker compose restart tool
+git pull --ff-only origin tool
+docker compose up -d --build tool
+```
+
+Restart giữ queue, provider metadata, secret, cookie, browser profile, model và job vì chúng nằm trong các volume:
+
+```text
+tool-data
+tool-secrets
+tool-jobs
+tool-output
+tool-models
+tool-browser
+```
+
+#### Export, backup và restore
+
+Nút **Export output** hoặc endpoint `/api/runtime/export` tải ZIP artifact không chứa secret.
+
+Backup toàn bộ runtime, gồm cả secret:
+
+```bash
+docker compose exec -u root tool tar -C /data -czf /tmp/auto-vietsub-backup.tgz data secrets jobs output models browser
+docker compose cp tool:/tmp/auto-vietsub-backup.tgz .
+```
+
+File backup chứa API key/cookie, phải giữ riêng tư. Restore:
+
+```bash
+docker compose cp auto-vietsub-backup.tgz tool:/tmp/auto-vietsub-backup.tgz
+docker compose exec -u root tool tar -C /data -xzf /tmp/auto-vietsub-backup.tgz
+docker compose restart tool
+```
+
+#### Tài nguyên và giới hạn
+
+- Image mặc định dùng CPU cho Torch, TensorFlow và ONNX; chạy được trên Windows Docker Desktop và Linux.
+- Whisper, Demucs, OCR và render FFmpeg tốn CPU/RAM; máy không GPU vẫn chạy nhưng chậm.
+- AI33/9Router/Telegram cần mạng, key hợp lệ và quota còn.
+- Bilibili/Douyin có thể yêu cầu captcha, OTP hoặc xác minh thủ công; tool không bypass.
+- Bilibili QR và cookie fallback hỗ trợ đăng nhập, nhưng cookie hết hạn vẫn phải đăng nhập lại.
+- Google Flow phụ thuộc UI/login/quota bên ngoài.
+- HyperFrames mới có availability và dry-run, chưa render book-video thật.
+- E2E offline chỉ chứng minh queue, resume, persistence và MP4; chất lượng video thật phải kiểm tra với provider/cookie thật.
+
+### Chạy trực tiếp trên host
+
+Pipeline trực tiếp trên host nhắm Linux. Windows nên dùng Docker Desktop để có runtime Linux đồng nhất.
 
 ### Dependency tối thiểu
 
