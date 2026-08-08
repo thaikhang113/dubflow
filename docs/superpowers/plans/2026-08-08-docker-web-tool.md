@@ -333,7 +333,7 @@ git commit -m "feat: add durable single-worker job queue"
 - API: `GET/POST/DELETE /api/providers`
 - API: `POST /api/providers/{id}/test`
 
-- [ ] **Step 1: Write failing secret and provider tests**
+- [x] **Step 1: Write failing secret and provider tests**
 
 Tests must prove:
 
@@ -353,13 +353,13 @@ Provider validation cases:
 - reject unknown kind;
 - never include key in GET response.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```powershell
 python -m unittest -v web_tool.tests.test_secrets
 ```
 
-- [ ] **Step 3: Implement file secrets and provider metadata**
+- [x] **Step 3: Implement file secrets and provider metadata**
 
 Use secret file names derived from UUID profile IDs, never user-supplied paths.
 Write via temporary file plus `os.replace`; use mode `0o600` where supported.
@@ -387,13 +387,13 @@ and provider-specific paths:
 - OpenAI-compatible: `GET /models`
 - AI33: endpoint connectivity only unless provider exposes a non-billable health path
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 ```powershell
 python -m unittest -v web_tool.tests.test_secrets
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add web_tool/secrets.py web_tool/store.py web_tool/app.py web_tool/tests/test_secrets.py

@@ -3,6 +3,8 @@
 .env.*
 *.env
 *secret*
+!web_tool/secrets.py
+!web_tool/tests/test_secrets.py
 *token*
 *api_key*
 *apikey*

@@ -50,6 +50,17 @@ class Store:
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS providers (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    endpoint TEXT NOT NULL,
+                    model TEXT NOT NULL DEFAULT '',
+                    timeout_seconds INTEGER NOT NULL DEFAULT 90,
+                    has_secret INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 """
             )
 
@@ -207,3 +218,63 @@ class Store:
                 "SELECT value FROM settings WHERE key = 'queue_paused'"
             ).fetchone()
         return bool(row and row["value"] == "1")
+
+    @staticmethod
+    def _provider(row: sqlite3.Row | None) -> dict | None:
+        if row is None:
+            return None
+        provider = dict(row)
+        provider["configured"] = bool(provider.pop("has_secret"))
+        return provider
+
+    def create_provider(self, values: dict, has_secret: bool) -> dict:
+        provider_id = f"provider-{uuid.uuid4().hex}"
+        timestamp = _now()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO providers (
+                    id, name, kind, endpoint, model, timeout_seconds,
+                    has_secret, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    provider_id,
+                    values["name"],
+                    values["kind"],
+                    values["endpoint"],
+                    values["model"],
+                    values["timeout_seconds"],
+                    1 if has_secret else 0,
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            row = connection.execute(
+                "SELECT * FROM providers WHERE id = ?",
+                (provider_id,),
+            ).fetchone()
+        return self._provider(row)
+
+    def get_provider(self, provider_id: str) -> dict | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM providers WHERE id = ?",
+                (provider_id,),
+            ).fetchone()
+        return self._provider(row)
+
+    def list_providers(self) -> list[dict]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM providers ORDER BY rowid DESC"
+            ).fetchall()
+        return [self._provider(row) for row in rows]
+
+    def delete_provider(self, provider_id: str) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM providers WHERE id = ?",
+                (provider_id,),
+            )
+        return cursor.rowcount == 1
