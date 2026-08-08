@@ -216,7 +216,7 @@ git commit -m "feat: add local web tool application"
 - Produces: `Store.recover_running_jobs() -> int`
 - Produces: `Store.set_queue_paused(paused: bool) -> None`
 
-- [ ] **Step 1: Write failing FIFO, single-claim, and restart tests**
+- [x] **Step 1: Write failing FIFO, single-claim, and restart tests**
 
 ```python
 # web_tool/tests/test_store.py
@@ -258,7 +258,7 @@ class StoreTests(unittest.TestCase):
         self.assertIsNone(self.store.claim_next_job())
 ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```powershell
 python -m unittest -v web_tool.tests.test_store
@@ -266,7 +266,7 @@ python -m unittest -v web_tool.tests.test_store
 
 Expected: `ModuleNotFoundError: web_tool.store`.
 
-- [ ] **Step 3: Implement schema and atomic claim**
+- [x] **Step 3: Implement schema and atomic claim**
 
 Use SQLite tables:
 
@@ -295,7 +295,7 @@ CREATE TABLE IF NOT EXISTS settings (
 `claim_next_job()` must use `BEGIN IMMEDIATE`, refuse a second claim while any
 job is `running`, and claim the oldest `queued` row by `created_at, id`.
 
-- [ ] **Step 4: Run GREEN and concurrency checks**
+- [x] **Step 4: Run GREEN and concurrency checks**
 
 ```powershell
 python -m unittest -v web_tool.tests.test_store
@@ -303,12 +303,12 @@ python -m unittest -v web_tool.tests.test_store
 
 Expected: all tests pass and no two claims return jobs concurrently.
 
-- [ ] **Step 5: Wire store lifecycle**
+- [x] **Step 5: Wire store lifecycle**
 
 `create_app()` must create one `Store`, call `recover_running_jobs()` during
 lifespan startup, and expose it as `app.state.store`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add web_tool/store.py web_tool/tests/test_store.py web_tool/app.py
