@@ -1,6 +1,7 @@
 const state = {
   jobs: [],
   providers: [],
+  channels: [],
   selectedJobId: "",
   queuePaused: false,
 };
@@ -91,6 +92,7 @@ function showView(name) {
     jobs: ["Queue", "Jobs"],
     providers: ["Cấu hình", "Providers"],
     "bilibili-login": ["Tài khoản", "Bilibili Login"],
+    channels: ["Tự động", "Channels"],
   };
   const heading = headings[name] || headings.jobs;
   document.querySelector("#view-eyebrow").textContent = heading[0];
@@ -98,6 +100,7 @@ function showView(name) {
   document.querySelector("#queue-pause").hidden = name !== "jobs";
   document.querySelector("#focus-new-job").hidden = name !== "jobs";
   if (name === "bilibili-login") loadBilibiliStatus();
+  if (name === "channels") loadChannels();
 }
 
 function providerOptions(select, providers, emptyLabel) {
@@ -129,6 +132,11 @@ function renderProviders() {
     document.querySelector("#job-translation-provider"),
     state.providers.filter((provider) => provider.kind !== "ai33"),
     "Ollama mặc định",
+  );
+  providerOptions(
+    document.querySelector("#channel-provider"),
+    state.providers,
+    "Pipeline mặc định",
   );
   providerOptions(
     document.querySelector("#job-tts-provider"),
@@ -503,6 +511,132 @@ async function clearBilibiliLogin() {
   }
 }
 
+function renderChannels() {
+  const list = document.querySelector("#channel-list");
+  clear(list);
+  document.querySelector("#channel-summary").textContent =
+    `${state.channels.length} kênh · ${state.channels.filter((channel) => channel.enabled).length} đang bật.`;
+  if (!state.channels.length) {
+    list.append(element("p", "empty-inline", "Chưa có kênh theo dõi."));
+    return;
+  }
+  state.channels.forEach((channel) => {
+    const row = element("article", "channel-row");
+    const body = element("div", "provider-main");
+    body.append(element("strong", "", channel.name));
+    body.append(element("span", "muted", channel.url));
+    body.append(element(
+      "span",
+      "provider-meta",
+      `${channel.platform} · mỗi ${channel.interval_minutes} phút · ${channel.state}`,
+    ));
+    body.append(element(
+      "span",
+      "muted",
+      channel.last_result || `Lần tới: ${formatTime(channel.next_check_at)}`,
+    ));
+    const actions = element("div", "row-actions");
+    actions.append(button("Sửa", "text-button", () => editChannel(channel)));
+    actions.append(button("Chạy ngay", "text-button", () => channelAction(channel.id, "run")));
+    actions.append(button(
+      channel.enabled ? "Tắt" : "Bật",
+      "text-button",
+      () => channelAction(channel.id, channel.enabled ? "disable" : "enable"),
+    ));
+    actions.append(button("Xóa", "text-button danger", () => deleteChannel(channel.id)));
+    row.append(body, actions);
+    list.append(row);
+  });
+}
+
+function editChannel(channel) {
+  showView("channels");
+  document.querySelector("#channel-id").value = channel.id;
+  document.querySelector("#channel-name").value = channel.name;
+  document.querySelector("#channel-platform").value = channel.platform;
+  document.querySelector("#channel-url").value = channel.url;
+  document.querySelector("#channel-interval").value = channel.interval_minutes;
+  document.querySelector("#channel-provider").value = channel.provider_id || "";
+  document.querySelector("#channel-model").value = channel.model || "";
+  document.querySelector("#channel-voice").value = channel.voice || "";
+  document.querySelector("#channel-series").value = channel.series_id || "";
+  document.querySelector("#channel-preset").value = channel.preset?.mode || "exact_sync";
+  document.querySelector("#channel-enabled").checked = channel.enabled;
+  document.querySelector("#channel-form-title").textContent = "Sửa kênh";
+  document.querySelector("#channel-reset").hidden = false;
+}
+
+function resetChannelForm() {
+  document.querySelector("#channel-form").reset();
+  document.querySelector("#channel-id").value = "";
+  document.querySelector("#channel-interval").value = "60";
+  document.querySelector("#channel-model").value = "qwen2.5:3b";
+  document.querySelector("#channel-voice").value =
+    "ai33:vbee_hn_female_ngochuyen_full_48k-fhg";
+  document.querySelector("#channel-enabled").checked = true;
+  document.querySelector("#channel-form-title").textContent = "Theo dõi kênh";
+  document.querySelector("#channel-reset").hidden = true;
+}
+
+async function loadChannels() {
+  try {
+    state.channels = await api("/api/channels");
+    renderChannels();
+  } catch (error) {
+    notify(`Không tải được kênh: ${error.message}`, true);
+  }
+}
+
+async function saveChannel(event) {
+  event.preventDefault();
+  const id = document.querySelector("#channel-id").value;
+  const payload = {
+    name: document.querySelector("#channel-name").value.trim(),
+    platform: document.querySelector("#channel-platform").value,
+    url: document.querySelector("#channel-url").value.trim(),
+    interval_minutes: Number(document.querySelector("#channel-interval").value),
+    enabled: document.querySelector("#channel-enabled").checked,
+    provider_id: document.querySelector("#channel-provider").value,
+    model: document.querySelector("#channel-model").value.trim(),
+    voice: document.querySelector("#channel-voice").value.trim(),
+    series_id: document.querySelector("#channel-series").value.trim(),
+    preset: {mode: document.querySelector("#channel-preset").value},
+  };
+  try {
+    await api(id ? `/api/channels/${id}` : "/api/channels", {
+      method: id ? "PUT" : "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+    });
+    resetChannelForm();
+    await loadChannels();
+    notify("Đã lưu kênh.");
+  } catch (error) {
+    notify(`Không lưu được kênh: ${error.message}`, true);
+  }
+}
+
+async function channelAction(id, action) {
+  try {
+    await api(`/api/channels/${id}/${action}`, {method: "POST"});
+    await loadChannels();
+    notify(action === "run" ? "Đã xếp lịch kiểm tra ngay." : "Đã cập nhật kênh.");
+  } catch (error) {
+    notify(`Không cập nhật được kênh: ${error.message}`, true);
+  }
+}
+
+async function deleteChannel(id) {
+  if (!window.confirm("Xóa kênh theo dõi này?")) return;
+  try {
+    await api(`/api/channels/${id}`, {method: "DELETE"});
+    await loadChannels();
+    notify("Đã xóa kênh.");
+  } catch (error) {
+    notify(`Không xóa được kênh: ${error.message}`, true);
+  }
+}
+
 function connectEvents() {
   const events = new EventSource("/api/events");
   events.addEventListener("job", (event) => {
@@ -533,6 +667,9 @@ document.querySelector("#queue-pause").addEventListener("click", toggleQueue);
 document.querySelector("#bilibili-login-start").addEventListener("click", startBilibiliLogin);
 document.querySelector("#bilibili-cookie-form").addEventListener("submit", importBilibiliCookies);
 document.querySelector("#bilibili-login-clear").addEventListener("click", clearBilibiliLogin);
+document.querySelector("#channel-form").addEventListener("submit", saveChannel);
+document.querySelector("#channel-reset").addEventListener("click", resetChannelForm);
+document.querySelector("#refresh-channels").addEventListener("click", loadChannels);
 document.querySelector("#focus-new-job").addEventListener("click", () => {
   showView("jobs");
   document.querySelector("#job-source").focus();
@@ -542,12 +679,14 @@ document.querySelector("#job-file").addEventListener("change", (event) => {
 });
 
 const initialView = new URLSearchParams(window.location.search).get("view");
-if (["providers", "bilibili-login"].includes(initialView)) showView(initialView);
+if (["providers", "bilibili-login", "channels"].includes(initialView)) showView(initialView);
 checkHealth();
 loadProviders();
 loadJobs();
+loadChannels();
 connectEvents();
 window.setInterval(loadJobs, 10000);
+window.setInterval(loadChannels, 10000);
 window.setInterval(() => {
   const view = document.querySelector('.view[data-view="bilibili-login"]');
   if (!view.hidden) loadBilibiliStatus();

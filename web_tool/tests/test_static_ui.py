@@ -14,10 +14,13 @@ class StaticUiTests(unittest.TestCase):
             'data-view="jobs"',
             'data-view="providers"',
             'data-view="bilibili-login"',
+            'data-view="channels"',
             'id="new-job-form"',
             'id="provider-form"',
             'id="bilibili-login-start"',
             'id="bilibili-cookie-form"',
+            'id="channel-form"',
+            'id="channel-list"',
             'id="queue-pause"',
             'id="job-list"',
         ):

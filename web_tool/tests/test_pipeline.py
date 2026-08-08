@@ -109,6 +109,26 @@ class PipelineTests(unittest.TestCase):
             environment["VOICE"],
         )
 
+    def test_job_model_overrides_translation_provider_model(self):
+        environment = build_job_environment(
+            {
+                "id": "job-model-override",
+                "request": {"model": "qwen3:8b"},
+            },
+            {
+                "translation": {
+                    "name": "Ollama",
+                    "kind": "ollama",
+                    "endpoint": "http://host.docker.internal:11434",
+                    "model": "qwen2.5:3b",
+                    "timeout_seconds": 90,
+                },
+            },
+            self.settings,
+        )
+        self.assertEqual("qwen3:8b", environment["OPENCLAW_AI_MODEL"])
+        self.assertEqual("qwen3:8b", environment["OLLAMA_MODEL"])
+
     def test_reads_only_sanitized_structured_status(self):
         job_dir = Path(self.tmp.name) / "job"
         job_dir.mkdir()

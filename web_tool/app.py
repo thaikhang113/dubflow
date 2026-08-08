@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from .bilibili_login import BilibiliLogin
 from .config import Settings
+from .monitor import MonitorScheduler
 from .pipeline import build_job_command, build_job_environment
 from .secrets import SecretStore, sanitize, test_provider_connection, validate_provider
 from .store import Store
@@ -83,6 +84,7 @@ class JobRequest(BaseModel):
     translation_provider_id: str = ""
     tts_provider_id: str = ""
     provider_id: str = ""
+    model: str = ""
     voice: str = ""
     series_id: str = ""
     preset: str = ""
@@ -90,6 +92,18 @@ class JobRequest(BaseModel):
 
 class CookieImportRequest(BaseModel):
     text: str
+
+class ChannelRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    platform: str
+    url: str
+    interval_minutes: int = Field(default=60, ge=1, le=10080)
+    enabled: bool = True
+    provider_id: str = ""
+    model: str = Field(default="", max_length=200)
+    voice: str = Field(default="", max_length=200)
+    series_id: str = Field(default="", max_length=200)
+    preset: dict = Field(default_factory=dict)
 
 
 def _public_value(value):
@@ -114,14 +128,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     events = EventBroker()
     bilibili_login = BilibiliLogin(settings, secrets)
     worker = Worker(store, settings, secrets, on_update=events.publish)
+    monitor = MonitorScheduler(
+        store,
+        settings,
+        on_enqueue=lambda job: (events.publish(job), worker.notify()),
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         store.recover_running_jobs()
         worker.start()
+        monitor.start()
         try:
             yield
         finally:
+            monitor.stop()
             worker.stop()
 
     app = FastAPI(title="Auto Vietsub Tool", version="1", lifespan=lifespan)
@@ -131,6 +152,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.worker = worker
     app.state.events = events
     app.state.bilibili_login = bilibili_login
+    app.state.monitor = monitor
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
     @app.get("/api/health")
@@ -210,6 +232,69 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.delete("/api/bilibili/login/cookies")
     def clear_bilibili_login():
         return bilibili_login.clear()
+
+    def validate_channel(request: ChannelRequest) -> dict:
+        values = request.model_dump()
+        values["platform"] = values["platform"].strip().lower()
+        values["url"] = values["url"].strip()
+        values["name"] = values["name"].strip()
+        values["provider_id"] = values["provider_id"].strip()
+        try:
+            build_job_command(
+                {"platform": values["platform"], "source": values["url"]},
+                settings,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if values["provider_id"] and store.get_provider(values["provider_id"]) is None:
+            raise HTTPException(status_code=422, detail="provider_id not found")
+        return values
+
+    @app.get("/api/channels")
+    def list_channels():
+        return store.list_channels()
+
+    @app.post("/api/channels", status_code=status.HTTP_201_CREATED)
+    def create_channel(request: ChannelRequest):
+        channel = store.create_channel(validate_channel(request))
+        monitor.notify()
+        return channel
+
+    @app.put("/api/channels/{channel_id}")
+    def update_channel(channel_id: str, request: ChannelRequest):
+        channel = store.update_channel(channel_id, validate_channel(request))
+        if channel is None:
+            raise HTTPException(status_code=404, detail="channel not found")
+        monitor.notify()
+        return channel
+
+    @app.delete("/api/channels/{channel_id}", status_code=status.HTTP_204_NO_CONTENT)
+    def delete_channel(channel_id: str):
+        if not store.delete_channel(channel_id):
+            raise HTTPException(status_code=404, detail="channel not found")
+
+    @app.post("/api/channels/{channel_id}/run")
+    def run_channel(channel_id: str):
+        channel = store.schedule_channel_now(channel_id)
+        if channel is None:
+            raise HTTPException(status_code=409, detail="channel not found or disabled")
+        monitor.notify()
+        return channel
+
+    @app.post("/api/channels/{channel_id}/enable")
+    def enable_channel(channel_id: str):
+        channel = store.set_channel_enabled(channel_id, True)
+        if channel is None:
+            raise HTTPException(status_code=404, detail="channel not found")
+        monitor.notify()
+        return channel
+
+    @app.post("/api/channels/{channel_id}/disable")
+    def disable_channel(channel_id: str):
+        channel = store.set_channel_enabled(channel_id, False)
+        if channel is None:
+            raise HTTPException(status_code=404, detail="channel not found")
+        return channel
 
     @app.get("/api/jobs")
     def list_jobs(limit: int = 100):

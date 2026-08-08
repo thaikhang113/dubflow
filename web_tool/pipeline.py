@@ -167,6 +167,16 @@ def build_job_environment(
         if tts["api_key"]:
             environment["AI33_API_KEY"] = tts["api_key"]
 
+    model = str(request.get("model") or "").strip()
+    if model:
+        if len(model) > 200 or any(character in model for character in "\r\n\0"):
+            raise ValueError("invalid model")
+        environment["OPENCLAW_AI_MODEL"] = model
+        if environment["OPENCLAW_AI_PROVIDER"] == "ollama":
+            environment["OLLAMA_MODEL"] = model
+        elif environment["OPENCLAW_AI_PROVIDER"] == "ninerouter":
+            environment["NINEROUTER_MODEL"] = model
+
     voice = str(request.get("voice") or "").strip()
     if voice:
         if len(voice) > 200 or any(character in voice for character in "\r\n\0"):

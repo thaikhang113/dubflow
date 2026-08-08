@@ -721,7 +721,7 @@ git commit -m "feat: add Bilibili QR login"
 - API: `POST /api/channels/{id}/enable`
 - API: `POST /api/channels/{id}/disable`
 
-- [ ] **Step 1: Write failing scheduler tests**
+- [x] **Step 1: Write failing scheduler tests**
 
 Tests must use a fake discovery function and prove:
 
@@ -732,13 +732,13 @@ Tests must use a fake discovery function and prove:
 - login/captcha marks channel `needs_attention`;
 - scheduler restart does not duplicate already seen videos.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```powershell
 python -m unittest -v web_tool.tests.test_monitor
 ```
 
-- [ ] **Step 3: Implement channel tables**
+- [x] **Step 3: Implement channel tables**
 
 ```sql
 CREATE TABLE IF NOT EXISTS channels (
@@ -766,25 +766,25 @@ CREATE TABLE IF NOT EXISTS seen_videos (
 );
 ```
 
-- [ ] **Step 4: Reuse existing discovery**
+- [x] **Step 4: Reuse existing discovery**
 
 Dynamically import `skills/content-monitor/content-monitor.py` and call
 `fetch_latest_videos_for_channel(channel, count=10)`. Override its state/log/CDP
 paths through environment before import. Do not launch its infinite daemon;
 Docker scheduler owns timing.
 
-- [ ] **Step 5: Add Channels UI**
+- [x] **Step 5: Add Channels UI**
 
 Provide channel list, add/edit form, interval, provider/model/voice/series,
 enable/disable, run now, last result and next check.
 
-- [ ] **Step 6: Run GREEN**
+- [x] **Step 6: Run GREEN**
 
 ```powershell
 python -m unittest -v web_tool.tests.test_monitor web_tool.tests.test_static_ui
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add web_tool/monitor.py web_tool/store.py web_tool/app.py web_tool/static web_tool/tests/test_monitor.py

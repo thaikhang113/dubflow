@@ -28,7 +28,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
   letter-spacing: 0;
 }
@@ -41,6 +42,7 @@ select {
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
+textarea:focus-visible,
 .job-row:focus-visible,
 a:focus-visible {
   outline: 2px solid var(--amber);
@@ -331,6 +333,21 @@ h3 {
   color: #eef2ef;
 }
 
+.check-field {
+  display: flex;
+  min-height: 39px;
+  align-items: center;
+  gap: 8px;
+  color: #bac3be;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.check-field input {
+  width: 17px;
+  height: 17px;
+}
+
 .field input[type="file"] {
   padding: 7px 9px;
   font-size: 12px;
@@ -429,7 +446,8 @@ h3 {
 }
 
 .job-list,
-.provider-list {
+.provider-list,
+.channel-list {
   display: grid;
   gap: 8px;
 }
@@ -537,6 +555,20 @@ h3 {
   gap: 14px;
   padding: 12px;
   border-bottom: 1px solid #2d3731;
+}
+
+.channel-row {
+  display: flex;
+  min-height: 84px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px;
+  border-bottom: 1px solid #2d3731;
+}
+
+.channel-row:last-child {
+  border-bottom: 0;
 }
 
 .provider-row:last-child {
@@ -685,7 +717,8 @@ h3 {
     grid-column: auto;
   }
 
-  .provider-row {
+  .provider-row,
+  .channel-row {
     align-items: flex-start;
     flex-direction: column;
   }

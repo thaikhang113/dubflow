@@ -20,7 +20,7 @@
         <button class="nav-item active" type="button" data-target="jobs">Jobs</button>
         <button class="nav-item" type="button" data-target="providers">Providers</button>
         <button class="nav-item" type="button" data-target="bilibili-login">Bilibili Login</button>
-        <button class="nav-item" type="button" disabled>Channels</button>
+        <button class="nav-item" type="button" data-target="channels">Channels</button>
         <button class="nav-item" type="button" disabled>Series</button>
         <button class="nav-item" type="button" disabled>Trend</button>
         <button class="nav-item" type="button" disabled>Settings</button>
@@ -225,6 +225,86 @@
               <button class="secondary danger-control" id="bilibili-login-clear" type="button">Xóa đăng nhập</button>
             </div>
           </form>
+        </div>
+      </section>
+
+      <section class="view" data-view="channels" hidden>
+        <div class="providers-layout">
+          <form id="channel-form" class="form-band">
+            <div class="section-heading">
+              <div>
+                <h2 id="channel-form-title">Theo dõi kênh</h2>
+                <p>Video mới tự vào queue với cấu hình đã chọn.</p>
+              </div>
+              <div class="inline-actions">
+                <button class="secondary" id="channel-reset" type="button" hidden>Hủy sửa</button>
+                <button class="primary" type="submit">Lưu kênh</button>
+              </div>
+            </div>
+            <input id="channel-id" type="hidden">
+            <div class="form-grid jobs-form-grid">
+              <label class="field">
+                <span>Tên kênh</span>
+                <input id="channel-name" type="text" maxlength="100" required autocomplete="off">
+              </label>
+              <label class="field">
+                <span>Nền tảng</span>
+                <select id="channel-platform">
+                  <option value="bilibili">Bilibili</option>
+                  <option value="douyin">Douyin</option>
+                </select>
+              </label>
+              <label class="field field-wide">
+                <span>URL kênh</span>
+                <input id="channel-url" type="url" required autocomplete="off" placeholder="https://space.bilibili.com/...">
+              </label>
+              <label class="field">
+                <span>Kiểm tra mỗi (phút)</span>
+                <input id="channel-interval" type="number" value="60" min="1" max="10080">
+              </label>
+              <label class="field">
+                <span>Provider</span>
+                <select id="channel-provider">
+                  <option value="">Pipeline mặc định</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Model dịch</span>
+                <input id="channel-model" type="text" value="qwen2.5:3b" maxlength="200" autocomplete="off">
+              </label>
+              <label class="field">
+                <span>Giọng</span>
+                <input id="channel-voice" type="text" value="ai33:vbee_hn_female_ngochuyen_full_48k-fhg" maxlength="200" autocomplete="off">
+              </label>
+              <label class="field">
+                <span>Series ID</span>
+                <input id="channel-series" type="text" maxlength="200" autocomplete="off">
+              </label>
+              <label class="field">
+                <span>Preset</span>
+                <select id="channel-preset">
+                  <option value="exact_sync">Khớp hình chính xác</option>
+                  <option value="quality_dub">Ưu tiên giọng tự nhiên</option>
+                  <option value="balanced_dub">Cân bằng</option>
+                </select>
+              </label>
+              <label class="check-field">
+                <input id="channel-enabled" type="checkbox" checked>
+                <span>Bật theo dõi</span>
+              </label>
+            </div>
+          </form>
+
+          <section class="data-section" aria-labelledby="channels-heading">
+            <div class="section-heading">
+              <div>
+                <h2 id="channels-heading">Kênh đang theo dõi</h2>
+                <p id="channel-summary">Đang tải danh sách.</p>
+              </div>
+              <button class="secondary" id="refresh-channels" type="button">Làm mới</button>
+            </div>
+            <div id="channel-list" class="channel-list" aria-live="polite"></div>
+          </section>
         </div>
       </section>
     </main>
