@@ -68,6 +68,22 @@ class BilibiliUrlNormalizationTests(unittest.TestCase):
         self.assertLess(mkdir_at, latest_at)
         self.assertLess(latest_at, queued_at)
 
+    def test_wrapper_always_brands_before_final_handoff(self):
+        run_sh = SCRIPT.parent.parent / "run.sh"
+        source = run_sh.read_text(encoding="utf-8")
+
+        self.assertNotIn('BILIBILI_BRANDING="${BILIBILI_BRANDING:-0}"', source)
+        self.assertNotIn('if [[ "$BILIBILI_BRANDING" == "1" ]]', source)
+        self.assertIn(
+            'ORGANIZE_OUTPUT=0 AUTO_TELEGRAM_RESULT=0 bash "$DOUYIN_PIPELINE" "$VIDEO_FILE"',
+            source,
+        )
+        brand_at = source.index('python3 "$SINGLE_JOB_BRAND_SCRIPT"')
+        organize_at = source.index('python3 "$ORGANIZE_SCRIPT"')
+        self.assertLess(brand_at, organize_at)
+        self.assertIn('--include-intro "$BILIBILI_BRAND_INCLUDE_INTRO"', source)
+        self.assertIn('--include-outro "$BILIBILI_BRAND_INCLUDE_OUTRO"', source)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

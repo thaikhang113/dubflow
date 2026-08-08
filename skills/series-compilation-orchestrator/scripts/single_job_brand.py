@@ -97,7 +97,7 @@ def execute(video, output, logo, intro, outro, include_intro, include_outro):
         candidate = branded
         if include_intro or include_outro:
             branded_episode = work / "final_video_vi.mp4"
-            branded_episode.symlink_to(branded)
+            os.link(branded, branded_episode)
             manifest = work / "manifest.json"
             manifest.write_text(json.dumps({"max_seconds": 5400, "parts": [{
                 "intro": str(intro) if include_intro else None,

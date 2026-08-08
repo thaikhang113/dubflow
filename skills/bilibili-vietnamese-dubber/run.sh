@@ -28,7 +28,6 @@ DOUYIN_PIPELINE="${DOUYIN_PIPELINE:-/home/haonguyen/.openclaw/workspace/skills/d
 CDP_URL="${BILIBILI_CDP_URL:-http://127.0.0.1:9222}"
 LATEST_OUTPUT="$BILI_BASE/LATEST_OUTPUT_DIR.txt"
 LATEST_SOURCE="$BILI_BASE/LATEST_SOURCE_URL.txt"
-BILIBILI_BRANDING="${BILIBILI_BRANDING:-0}"
 BILIBILI_BRAND_INCLUDE_INTRO="${BILIBILI_BRAND_INCLUDE_INTRO:-0}"
 BILIBILI_BRAND_INCLUDE_OUTRO="${BILIBILI_BRAND_INCLUDE_OUTRO:-0}"
 SINGLE_JOB_BRAND_SCRIPT="${SINGLE_JOB_BRAND_SCRIPT:-/home/haonguyen/.openclaw/workspace/skills/series-compilation-orchestrator/scripts/single_job_brand.py}"
@@ -64,12 +63,8 @@ PY
 }
 
 validate_branding_flags() {
-  case "$BILIBILI_BRANDING" in 0|1) ;; *) fail "BILIBILI_BRANDING chỉ nhận 0 hoặc 1" ;; esac
   case "$BILIBILI_BRAND_INCLUDE_INTRO" in 0|1) ;; *) fail "BILIBILI_BRAND_INCLUDE_INTRO chỉ nhận 0 hoặc 1" ;; esac
   case "$BILIBILI_BRAND_INCLUDE_OUTRO" in 0|1) ;; *) fail "BILIBILI_BRAND_INCLUDE_OUTRO chỉ nhận 0 hoặc 1" ;; esac
-  if [[ "$BILIBILI_BRANDING" != "1" && ( "$BILIBILI_BRAND_INCLUDE_INTRO" == "1" || "$BILIBILI_BRAND_INCLUDE_OUTRO" == "1" ) ]]; then
-    fail "intro/outro chỉ dùng cùng BILIBILI_BRANDING=1"
-  fi
 }
 
 # edge-tts (pip --user) nằm ở ~/.local/bin. Đảm bảo wrapper host-runner và
@@ -294,47 +289,34 @@ export GOOGLE_FLOW_THUMBNAIL_SCRIPT="${GOOGLE_FLOW_THUMBNAIL_SCRIPT:-/home/haong
 echo "Đã tải Bilibili xong, chuyển sang pipeline vietsub/lồng tiếng hiện có..."
 # Đảm bảo pipeline con thấy ~/.local/bin (edge-tts pip --user) và EDGE_TTS_BIN.
 export PATH="$HOME/.local/bin:$PATH"
+[[ -f "$SINGLE_JOB_BRAND_SCRIPT" ]] || fail "Không tìm thấy single-job branding script: $SINGLE_JOB_BRAND_SCRIPT"
+[[ -f "$BRAND_ASSETS_JSON" ]] || fail "Không tìm thấy approved branding assets: $BRAND_ASSETS_JSON"
 set +e
-if [[ "$BILIBILI_BRANDING" == "1" ]]; then
-  [[ -f "$SINGLE_JOB_BRAND_SCRIPT" ]] || fail "Không tìm thấy single-job branding script: $SINGLE_JOB_BRAND_SCRIPT"
-  [[ -f "$BRAND_ASSETS_JSON" ]] || fail "Không tìm thấy approved branding assets: $BRAND_ASSETS_JSON"
-  # The child must not organize/upload the unbranded video.  This wrapper brands
-  # its verified job-local final output, then performs each final hand-off once.
-  ORGANIZE_OUTPUT=0 AUTO_TELEGRAM_RESULT=0 bash "$DOUYIN_PIPELINE" "$VIDEO_FILE"
-  child_status=$?
-else
-  bash "$DOUYIN_PIPELINE" "$VIDEO_FILE"
-  child_status=$?
-fi
+# The child must not organize/upload the unbranded video. This wrapper brands
+# its verified job-local final output, then performs each final hand-off once.
+ORGANIZE_OUTPUT=0 AUTO_TELEGRAM_RESULT=0 bash "$DOUYIN_PIPELINE" "$VIDEO_FILE"
+child_status=$?
 set -e
 if [[ "$child_status" -ne 0 ]]; then
   emit_latest_job_failure "$child_status"
   exit "$child_status"
 fi
 
-if [[ -f "$LATEST_OUTPUT" ]]; then
-  OUT_DIR="$(cat "$LATEST_OUTPUT")"
-  if [[ "$BILIBILI_BRANDING" == "1" ]]; then
-    [[ -s "$OUT_DIR/final_video_vi.mp4" ]] || fail "Bilibili branding cần final_video_vi.mp4 đã qua quality gate"
-    cp "$META_JSON" "$OUT_DIR/bilibili_meta.json" 2>/dev/null || true
-    rm -f "$OUT_DIR/bilibili_cookies.txt" 2>/dev/null || true
-    [[ -s "$COVER_FILE" ]] && cp "$COVER_FILE" "$OUT_DIR/thumbnail_reference_bilibili.jpg" 2>/dev/null || true
-    python3 "$SINGLE_JOB_BRAND_SCRIPT" --input "$OUT_DIR/final_video_vi.mp4" --output "$OUT_DIR/final_video_vi.mp4" --assets "$BRAND_ASSETS_JSON" --include-intro "$BILIBILI_BRAND_INCLUDE_INTRO" --include-outro "$BILIBILI_BRAND_INCLUDE_OUTRO" || fail "Bilibili branding thất bại; không organize/upload"
-    cp "$OUT_DIR/final_video_vi.mp4" "$BILI_BASE/final_video_vi.mp4"
-    ORGANIZE_SCRIPT="${ORGANIZE_OUTPUT_SCRIPT:-$(dirname "$DOUYIN_PIPELINE")/organize_output.py}"
-    TELEGRAM_SCRIPT="${TELEGRAM_RESULT_SCRIPT:-$(dirname "$DOUYIN_PIPELINE")/telegram-send-result.sh}"
-    [[ -x "$ORGANIZE_SCRIPT" ]] || fail "Không tìm thấy organize output script: $ORGANIZE_SCRIPT"
-    python3 "$ORGANIZE_SCRIPT" --job-dir "$OUT_DIR" --base-dir "$BILI_BASE" > "$OUT_DIR/organize_output.log" || fail "Organize branded Bilibili output thất bại; không upload"
-    if [[ "${AUTO_TELEGRAM_RESULT:-1}" != "0" && -x "$TELEGRAM_SCRIPT" ]]; then
-      timeout "${TELEGRAM_RESULT_TIMEOUT:-300}" "$TELEGRAM_SCRIPT" "$OUT_DIR" || echo "WARN: Telegram/Drive branded result failed; video branded vẫn giữ trong job dir."
-    fi
-  else
-    cp "$META_JSON" "$OUT_DIR/bilibili_meta.json" 2>/dev/null || true
-    # Hardening: cookies stay only in JOB_CACHE for yt-dlp; never copy into job output.
-    # Scrub residual from older runs that may still have bilibili_cookies.txt in OUT_DIR.
-    rm -f "$OUT_DIR/bilibili_cookies.txt" 2>/dev/null || true
-    [[ -s "$COVER_FILE" ]] && cp "$COVER_FILE" "$OUT_DIR/thumbnail_reference_bilibili.jpg" 2>/dev/null || true
-  fi
-  printf '%s\n' "$INPUT" > "$LATEST_SOURCE"
-  echo "bilibili_output_dir: $OUT_DIR"
+[[ -s "$LATEST_OUTPUT" ]] || fail "Pipeline Bilibili không công bố output dir sau khi hoàn thành"
+OUT_DIR="$(head -n 1 "$LATEST_OUTPUT")"
+[[ -s "$OUT_DIR/final_video_vi.mp4" ]] || fail "Bilibili branding cần final_video_vi.mp4 đã qua quality gate"
+cp "$META_JSON" "$OUT_DIR/bilibili_meta.json" 2>/dev/null || true
+# Hardening: cookies stay only in JOB_CACHE for yt-dlp; never copy into job output.
+rm -f "$OUT_DIR/bilibili_cookies.txt" 2>/dev/null || true
+[[ -s "$COVER_FILE" ]] && cp "$COVER_FILE" "$OUT_DIR/thumbnail_reference_bilibili.jpg" 2>/dev/null || true
+python3 "$SINGLE_JOB_BRAND_SCRIPT" --input "$OUT_DIR/final_video_vi.mp4" --output "$OUT_DIR/final_video_vi.mp4" --assets "$BRAND_ASSETS_JSON" --include-intro "$BILIBILI_BRAND_INCLUDE_INTRO" --include-outro "$BILIBILI_BRAND_INCLUDE_OUTRO" || fail "Bilibili branding thất bại; không organize/upload"
+cp "$OUT_DIR/final_video_vi.mp4" "$BILI_BASE/final_video_vi.mp4"
+ORGANIZE_SCRIPT="${ORGANIZE_OUTPUT_SCRIPT:-$(dirname "$DOUYIN_PIPELINE")/organize_output.py}"
+TELEGRAM_SCRIPT="${TELEGRAM_RESULT_SCRIPT:-$(dirname "$DOUYIN_PIPELINE")/telegram-send-result.sh}"
+[[ -x "$ORGANIZE_SCRIPT" ]] || fail "Không tìm thấy organize output script: $ORGANIZE_SCRIPT"
+python3 "$ORGANIZE_SCRIPT" --job-dir "$OUT_DIR" --base-dir "$BILI_BASE" > "$OUT_DIR/organize_output.log" || fail "Organize branded Bilibili output thất bại; không upload"
+if [[ "${AUTO_TELEGRAM_RESULT:-1}" != "0" && -x "$TELEGRAM_SCRIPT" ]]; then
+  timeout "${TELEGRAM_RESULT_TIMEOUT:-300}" "$TELEGRAM_SCRIPT" "$OUT_DIR" || echo "WARN: Telegram/Drive branded result failed; video branded vẫn giữ trong job dir."
 fi
+printf '%s\n' "$INPUT" > "$LATEST_SOURCE"
+echo "bilibili_output_dir: $OUT_DIR"
