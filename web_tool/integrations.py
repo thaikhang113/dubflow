@@ -335,6 +335,18 @@ def host_hardware_status() -> dict:
     except Exception:
         return {}
 
+def host_install_status() -> dict:
+    endpoint = os.environ.get(
+        "BILIBILI_HOST_HELPER_URL",
+        "http://host.docker.internal:18794",
+    ).rstrip("/")
+    try:
+        with urllib.request.urlopen(f"{endpoint}/install/status", timeout=3) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            return payload if response.status == 200 and isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
 def _ollama_available(provider) -> bool:
     if not provider:
         return False
@@ -356,9 +368,11 @@ def runtime_doctor(
     host_helper_available=False,
     ollama_available=None,
     hardware_status=None,
+    install_status=None,
 ) -> dict:
     runtime_settings = runtime_settings or {}
     login_status = login_status or {}
+    install_status = install_status or {}
     whisper_binary = settings.models_dir / "whisper.cpp" / "build" / "bin" / (
         "whisper-cli.exe" if os.name == "nt" else "whisper-cli"
     )
@@ -392,6 +406,37 @@ def runtime_doctor(
             for provider in providers
         ],
     }
+    qwen = install_status.get("qwen_asr")
+    if not isinstance(qwen, dict):
+        qwen = {}
+    qwen_checks = {
+        key: qwen.get(key) is True
+        for key in ("service", "model", "aligner")
+    }
+    qwen_checks["ready"] = all(qwen_checks.values())
+    requested_asr = str(runtime_settings.get("asr_engine") or "auto").lower()
+    if requested_asr not in {"auto", "whisper", "qwen3"}:
+        requested_asr = "auto"
+    selected_asr = (
+        "qwen3"
+        if requested_asr == "qwen3"
+        or (requested_asr == "auto" and qwen_checks["ready"])
+        else "whisper"
+    )
+    checks["asr"] = {
+        "requested": requested_asr,
+        "selected": selected_asr,
+        "ready": qwen_checks["ready"] if selected_asr == "qwen3" else checks["whisper"],
+        "engines": {
+            "whisper": {
+                "ready": checks["whisper"],
+                "binary": checks["whisper_binary"],
+                "model": checks["whisper_model"],
+                "model_installed": checks["whisper_model_installed"],
+            },
+            "qwen3": qwen_checks,
+        },
+    }
     hardware_status = hardware_status or {}
     gpu = hardware_status.get("gpu")
     if not isinstance(gpu, dict):
@@ -420,16 +465,27 @@ def runtime_doctor(
             for name in ("ollama", "whisper", "demucs", "render")
         },
     }
-    core_required = ("FFmpeg", "Whisper", "Demucs", "Runtime volumes")
+    core_required = ("FFmpeg", "Demucs", "Runtime volumes")
     core_missing = []
     if not checks["ffmpeg"]:
         core_missing.append("FFmpeg")
-    if not checks["whisper"]:
-        core_missing.append("Whisper model/binary")
     if not checks["demucs"]:
         core_missing.append("Demucs")
     if not all(writable.values()):
         core_missing.append("Writable runtime volumes")
+    asr_missing = []
+    if selected_asr == "whisper" and not checks["whisper"]:
+        asr_missing.append("Whisper model/binary")
+    if selected_asr == "qwen3":
+        asr_missing.extend(
+            label
+            for key, label in (
+                ("service", "Qwen service"),
+                ("model", "Qwen model"),
+                ("aligner", "Qwen aligner"),
+            )
+            if not qwen_checks[key]
+        )
 
     providers_by_id = {provider["id"]: provider for provider in providers}
     translation = providers_by_id.get(
@@ -483,11 +539,58 @@ def runtime_doctor(
         ai33_missing.append("AI33_API_KEY")
 
     voice = str(runtime_settings.get("default_voice") or "")
-    voice_missing = ai33_missing if voice.startswith("ai33:") else []
-    if not voice.startswith("ai33:") and not checks["edge_tts"]:
-        voice_missing = ["Edge TTS"]
+    vieneu = install_status.get("vieneu")
+    if not isinstance(vieneu, dict):
+        vieneu = {}
+    try:
+        vieneu_sample_rate = int(vieneu.get("sample_rate") or 0)
+    except (TypeError, ValueError):
+        vieneu_sample_rate = 0
+    vieneu_checks = {
+        "health": vieneu.get("health") is True,
+        "sample_rate": vieneu_sample_rate,
+    }
+    vieneu_checks["ready"] = (
+        vieneu_checks["health"] and vieneu_checks["sample_rate"] == 48000
+    )
+    selected_tts = (
+        "vieneu"
+        if voice.lower().startswith("vieneu:")
+        else "ai33"
+        if voice.lower().startswith("ai33:")
+        else "edge"
+    )
+    ai33_checks = {
+        "provider": ai33 is not None,
+        "configured": bool(ai33 and ai33.get("configured")),
+    }
+    ai33_checks["ready"] = all(ai33_checks.values())
+    edge_checks = {"ready": checks["edge_tts"]}
+    checks["tts"] = {
+        "selected": selected_tts,
+        "ready": {
+            "vieneu": vieneu_checks["ready"],
+            "ai33": ai33_checks["ready"],
+            "edge": edge_checks["ready"],
+        }[selected_tts],
+        "engines": {
+            "vieneu": vieneu_checks,
+            "ai33": ai33_checks,
+            "edge": edge_checks,
+        },
+    }
+    tts_missing = []
+    if selected_tts == "vieneu":
+        if not vieneu_checks["health"]:
+            tts_missing.append("VieNeu health")
+        if vieneu_checks["sample_rate"] != 48000:
+            tts_missing.append("VieNeu 48 kHz")
+    elif selected_tts == "ai33":
+        tts_missing.extend(ai33_missing)
+    elif not checks["edge_tts"]:
+        tts_missing.append("Edge TTS")
 
-    local_missing = core_missing + translation_missing + list(voice_missing)
+    local_missing = core_missing + translation_missing + asr_missing + tts_missing
     if ollama is None:
         ollama_missing = ["Ollama provider/endpoint"]
     elif not ollama_available:
@@ -530,6 +633,14 @@ def runtime_doctor(
     )
     if trend["missing"]:
         trend["status"] = "optional"
+    ai33_workflow = _workflow(
+        "ai33_voice",
+        "Giọng AI33",
+        ("AI33 provider", "AI33_API_KEY"),
+        ai33_missing,
+    )
+    if selected_tts != "ai33":
+        ai33_workflow["status"] = "optional"
 
     workflows = [
         _workflow(
@@ -547,15 +658,27 @@ def runtime_doctor(
             ),
         ),
         _workflow(
+            "asr",
+            "Nhận dạng giọng nói",
+            ("Whisper fallback",) if requested_asr == "auto" else (selected_asr,),
+            asr_missing,
+        ),
+        _workflow(
+            "tts",
+            "Giọng đọc",
+            (selected_tts,),
+            tts_missing,
+        ),
+        _workflow(
             "local_video",
             "Video local",
-            core_required + ("Provider dịch", "Provider giọng"),
+            core_required + ("ASR", "Provider dịch", "TTS"),
             local_missing,
         ),
         _workflow(
             "bilibili",
             "Bilibili",
-            core_required + ("yt-dlp", "Provider dịch", "Provider giọng"),
+            core_required + ("yt-dlp", "ASR", "Provider dịch", "TTS"),
             bilibili_missing,
             bilibili_optional,
         ),
@@ -565,12 +688,7 @@ def runtime_doctor(
             ("Ollama provider/endpoint",),
             ollama_missing,
         ),
-        _workflow(
-            "ai33_voice",
-            "Giọng AI33",
-            ("AI33 provider", "AI33_API_KEY"),
-            ai33_missing,
-        ),
+        ai33_workflow,
         telegram,
         trend,
     ]
@@ -578,7 +696,7 @@ def runtime_doctor(
         checks["ffmpeg"]
         and checks["chromium"]
         and checks["yt_dlp"]
-        and checks["whisper"]
+        and checks["asr"]["ready"]
         and checks["demucs"]
         and all(writable.values())
     )

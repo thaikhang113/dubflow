@@ -22,6 +22,7 @@ from .integrations import (
     run_series_action,
     run_trend_action,
     host_hardware_status,
+    host_install_status,
     host_login_helper_available,
     runtime_doctor,
     test_telegram,
@@ -104,6 +105,8 @@ class JobRequest(BaseModel):
     series_id: str = ""
     preset: str = ""
     whisper_model: str = Field(default="", pattern=r"^(|small|medium)$")
+    asr_engine: str = Field(default="", pattern=r"^(|auto|whisper|qwen3)$")
+    vieneu_style: str = Field(default="", pattern=r"^(|story)$")
 
 
 class CookieImportRequest(BaseModel):
@@ -131,7 +134,7 @@ class RuntimeSettingsRequest(BaseModel):
     default_provider_id: str = ""
     default_model: str = Field(default="translategemma:4b", max_length=200)
     default_voice: str = Field(
-        default="ai33:vbee_hn_female_ngochuyen_full_48k-fhg",
+        default="vieneu:hong-chau",
         max_length=200,
     )
     queue_poll_seconds: int = Field(default=2, ge=1, le=60)
@@ -139,6 +142,8 @@ class RuntimeSettingsRequest(BaseModel):
     telegram_thread_id: str = Field(default="", max_length=100)
     telegram_bot_token: str = Field(default="", max_length=500)
     whisper_model: str = Field(default="medium", pattern=r"^(small|medium)$")
+    asr_engine: str = Field(default="auto", pattern=r"^(auto|whisper|qwen3)$")
+    vieneu_style: str = Field(default="story", pattern=r"^story$")
     hardware_mode: str = Field(default="auto", pattern=r"^(auto|cpu|gpu)$")
     hardware_profile: str = Field(
         default="cpu",
@@ -402,8 +407,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             {
                 "default_provider_id": "",
                 "default_model": "translategemma:4b",
-                "default_voice": "ai33:vbee_hn_female_ngochuyen_full_48k-fhg",
+                "default_voice": "vieneu:hong-chau",
                 "whisper_model": "medium",
+                "asr_engine": "auto",
+                "vieneu_style": "story",
                 "hardware_mode": "auto",
                 "hardware_profile": "cpu",
                 "queue_poll_seconds": "2",
@@ -456,6 +463,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             telegram_configured=values["telegram_configured"],
             host_helper_available=host_login_helper_available(),
             hardware_status=host_hardware_status(),
+            install_status=host_install_status(),
         )
 
     @app.post("/api/telegram/test")
@@ -547,8 +555,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             {
                 "default_provider_id": "",
                 "default_model": "translategemma:4b",
-                "default_voice": "ai33:vbee_hn_female_ngochuyen_full_48k-fhg",
+                "default_voice": "vieneu:hong-chau",
                 "whisper_model": "medium",
+                "asr_engine": "auto",
+                "vieneu_style": "story",
             }
         )
         if not values["model"].strip():
@@ -557,13 +567,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             values["voice"] = defaults["default_voice"]
         if not values["whisper_model"].strip():
             values["whisper_model"] = defaults["whisper_model"]
+        if not values["asr_engine"].strip():
+            values["asr_engine"] = defaults["asr_engine"]
+        if not values["vieneu_style"].strip():
+            values["vieneu_style"] = defaults["vieneu_style"]
         if not any(
             values[key].strip()
             for key in ("translation_provider_id", "tts_provider_id", "provider_id")
         ):
             default_provider_id = defaults["default_provider_id"].strip()
             provider = store.get_provider(default_provider_id) if default_provider_id else None
-            if provider:
+            if provider and (
+                provider["kind"] != "ai33"
+                or values["voice"].lower().startswith("ai33:")
+            ):
                 role = (
                     "tts_provider_id"
                     if provider["kind"] == "ai33"
@@ -655,6 +672,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request["resume_job_dir"] = str(
             saved_resume if saved_resume.is_dir() else job_dir
         )
+        defaults = store.get_settings(
+            {"asr_engine": "auto", "vieneu_style": "story"}
+        )
+        request.setdefault("asr_engine", defaults["asr_engine"])
+        request.setdefault("vieneu_style", defaults["vieneu_style"])
         if not any(
             str(request.get(key) or '').strip()
             for key in ('translation_provider_id', 'tts_provider_id', 'provider_id')
@@ -663,7 +685,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 {'default_provider_id': ''}
             )['default_provider_id'].strip()
             provider = store.get_provider(default_id) if default_id else None
-            if provider:
+            if provider and (
+                provider['kind'] != 'ai33'
+                or str(request.get('voice') or '').lower().startswith('ai33:')
+            ):
                 role = (
                     'tts_provider_id'
                     if provider['kind'] == 'ai33'
@@ -700,6 +725,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request = dict(job["request"])
         request.pop("resume_job_dir", None)
         request["retry_of"] = job_id
+        defaults = store.get_settings(
+            {"asr_engine": "auto", "vieneu_style": "story"}
+        )
+        request.setdefault("asr_engine", defaults["asr_engine"])
+        request.setdefault("vieneu_style", defaults["vieneu_style"])
         retried = store.enqueue_job(request)
         events.publish(retried)
         worker.notify()

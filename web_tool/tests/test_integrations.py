@@ -14,6 +14,7 @@ from web_tool.app import create_app
 from web_tool.config import Settings
 from web_tool.integrations import (
     host_hardware_status,
+    host_install_status,
     run_series_action,
     run_trend_action,
     runtime_doctor,
@@ -48,6 +49,33 @@ class IntegrationTests(unittest.TestCase):
 
         self.assertEqual("hybrid", result["selected_profile"])
         self.assertGreaterEqual(urlopen.call_args.kwargs["timeout"], 10)
+
+    def test_install_status_returns_only_structured_runtime_state(self):
+        response = unittest.mock.MagicMock()
+        response.__enter__.return_value = response
+        response.status = 200
+        response.read.return_value = json.dumps(
+            {
+                "qwen_asr": {
+                    "service": True,
+                    "model": True,
+                    "aligner": True,
+                },
+                "vieneu": {
+                    "health": True,
+                    "sample_rate": 48000,
+                },
+            }
+        ).encode()
+        with patch(
+            "web_tool.integrations.urllib.request.urlopen",
+            return_value=response,
+        ) as urlopen:
+            result = host_install_status()
+
+        self.assertTrue(result["qwen_asr"]["aligner"])
+        self.assertEqual(48000, result["vieneu"]["sample_rate"])
+        self.assertTrue(urlopen.call_args.args[0].endswith("/install/status"))
 
     def test_series_actions_use_fixed_state_and_reject_unsafe_selector(self):
         with patch(
@@ -318,6 +346,144 @@ class IntegrationTests(unittest.TestCase):
             workflows["ollama_translation"]["missing"],
         )
         self.assertFalse(report["ready"])
+
+    @patch("web_tool.integrations.os.access", return_value=True)
+    @patch("web_tool.integrations.importlib.util.find_spec", return_value=object())
+    @patch("web_tool.integrations.shutil.which", side_effect=lambda name: f"/bin/{name}")
+    def test_runtime_doctor_only_blocks_on_selected_asr_and_tts(
+        self,
+        _which,
+        _find_spec,
+        _access,
+    ):
+        providers = [
+            {
+                "id": "provider-ollama",
+                "kind": "ollama",
+                "configured": False,
+                "endpoint": "http://ollama:11434",
+            },
+            {
+                "id": "provider-ai33",
+                "kind": "ai33",
+                "configured": True,
+                "endpoint": "https://api.ai33.pro",
+            },
+        ]
+        install_status = {
+            "qwen_asr": {
+                "service": True,
+                "model": True,
+                "aligner": True,
+            },
+            "vieneu": {
+                "health": True,
+                "sample_rate": 48000,
+            },
+        }
+        report = runtime_doctor(
+            self.settings,
+            providers,
+            runtime_settings={
+                "default_provider_id": "provider-ollama",
+                "asr_engine": "qwen3",
+                "whisper_model": "medium",
+                "default_voice": "vieneu:hong-chau",
+            },
+            ollama_available=True,
+            install_status=install_status,
+        )
+
+        self.assertTrue(report["ready"])
+        self.assertEqual("qwen3", report["checks"]["asr"]["selected"])
+        self.assertTrue(report["checks"]["asr"]["engines"]["qwen3"]["ready"])
+        self.assertFalse(report["checks"]["asr"]["engines"]["whisper"]["ready"])
+        self.assertEqual("vieneu", report["checks"]["tts"]["selected"])
+        self.assertTrue(report["checks"]["tts"]["engines"]["vieneu"]["ready"])
+        self.assertNotIn("api.ai33.pro", repr(report))
+
+        install_status["qwen_asr"]["aligner"] = False
+        missing_aligner = runtime_doctor(
+            self.settings,
+            providers,
+            runtime_settings={
+                "default_provider_id": "provider-ollama",
+                "asr_engine": "qwen3",
+                "default_voice": "vieneu:hong-chau",
+            },
+            ollama_available=True,
+            install_status=install_status,
+        )
+        self.assertFalse(missing_aligner["ready"])
+        self.assertIn(
+            "Qwen aligner",
+            next(
+                item
+                for item in missing_aligner["workflows"]
+                if item["id"] == "asr"
+            )["missing"],
+        )
+
+    @patch("web_tool.integrations.os.access", return_value=True)
+    @patch("web_tool.integrations.importlib.util.find_spec", return_value=object())
+    @patch("web_tool.integrations.shutil.which", side_effect=lambda name: f"/bin/{name}")
+    def test_runtime_doctor_auto_falls_back_and_requires_vieneu_48k(
+        self,
+        _which,
+        _find_spec,
+        _access,
+    ):
+        root = self.settings.models_dir / "whisper.cpp"
+        binary = root / "build" / "bin" / (
+            "whisper-cli.exe" if os.name == "nt" else "whisper-cli"
+        )
+        binary.parent.mkdir(parents=True)
+        binary.write_bytes(b"binary")
+        model = root / "models" / "ggml-medium.bin"
+        model.parent.mkdir(parents=True)
+        model.write_bytes(b"model")
+        providers = [
+            {
+                "id": "provider-ollama",
+                "kind": "ollama",
+                "configured": False,
+                "endpoint": "http://ollama:11434",
+            },
+        ]
+        report = runtime_doctor(
+            self.settings,
+            providers,
+            runtime_settings={
+                "default_provider_id": "provider-ollama",
+                "asr_engine": "auto",
+                "default_voice": "vieneu:hong-chau",
+            },
+            ollama_available=True,
+            install_status={
+                "qwen_asr": {
+                    "service": False,
+                    "model": False,
+                    "aligner": False,
+                },
+                "vieneu": {
+                    "health": True,
+                    "sample_rate": 44100,
+                },
+            },
+        )
+
+        self.assertEqual("whisper", report["checks"]["asr"]["selected"])
+        self.assertTrue(report["checks"]["asr"]["ready"])
+        self.assertFalse(report["checks"]["tts"]["ready"])
+        self.assertFalse(report["ready"])
+        self.assertIn(
+            "VieNeu 48 kHz",
+            next(
+                item
+                for item in report["workflows"]
+                if item["id"] == "tts"
+            )["missing"],
+        )
 
     def test_output_export_contains_only_managed_output(self):
         output = self.settings.output_dir / "job-one"

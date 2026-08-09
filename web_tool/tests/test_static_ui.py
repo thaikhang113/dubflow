@@ -80,16 +80,50 @@ class StaticUiTests(unittest.TestCase):
 
     def test_settings_can_select_and_download_local_whisper(self):
         for marker in (
+            'id="settings-asr-engine"',
             'id="settings-whisper-model"',
             'id="settings-whisper-install"',
+            'id="settings-qwen-install"',
+            'id="settings-qwen-status"',
         ):
             self.assertIn(marker, self.html)
         for marker in (
             "function installLocalWhisper",
+            "function installRuntime",
             "http://127.0.0.1:18794/whisper/install",
+            "http://127.0.0.1:18794/qwen-asr/install",
+            "http://127.0.0.1:18794/install/status",
+            "asr_engine",
             "whisper_model",
         ):
                 self.assertIn(marker, self.javascript)
+
+    def test_jobs_and_settings_choose_vieneu_by_voice(self):
+        for marker in (
+            'id="job-asr-engine"',
+            'id="job-whisper-model"',
+            'id="job-voice"',
+            'id="job-vieneu-style"',
+            'id="settings-voice"',
+            'id="settings-vieneu-style"',
+            'id="settings-vieneu-install"',
+            'id="settings-vieneu-status"',
+            'value="vieneu:hong-chau"',
+            'value="story"',
+            "Đọc truyện",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, self.html)
+        for marker in (
+            "http://127.0.0.1:18794/vieneu/install",
+            "asr_engine",
+            "vieneu_style",
+            "vieneu:hong-chau",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, self.javascript)
+        self.assertNotIn("tts_engine", self.html)
+        self.assertNotIn("tts_engine", self.javascript)
 
     def test_settings_can_detect_and_apply_hardware_profile(self):
         for marker in (

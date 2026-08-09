@@ -71,6 +71,23 @@
               </select>
             </label>
             <label class="field">
+              <span>Nhận dạng giọng nói</span>
+              <select id="job-asr-engine" name="asr_engine">
+                <option value="">Theo cài đặt</option>
+                <option value="auto">Tự động</option>
+                <option value="qwen3">Qwen3 ASR</option>
+                <option value="whisper">Whisper</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Model Whisper dự phòng</span>
+              <select id="job-whisper-model" name="whisper_model">
+                <option value="">Theo cài đặt</option>
+                <option value="medium">Chất lượng tốt (medium)</option>
+                <option value="small">Nhanh hơn (small)</option>
+              </select>
+            </label>
+            <label class="field">
               <span>Provider dịch</span>
               <select id="job-translation-provider" name="translation_provider_id">
                 <option value="">Ollama mặc định</option>
@@ -84,7 +101,18 @@
             </label>
             <label class="field">
               <span>Giọng</span>
-              <input id="job-voice" name="voice" type="text" value="ai33:vbee_hn_female_ngochuyen_full_48k-fhg" autocomplete="off">
+              <select id="job-voice" name="voice">
+                <option value="">Theo cài đặt</option>
+                <option value="vieneu:hong-chau">VieNeu · Hồng Châu</option>
+                <option value="ai33:vbee_hn_female_ngochuyen_full_48k-fhg">AI33 · Ngọc Huyền</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Phong cách VieNeu</span>
+              <select id="job-vieneu-style" name="vieneu_style">
+                <option value="">Theo cài đặt</option>
+                <option value="story">Đọc truyện</option>
+              </select>
             </label>
             <label class="field">
               <span>Preset</span>
@@ -480,10 +508,27 @@
               </label>
               <label class="field">
                 <span>Giọng mặc định</span>
-                <input id="settings-voice" type="text" maxlength="200">
+                <select id="settings-voice">
+                  <option value="vieneu:hong-chau">VieNeu · Hồng Châu</option>
+                  <option value="ai33:vbee_hn_female_ngochuyen_full_48k-fhg">AI33 · Ngọc Huyền</option>
+                </select>
               </label>
               <label class="field">
-                <span>Whisper local</span>
+                <span>Phong cách VieNeu</span>
+                <select id="settings-vieneu-style">
+                  <option value="story">Đọc truyện</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Công cụ nhận dạng</span>
+                <select id="settings-asr-engine">
+                  <option value="auto">Tự động (Qwen3, fallback Whisper)</option>
+                  <option value="qwen3">Qwen3 ASR</option>
+                  <option value="whisper">Whisper</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Model Whisper dự phòng</span>
                 <select id="settings-whisper-model">
                   <option value="medium">Chất lượng tốt (medium)</option>
                   <option value="small">Nhanh hơn (small)</option>
@@ -491,6 +536,14 @@
               </label>
               <div class="command-field">
                 <button class="secondary" id="settings-whisper-install" type="button">Tải model Whisper</button>
+              </div>
+              <div class="hardware-control">
+                <button class="secondary" id="settings-qwen-install" type="button">Cài Qwen3 ASR</button>
+                <span id="settings-qwen-status" aria-live="polite">Chưa kiểm tra Qwen3 ASR.</span>
+              </div>
+              <div class="hardware-control">
+                <button class="secondary" id="settings-vieneu-install" type="button">Cài VieNeu</button>
+                <span id="settings-vieneu-status" aria-live="polite">Chưa kiểm tra VieNeu.</span>
               </div>
               <label class="field">
                 <span>Tăng tốc phần cứng</span>

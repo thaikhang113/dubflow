@@ -335,5 +335,101 @@ class ApiTests(unittest.TestCase):
         )
 
 
+    def test_settings_support_asr_and_vieneu_without_breaking_existing_fields(self):
+        defaults = self.client.get("/api/settings").json()
+        self.assertEqual("auto", defaults["asr_engine"])
+        self.assertEqual("medium", defaults["whisper_model"])
+        self.assertEqual("vieneu:hong-chau", defaults["default_voice"])
+        self.assertEqual("story", defaults["vieneu_style"])
+
+        response = self.client.put(
+            "/api/settings",
+            json={
+                "asr_engine": "qwen3",
+                "whisper_model": "small",
+                "default_voice": "vieneu:hong-chau",
+                "vieneu_style": "story",
+            },
+        )
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual("qwen3", response.json()["asr_engine"])
+        self.assertEqual("small", response.json()["whisper_model"])
+        self.assertEqual("vieneu:hong-chau", response.json()["default_voice"])
+        self.assertEqual("story", response.json()["vieneu_style"])
+
+        for payload in (
+            {"asr_engine": "other"},
+            {"vieneu_style": "news"},
+        ):
+            with self.subTest(payload=payload):
+                self.assertEqual(
+                    422,
+                    self.client.put("/api/settings", json=payload).status_code,
+                )
+
+    def test_job_can_inherit_or_override_asr_and_vieneu_style(self):
+        saved = self.client.put(
+            "/api/settings",
+            json={
+                "asr_engine": "qwen3",
+                "default_voice": "vieneu:hong-chau",
+                "vieneu_style": "story",
+            },
+        )
+        self.assertEqual(200, saved.status_code, saved.text)
+
+        inherited = self.client.post(
+            "/api/jobs",
+            json={
+                "platform": "bilibili",
+                "source": "https://www.bilibili.com/video/BV1ASR",
+            },
+        )
+        self.assertEqual(201, inherited.status_code, inherited.text)
+        self.assertEqual("qwen3", inherited.json()["request"]["asr_engine"])
+        self.assertEqual("story", inherited.json()["request"]["vieneu_style"])
+        self.assertEqual("vieneu:hong-chau", inherited.json()["request"]["voice"])
+
+        overridden = self.client.post(
+            "/api/jobs",
+            json={
+                "platform": "bilibili",
+                "source": "https://www.bilibili.com/video/BV1WHISPER",
+                "asr_engine": "whisper",
+                "vieneu_style": "story",
+            },
+        )
+        self.assertEqual(201, overridden.status_code, overridden.text)
+        self.assertEqual("whisper", overridden.json()["request"]["asr_engine"])
+
+    def test_vieneu_voice_does_not_bind_ai33_default_provider(self):
+        ai33 = self.client.post(
+            "/api/providers",
+            json={
+                "name": "AI33",
+                "kind": "ai33",
+                "endpoint": "https://api.ai33.pro",
+                "api_key": "secret",
+            },
+        ).json()
+        saved = self.client.put(
+            "/api/settings",
+            json={
+                "default_provider_id": ai33["id"],
+                "default_voice": "vieneu:hong-chau",
+            },
+        )
+        self.assertEqual(200, saved.status_code, saved.text)
+
+        job = self.client.post(
+            "/api/jobs",
+            json={
+                "platform": "bilibili",
+                "source": "https://www.bilibili.com/video/BV1VIENEU",
+            },
+        )
+        self.assertEqual(201, job.status_code, job.text)
+        self.assertEqual("", job.json()["request"]["tts_provider_id"])
+
 if __name__ == "__main__":
     unittest.main()

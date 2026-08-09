@@ -111,6 +111,7 @@ function showView(name) {
     loadSettings();
     loadDoctor();
     loadBrandLogo();
+    loadInstallStatus();
   }
 }
 
@@ -136,6 +137,15 @@ function providerOptions(select, providers, emptyLabel) {
 
 function selectFirstProvider(select) {
   if (!select.value && select.options.length > 1) select.selectedIndex = 1;
+}
+
+function setSelectValue(select, value) {
+  if (value && ![...select.options].some((option) => option.value === value)) {
+    const option = element("option", "", value);
+    option.value = value;
+    select.append(option);
+  }
+  select.value = value || "";
 }
 
 function renderProviders() {
@@ -170,7 +180,9 @@ function renderProviders() {
     state.providers.filter((provider) => provider.kind === "ai33"),
     "Theo cấu hình pipeline",
   );
-  selectFirstProvider(ttsSelect);
+  if (document.querySelector("#job-voice").value.startsWith("ai33:")) {
+    selectFirstProvider(ttsSelect);
+  }
 
   if (!state.providers.length) {
     list.append(element("p", "empty-inline", "Chưa có provider. Ollama mặc định vẫn dùng được."));
@@ -292,6 +304,11 @@ async function installLocalOllama() {
         default_provider_id: provider.id,
         default_model: "translategemma:4b",
         default_voice: settings.default_voice || "",
+        vieneu_style: settings.vieneu_style || "story",
+        asr_engine: settings.asr_engine || "auto",
+        whisper_model: settings.whisper_model || "medium",
+        hardware_mode: settings.hardware_mode || "auto",
+        hardware_profile: settings.hardware_profile || "cpu",
         queue_poll_seconds: settings.queue_poll_seconds || 2,
         telegram_chat_id: settings.telegram_chat_id || "",
         telegram_thread_id: settings.telegram_thread_id || "",
@@ -484,6 +501,9 @@ async function createJob(event) {
         translation_provider_id: document.querySelector("#job-translation-provider").value,
         tts_provider_id: document.querySelector("#job-tts-provider").value,
         voice: document.querySelector("#job-voice").value.trim(),
+        asr_engine: document.querySelector("#job-asr-engine").value,
+        whisper_model: document.querySelector("#job-whisper-model").value,
+        vieneu_style: document.querySelector("#job-vieneu-style").value,
         preset: document.querySelector("#job-preset").value,
       }),
     });
@@ -872,7 +892,10 @@ async function loadSettings() {
     state.settings = settings;
     document.querySelector("#settings-provider").value = settings.default_provider_id || "";
     document.querySelector("#settings-model").value = settings.default_model || "";
-    document.querySelector("#settings-voice").value = settings.default_voice || "";
+    const defaultVoice = settings.default_voice || "vieneu:hong-chau";
+    setSelectValue(document.querySelector("#settings-voice"), defaultVoice);
+    document.querySelector("#settings-vieneu-style").value = settings.vieneu_style || "story";
+    document.querySelector("#settings-asr-engine").value = settings.asr_engine || "auto";
     document.querySelector("#settings-whisper-model").value = settings.whisper_model || "medium";
     document.querySelector("#settings-hardware-mode").value = settings.hardware_mode || "auto";
     document.querySelector("#settings-hardware-status").textContent =
@@ -881,7 +904,7 @@ async function loadSettings() {
     document.querySelector("#settings-telegram-chat").value = settings.telegram_chat_id || "";
     document.querySelector("#settings-telegram-thread").value = settings.telegram_thread_id || "";
     document.querySelector("#settings-telegram-token").value = "";
-    document.querySelector("#job-voice").value = settings.default_voice || "";
+    setSelectValue(document.querySelector("#job-voice"), defaultVoice);
     document.querySelector("#channel-provider").value = settings.default_provider_id || "";
     document.querySelector("#channel-model").value = settings.default_model || "";
     document.querySelector("#channel-voice").value = settings.default_voice || "";
@@ -889,7 +912,8 @@ async function loadSettings() {
       (item) => item.id === settings.default_provider_id,
     );
     if (provider?.kind === "ai33") {
-      document.querySelector("#job-tts-provider").value = provider.id;
+      document.querySelector("#job-tts-provider").value =
+        defaultVoice.startsWith("ai33:") ? provider.id : "";
     } else if (provider) {
       document.querySelector("#job-translation-provider").value = provider.id;
     }
@@ -911,6 +935,8 @@ function settingsPayload(hardwareProfile = state.settings?.hardware_profile || "
     default_provider_id: document.querySelector("#settings-provider").value,
     default_model: document.querySelector("#settings-model").value.trim(),
     default_voice: document.querySelector("#settings-voice").value.trim(),
+    vieneu_style: document.querySelector("#settings-vieneu-style").value,
+    asr_engine: document.querySelector("#settings-asr-engine").value,
     whisper_model: document.querySelector("#settings-whisper-model").value,
     hardware_mode: document.querySelector("#settings-hardware-mode").value,
     hardware_profile: hardwareProfile,
@@ -955,6 +981,119 @@ async function detectHardware() {
     notify(`Nhận diện phần cứng lỗi: ${error.message}. Hãy mở Docker Desktop và host helper.`, true);
   } finally {
     detectButton.disabled = false;
+  }
+}
+
+function installComponent(payload, key) {
+  return payload[key] || payload.installs?.[key] || payload.components?.[key] || {};
+}
+
+function installReady(key, component) {
+  if (component.ready === true || component.state === "ready" || component.status === "ready") {
+    return true;
+  }
+  if (key === "qwen_asr") {
+    return component.service === true && component.model === true && component.aligner === true;
+  }
+  return component.health === true && Number(component.sample_rate) === 48000;
+}
+
+function installStatusText(key, component) {
+  const label = key === "qwen_asr" ? "Qwen3 ASR" : "VieNeu";
+  if (installReady(key, component)) {
+    return key === "qwen_asr"
+      ? "Qwen3 ASR đã sẵn sàng: service, model và aligner."
+      : "VieNeu đã sẵn sàng: health tốt, âm thanh 48 kHz.";
+  }
+  const stateName = component.state || component.status;
+  if (["queued", "installing", "downloading", "starting"].includes(stateName)) {
+    return `${label} đang cài đặt${component.detail ? `: ${component.detail}` : "..."}`;
+  }
+  if (component.error_code || ["failed", "error"].includes(stateName)) {
+    return `${label} cài đặt lỗi: ${component.error_code || component.detail || stateName}.`;
+  }
+  if (key === "qwen_asr") {
+    const missing = [
+      component.service === true ? "" : "service",
+      component.model === true ? "" : "model",
+      component.aligner === true ? "" : "aligner",
+    ].filter(Boolean);
+    return `Qwen3 ASR chưa sẵn sàng${missing.length ? `: thiếu ${missing.join(", ")}` : "."}`;
+  }
+  return `VieNeu chưa sẵn sàng: health=${component.health === true ? "tốt" : "chưa đạt"}, sample rate=${Number(component.sample_rate) || 0} Hz.`;
+}
+
+function renderInstallStatus(payload) {
+  for (const [key, selector] of [
+    ["qwen_asr", "#settings-qwen-status"],
+    ["vieneu", "#settings-vieneu-status"],
+  ]) {
+    document.querySelector(selector).textContent =
+      installStatusText(key, installComponent(payload, key));
+  }
+}
+
+async function loadInstallStatus() {
+  try {
+    const response = await fetch("http://127.0.0.1:18794/install/status");
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error_code || `HTTP ${response.status}`);
+    renderInstallStatus(payload);
+    return payload;
+  } catch {
+    document.querySelector("#settings-qwen-status").textContent =
+      "Không đọc được trạng thái Qwen3 ASR. Hãy chạy host helper.";
+    document.querySelector("#settings-vieneu-status").textContent =
+      "Không đọc được trạng thái VieNeu. Hãy chạy host helper.";
+    return null;
+  }
+}
+
+async function installRuntime(key) {
+  const config = {
+    qwen_asr: {
+      endpoint: "http://127.0.0.1:18794/qwen-asr/install",
+      button: "#settings-qwen-install",
+      status: "#settings-qwen-status",
+      label: "Qwen3 ASR",
+    },
+    vieneu: {
+      endpoint: "http://127.0.0.1:18794/vieneu/install",
+      button: "#settings-vieneu-install",
+      status: "#settings-vieneu-status",
+      label: "VieNeu",
+    },
+  }[key];
+  const installButton = document.querySelector(config.button);
+  const status = document.querySelector(config.status);
+  installButton.disabled = true;
+  status.textContent = `Đang gửi yêu cầu cài ${config.label}...`;
+  try {
+    const response = await fetch(config.endpoint, {method: "POST"});
+    const payload = await response.json();
+    if (!response.ok || payload.ok === false) {
+      throw new Error(payload.error_code || `HTTP ${response.status}`);
+    }
+    for (let attempt = 0; attempt < 900; attempt += 1) {
+      const current = await loadInstallStatus();
+      if (!current) throw new Error("HostHelperUnavailable");
+      const component = installComponent(current, key);
+      if (installReady(key, component)) {
+        await loadDoctor();
+        notify(`${config.label} đã sẵn sàng.`);
+        return;
+      }
+      if (component.error_code || ["failed", "error"].includes(component.state || component.status)) {
+        throw new Error(component.error_code || component.detail || "InstallFailed");
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 2000));
+    }
+    throw new Error("InstallTimeout");
+  } catch (error) {
+    status.textContent = `Không cài được ${config.label}: ${error.message}.`;
+    notify(`Không cài được ${config.label}. Hãy chạy host helper và kiểm tra Docker.`, true);
+  } finally {
+    installButton.disabled = false;
   }
 }
 
@@ -1040,6 +1179,11 @@ function doctorAdvice(value) {
   const advice = {
     "FFmpeg": "Thiếu bộ xử lý hình ảnh và âm thanh.",
     "Whisper model/binary": "Thiếu bộ nhận dạng lời nói trong video.",
+    "Qwen service": "Dịch vụ Qwen3 ASR chưa chạy.",
+    "Qwen model": "Model Qwen3 ASR chưa được cài.",
+    "Qwen aligner": "Bộ căn thời gian phụ đề của Qwen3 chưa sẵn sàng.",
+    "VieNeu health": "Dịch vụ VieNeu chưa phản hồi health.",
+    "VieNeu 48 kHz": "VieNeu chưa xuất âm thanh chuẩn 48 kHz.",
     "Demucs": "Thiếu bộ tách giọng nói khỏi nhạc nền.",
     "Writable runtime volumes": "Docker chưa ghi được dữ liệu. Hãy khởi động lại Docker.",
     "Ollama hoặc provider dịch": "Chưa chọn công cụ dịch tiếng Trung sang tiếng Việt.",
@@ -1080,6 +1224,14 @@ function doctorAction(workflow) {
   }
   if (workflow.id === "telegram") {
     document.querySelector("#settings-telegram-token").focus();
+    return;
+  }
+  if (workflow.id === "asr") {
+    document.querySelector("#settings-asr-engine").focus();
+    return;
+  }
+  if (workflow.id === "tts") {
+    document.querySelector("#settings-voice").focus();
     return;
   }
   showView("providers");
@@ -1233,6 +1385,8 @@ document.querySelector("#trend-mode").addEventListener("change", (event) => {
 });
 document.querySelector("#settings-form").addEventListener("submit", saveSettings);
 document.querySelector("#settings-whisper-install").addEventListener("click", installLocalWhisper);
+document.querySelector("#settings-qwen-install").addEventListener("click", () => installRuntime("qwen_asr"));
+document.querySelector("#settings-vieneu-install").addEventListener("click", () => installRuntime("vieneu"));
 document.querySelector("#settings-hardware-detect").addEventListener("click", detectHardware);
 document.querySelector("#settings-logo-save").addEventListener("click", saveBrandLogo);
 document.querySelector("#settings-logo-remove").addEventListener("click", removeBrandLogo);
@@ -1249,6 +1403,11 @@ document.querySelector("#focus-new-job").addEventListener("click", () => {
 });
 document.querySelector("#job-file").addEventListener("change", (event) => {
   document.querySelector("#job-source").required = !event.target.files.length;
+});
+document.querySelector("#job-voice").addEventListener("change", (event) => {
+  const ttsProvider = document.querySelector("#job-tts-provider");
+  if (event.target.value.startsWith("ai33:")) selectFirstProvider(ttsProvider);
+  else ttsProvider.value = "";
 });
 
 const initialView = new URLSearchParams(window.location.search).get("view");
