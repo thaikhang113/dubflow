@@ -500,7 +500,7 @@ LATEST_OUTPUT_TXT="$BASE_DIR/LATEST_OUTPUT_DIR.txt"
 THUMBNAIL_SCRIPT="${YOUTUBE_THUMBNAIL_SCRIPT:-${GOOGLE_FLOW_THUMBNAIL_SCRIPT:-/home/haonguyen/.openclaw/workspace/skills/google-flow-thumbnail/google-flow-thumbnail.sh}}"
 THUMBNAIL_FILE="$OUT_DIR/thumbnail.jpg"
 FINAL_METADATA_JSON="$OUT_DIR/final_metadata.json"
-STATUS_WRITER="${OPENCLAW_STATUS_WRITER:-/home/haonguyen/.local/bin/openclaw-status-write.py}"
+STATUS_WRITER="${OPENCLAW_STATUS_WRITER:-/app/tools/status_writer.py}"
 STATUS_WRITER_TIMEOUT_SECONDS="${OPENCLAW_STATUS_WRITER_TIMEOUT_SECONDS:-5}"
 if ! [[ "$STATUS_WRITER_TIMEOUT_SECONDS" =~ ^[0-9]+$ ]] || [[ "$STATUS_WRITER_TIMEOUT_SECONDS" -lt 1 ]]; then
   STATUS_WRITER_TIMEOUT_SECONDS=5
@@ -4297,6 +4297,17 @@ PY
     echo "Resume: OCR transcript trước đó lỗi/timeout và OCR SRT rỗng; bỏ retry OCR, giữ mode auto để QC ASR trước khi dùng."
     ocr_transcript_previously_failed=1
   fi
+fi
+
+if [[ "$SUBTITLE_TRANSCRIPT_SOURCE" == "auto" || "$SUBTITLE_TRANSCRIPT_SOURCE" == "ocr" ]] \
+  && [[ "$SUBTITLE_OCR_ENGINE" == "9router_vision" ]] \
+  && [[ "$OCR_VISION_PROVIDER" == "ninerouter" ]] \
+  && [[ -z "$OCR_VISION_API_KEY" ]]; then
+  echo "WARN: Thiếu OCR_VISION_API_KEY; bỏ qua OCR 9Router và dùng ASR."
+  status_update "ocr_transcript" "45" "Thiếu key OCR, dùng ASR fallback" "0" "OcrTranscriptFallback" "OCR 9Router không có API key; dùng ASR transcript."
+  printf '{"status":"skipped","reason":"missing_ocr_api_key","fallback":"asr"}\n' > "$OCR_TRANSCRIPT_REPORT_JSON"
+  : > "$ORIGINAL_OCR_SRT"
+  SUBTITLE_TRANSCRIPT_SOURCE="asr"
 fi
 
 if [[ "$SUBTITLE_TRANSCRIPT_SOURCE" == "auto" || "$SUBTITLE_TRANSCRIPT_SOURCE" == "ocr" ]]; then

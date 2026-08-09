@@ -61,7 +61,7 @@ RUN useradd --create-home --uid 10001 app \
 
 COPY . /app
 RUN find /app/skills /app/docker -type f -name '*.sh' -exec sed -i 's/\r$//' {} + \
-    && chmod +x /app/docker/entrypoint.sh
+    && chmod +x /app/docker/entrypoint.sh /app/tools/status_writer.py
 
 EXPOSE 18793
 ENTRYPOINT ["/app/docker/entrypoint.sh"]
