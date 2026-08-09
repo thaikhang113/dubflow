@@ -99,5 +99,13 @@ class RuntimeProfileTests(unittest.TestCase):
             RUN_SH,
         )
 
+    def test_optimizer_status_names_selected_translation_provider(self):
+        self.assertNotIn("Đang dịch/tối ưu timing qua 9Router", RUN_SH)
+        self.assertIn(
+            'Đang dịch/tối ưu timing qua ${OPENCLAW_AI_PROVIDER}',
+            RUN_SH,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

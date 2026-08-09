@@ -1266,7 +1266,7 @@ optimize_vietnamese_dub_timing() {
 
   # Bọc bằng heartbeat để job_status.json update đều trong phase optimizer,
   # tránh dashboard báo StuckHeartbeat giả khi optimizer chạy lâu (chat API/TTS probe).
-  run_with_status_heartbeat_guarded "optimizer" "58" "Đang dịch/tối ưu timing qua 9Router" \
+  run_with_status_heartbeat_guarded "optimizer" "58" "Đang dịch/tối ưu timing qua ${OPENCLAW_AI_PROVIDER}" \
     "$OPTIMIZER_TIMEOUT_SECONDS" "${OPENCLAW_LONG_STEP_HEARTBEAT_SECONDS:-30}" \
     env \
     DOUYIN_DUBBER_SKILL_DIR="$SKILL_DIR" \
@@ -4759,7 +4759,7 @@ elif load_manual_translation_if_available; then
   TTS_SOURCE_SRT="$DUB_SRT"
 else
 echo "Đang tối ưu dịch/lồng tiếng Việt qua Vietnamese Dub Timing Optimizer..."
-status_update "optimizer" "46" "Đang dịch/tối ưu timing qua 9Router" "1"
+status_update "optimizer" "46" "Đang dịch/tối ưu timing qua ${OPENCLAW_AI_PROVIDER}" "1"
 set +e
 optimize_vietnamese_dub_timing "$ORIGINAL_SRT" "$VIETNAMESE_SRT" "$DUB_SRT" "$DUBBING_SEGMENTS_JSON" "$DUBBING_REPORT_JSON" "$API_KEY" "$TMP_DIR"
 optimizer_status=$?
