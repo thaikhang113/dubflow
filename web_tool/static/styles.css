@@ -666,10 +666,42 @@ h3 {
 }
 
 .doctor-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.doctor-summary-item {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
   padding: 12px;
-  border: 1px solid #355345;
+  border: 1px solid var(--border);
   border-radius: 6px;
-  background: #142019;
+  background: var(--surface-2);
+}
+
+.doctor-summary-item strong {
+  font-size: 22px;
+}
+
+.doctor-summary-item span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.doctor-summary-item.ready strong {
+  color: #9ce1c2;
+}
+
+.doctor-summary-item.missing strong {
+  color: #ffb0aa;
+}
+
+.doctor-summary-item.optional strong {
+  color: #f2d081;
 }
 
 .doctor-row {
@@ -725,6 +757,16 @@ h3 {
   padding-left: 18px;
 }
 
+.doctor-ready-copy {
+  margin: 0;
+  color: #9ce1c2;
+  font-size: 12px;
+}
+
+.doctor-action {
+  justify-self: start;
+}
+
 @media (max-width: 1080px) {
   .jobs-form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -744,6 +786,16 @@ h3 {
 
   .job-row .row-actions {
     grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 560px) {
+  .doctor-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .doctor-row-heading {
+    align-items: flex-start;
   }
 }
 

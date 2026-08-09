@@ -48,6 +48,23 @@ class StaticUiTests(unittest.TestCase):
         self.assertNotIn("localStorage", self.javascript)
         self.assertNotIn("hero", self.html.lower())
 
+    def test_doctor_is_actionable_for_nontechnical_users(self):
+        for marker in (
+            "function doctorAdvice",
+            "function doctorAction",
+            "Đang dùng được",
+            "Cần thiết lập",
+            "Không bắt buộc",
+            "Mở phần thiết lập",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, self.javascript)
+        self.assertLess(
+            self.html.index('id="settings-doctor-result"'),
+            self.html.index('id="settings-form"'),
+        )
+        self.assertIn("Đang kiểm tra cấu hình...", self.javascript)
+
 
 if __name__ == "__main__":
     unittest.main()

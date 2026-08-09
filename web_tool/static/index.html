@@ -439,6 +439,25 @@
 
       <section class="view" data-view="settings" hidden>
         <div class="providers-layout">
+          <section class="data-section">
+            <div class="section-heading">
+              <div>
+                <h2>Kiểm tra trước khi chạy</h2>
+                <p>Xem phần nào đã dùng được và phần nào cần thiết lập.</p>
+              </div>
+              <div class="inline-actions">
+                <button class="secondary" id="settings-doctor" type="button">Kiểm tra lại</button>
+                <button class="secondary" id="settings-telegram-test" type="button">Test Telegram</button>
+                <button class="secondary" id="settings-hyperframes" type="button">HyperFrames</button>
+                <button class="secondary" id="settings-thumbnail" type="button">Thumbnail</button>
+                <button class="secondary" id="settings-export" type="button">Export output</button>
+              </div>
+            </div>
+            <div id="settings-doctor-result" class="doctor-list" aria-live="polite">
+              <p class="muted">Đang kiểm tra cấu hình...</p>
+            </div>
+            <pre id="settings-result" class="integration-result">Chưa chạy tích hợp khác.</pre>
+          </section>
           <form id="settings-form" class="form-band">
             <div class="section-heading">
               <div>
@@ -480,25 +499,6 @@
               </label>
             </div>
           </form>
-          <section class="data-section">
-            <div class="section-heading">
-              <div>
-                <h2>Runtime</h2>
-                <p>AI33 cố định 3 worker. HyperFrames chỉ status/dry-run.</p>
-              </div>
-              <div class="inline-actions">
-                <button class="secondary" id="settings-doctor" type="button">Chạy doctor</button>
-                <button class="secondary" id="settings-telegram-test" type="button">Test Telegram</button>
-                <button class="secondary" id="settings-hyperframes" type="button">HyperFrames</button>
-                <button class="secondary" id="settings-thumbnail" type="button">Thumbnail</button>
-                <button class="secondary" id="settings-export" type="button">Export output</button>
-              </div>
-            </div>
-            <div id="settings-doctor-result" class="doctor-list" aria-live="polite">
-              <p class="muted">Mở Settings để kiểm tra runtime.</p>
-            </div>
-            <pre id="settings-result" class="integration-result">Chưa chạy tích hợp khác.</pre>
-          </section>
         </div>
       </section>
     </main>

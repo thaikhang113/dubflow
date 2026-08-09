@@ -825,32 +825,81 @@ async function loadSettings() {
   }
 }
 
+function doctorAdvice(value) {
+  const advice = {
+    "FFmpeg": "Thiếu bộ xử lý hình ảnh và âm thanh.",
+    "Whisper model/binary": "Thiếu bộ nhận dạng lời nói trong video.",
+    "Demucs": "Thiếu bộ tách giọng nói khỏi nhạc nền.",
+    "Writable runtime volumes": "Docker chưa ghi được dữ liệu. Hãy khởi động lại Docker.",
+    "Ollama hoặc provider dịch": "Chưa chọn công cụ dịch tiếng Trung sang tiếng Việt.",
+    "Ollama provider/endpoint": "Chưa thêm Ollama trong phần Nhà cung cấp.",
+    "Ollama endpoint không kết nối được": "Ollama chưa chạy hoặc địa chỉ kết nối chưa đúng.",
+    "API key provider dịch": "Công cụ dịch đang thiếu API key.",
+    "AI33 provider": "Chưa thêm AI33 trong phần Nhà cung cấp.",
+    "AI33_API_KEY": "Chưa nhập API key để tạo giọng đọc AI33.",
+    "Edge TTS": "Chưa có công cụ tạo giọng đọc miễn phí Edge TTS.",
+    "yt-dlp": "Thiếu công cụ tải video từ Bilibili.",
+    "Bilibili cookie": "Chỉ cần đăng nhập khi Bilibili không cho tải video công khai.",
+    "Host login helper": "Trợ lý mở trình duyệt đăng nhập chưa chạy.",
+    "Telegram bot credential": "Chưa nhập token của Telegram bot.",
+    "Telegram chat ID": "Chưa chọn nơi Telegram bot gửi kết quả.",
+    "Trend host runner": "Tính năng tìm video xu hướng chưa được bật.",
+  };
+  return advice[value] || value;
+}
+
 function doctorItems(title, values, className = "") {
   if (!values.length) return null;
   const block = element("div", `doctor-items ${className}`.trim());
   block.append(element("strong", "", title));
   const list = element("ul");
-  values.forEach((value) => list.append(element("li", "", value)));
+  values.forEach((value) => list.append(element("li", "", doctorAdvice(value))));
   block.append(list);
   return block;
+}
+
+function doctorAction(workflow) {
+  if (workflow.id === "bilibili") {
+    showView("bilibili-login");
+    return;
+  }
+  if (workflow.id === "trend") {
+    showView("trend");
+    return;
+  }
+  if (workflow.id === "telegram") {
+    document.querySelector("#settings-telegram-token").focus();
+    return;
+  }
+  showView("providers");
+  document.querySelector("#provider-name").focus();
 }
 
 function renderDoctor(report) {
   const target = document.querySelector("#settings-doctor-result");
   clear(target);
+  const workflows = [...(report.workflows || [])].sort((left, right) => {
+    const rank = {missing: 0, optional: 1, ready: 2};
+    return rank[left.status] - rank[right.status];
+  });
+  const counts = {
+    ready: workflows.filter((item) => item.status === "ready").length,
+    missing: workflows.filter((item) => item.status === "missing").length,
+    optional: workflows.filter((item) => item.status === "optional").length,
+  };
   const summary = element("div", "doctor-summary");
-  summary.append(element(
-    "strong",
-    "",
-    report.ready ? "Pipeline mặc định sẵn sàng" : "Pipeline mặc định còn thiếu cấu hình",
-  ));
-  summary.append(element(
-    "span",
-    report.ready ? "doctor-badge ready" : "doctor-badge missing",
-    report.ready ? "Sẵn sàng" : "Cần bổ sung",
-  ));
+  [
+    ["Đang dùng được", counts.ready, "ready"],
+    ["Cần thiết lập", counts.missing, "missing"],
+    ["Không bắt buộc", counts.optional, "optional"],
+  ].forEach(([label, count, status]) => {
+    const item = element("div", `doctor-summary-item ${status}`);
+    item.append(element("strong", "", String(count)));
+    item.append(element("span", "", label));
+    summary.append(item);
+  });
   target.append(summary);
-  (report.workflows || []).forEach((workflow) => {
+  workflows.forEach((workflow) => {
     const row = element("article", "doctor-row");
     const heading = element("div", "doctor-row-heading");
     heading.append(element("strong", "", workflow.label));
@@ -858,24 +907,33 @@ function renderDoctor(report) {
       "span",
       `doctor-badge ${workflow.status}`,
       workflow.status === "ready"
-        ? "Sẵn sàng"
+        ? "Dùng được"
         : workflow.status === "optional"
-          ? "Tùy chọn"
-          : "Thiếu",
+          ? "Không bắt buộc"
+          : "Cần thiết lập",
     ));
     row.append(heading);
-    const missing = doctorItems("Thiếu", workflow.missing || [], "missing");
-    const optional = doctorItems("Tùy chọn", workflow.optional || []);
+    const missing = doctorItems("Cần làm", workflow.missing || [], "missing");
+    const optional = doctorItems("Có thể làm thêm", workflow.optional || []);
     if (missing) row.append(missing);
     if (optional) row.append(optional);
     if (!missing && !optional) {
-      row.append(element("p", "muted", "Đã có đủ cấu hình cần thiết."));
+      row.append(element("p", "doctor-ready-copy", "Phần này đã sẵn sàng để sử dụng."));
+    } else {
+      row.append(button(
+        "Mở phần thiết lập",
+        "secondary doctor-action",
+        () => doctorAction(workflow),
+      ));
     }
     target.append(row);
   });
 }
 
 async function loadDoctor() {
+  const target = document.querySelector("#settings-doctor-result");
+  clear(target);
+  target.append(element("p", "muted", "Đang kiểm tra cấu hình..."));
   try {
     renderDoctor(await api("/api/runtime/doctor"));
   } catch (error) {
