@@ -587,7 +587,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not job["job_dir"]:
             raise HTTPException(status_code=409, detail="job has no checkpoint directory")
         request = dict(job["request"])
-        request["resume_job_dir"] = str(Path(job["job_dir"]).resolve())
+        job_dir = Path(job["job_dir"]).resolve()
+        saved_resume = Path(str(request.get("resume_job_dir") or job_dir)).resolve()
+        if saved_resume != job_dir and job_dir not in saved_resume.parents:
+            saved_resume = job_dir
+        if not (saved_resume / "input.mp4").is_file():
+            checkpoints = [
+                path.parent for path in job_dir.rglob("input.mp4") if path.is_file()
+            ]
+            if checkpoints:
+                saved_resume = max(checkpoints, key=lambda path: path.stat().st_mtime)
+        request["resume_job_dir"] = str(
+            saved_resume if saved_resume.is_dir() else job_dir
+        )
         if not any(
             str(request.get(key) or '').strip()
             for key in ('translation_provider_id', 'tts_provider_id', 'provider_id')

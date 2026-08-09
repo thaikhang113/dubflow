@@ -217,6 +217,11 @@ VIDEO_FILE="$JOB_CACHE/input.mp4"
 COVER_FILE="$JOB_CACHE/thumbnail_reference.jpg"
 LOG_FILE="$JOB_CACHE/bilibili_download.log"
 
+if [[ -n ${OPENCLAW_RESUME_JOB_DIR:-} && -s ${OPENCLAW_RESUME_JOB_DIR}/input.mp4 ]]; then
+  VIDEO_FILE=${OPENCLAW_RESUME_JOB_DIR}/input.mp4
+  echo Resume: dùng lại video Bilibili đã tải: ${VIDEO_FILE}
+fi
+
 cleanup_bilibili_cookie() {
   rm -f "${COOKIES_TXT:-}" 2>/dev/null || true
 }

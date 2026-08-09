@@ -11,6 +11,7 @@ import wave
 from pathlib import Path
 
 CONFIG = {
+    'demucs_chunk_seconds': int(os.environ.get('SPEECH_ONLY_DEMUCS_CHUNK_SECONDS', '600')),
     "subtitle_mode": os.environ.get("SUBTITLE_MODE", "dialogue_only"),
     "ignore_background_music": os.environ.get("IGNORE_BACKGROUND_MUSIC", "true").lower() != "false",
     "ignore_song_lyrics": os.environ.get("IGNORE_SONG_LYRICS", "true").lower() != "false",
@@ -58,6 +59,53 @@ def find_demucs_outputs(demucs_dir):
     return (vocals[0] if vocals else None), (no_vocals[0] if no_vocals else None)
 
 
+def concat_audio(inputs, output, channels, rate):
+    list_path = Path(output).with_suffix('.concat.txt')
+    list_path.write_text(
+        ''.join('file ' + repr(str(Path(item).resolve())) + '\n' for item in inputs),
+        encoding='utf-8',
+    )
+    try:
+        run([
+            'ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', str(list_path),
+            '-ac', str(channels), '-ar', str(rate), '-c:a', 'pcm_s16le', str(output),
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    finally:
+        list_path.unlink(missing_ok=True)
+
+
+def demucs_separate_chunked(audio_wav, work_dir, vocals_wav, no_vocals_wav):
+    chunk_root = Path(work_dir) / 'demucs-chunks'
+    chunk_root.mkdir(parents=True, exist_ok=True)
+    pattern = chunk_root / 'input-%05d.wav'
+    run([
+        'ffmpeg', '-y', '-i', str(audio_wav), '-f', 'segment',
+        '-segment_time', str(CONFIG['demucs_chunk_seconds']), '-c', 'copy', str(pattern),
+    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    chunks = sorted(chunk_root.glob('input-*.wav'))
+    if not chunks:
+        raise RuntimeError('Demucs chunking produced no audio')
+    vocals_parts = []
+    music_parts = []
+    try:
+        for index, chunk in enumerate(chunks, 1):
+            log(f'running Demucs chunk {index}/{len(chunks)}')
+            chunk_vocals = chunk_root / f'vocals-{index:05d}.wav'
+            chunk_music = chunk_root / f'no-vocals-{index:05d}.wav'
+            report = demucs_separate(
+                chunk, chunk_root / f'work-{index:05d}', chunk_vocals, chunk_music
+            )
+            if not report.get('used'):
+                return report
+            vocals_parts.append(chunk_vocals)
+            music_parts.append(chunk_music)
+        concat_audio(vocals_parts, vocals_wav, 1, 16000)
+        concat_audio(music_parts, no_vocals_wav, 2, 48000)
+        return {'used': True, 'reason': 'ok', 'chunks': len(chunks)}
+    finally:
+        shutil.rmtree(chunk_root, ignore_errors=True)
+
+
 def demucs_separate(audio_wav, work_dir, vocals_wav, no_vocals_wav):
     demucs_bin = shutil.which("demucs")
     if not CONFIG["demucs_enabled"] or not demucs_bin:
@@ -66,6 +114,10 @@ def demucs_separate(audio_wav, work_dir, vocals_wav, no_vocals_wav):
         silence_like(audio_wav, no_vocals_wav)
         return {"used": False, "reason": "demucs_missing_or_disabled"}
     demucs_out = Path(work_dir) / "demucs"
+    if duration_seconds(audio_wav) > CONFIG['demucs_chunk_seconds']:
+        return demucs_separate_chunked(
+            audio_wav, work_dir, vocals_wav, no_vocals_wav
+        )
     demucs_out.mkdir(parents=True, exist_ok=True)
     log("running Demucs --two-stems=vocals")
     run([demucs_bin, "--two-stems=vocals", "-o", str(demucs_out), str(audio_wav)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)

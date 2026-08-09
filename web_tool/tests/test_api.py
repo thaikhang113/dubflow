@@ -179,6 +179,26 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(job["id"], retried.json()["request"]["retry_of"])
         self.assertNotIn("resume_job_dir", retried.json()["request"])
 
+    def test_resume_preserves_nested_pipeline_checkpoint(self):
+        job = self.create_job()
+        job_dir = self.settings.jobs_dir / job["id"]
+        checkpoint = job_dir / "Bilibili" / "input-20260809-053120"
+        checkpoint.mkdir(parents=True)
+        (checkpoint / "input.mp4").write_bytes(b"video")
+        self.app.state.store.update_job(
+            job["id"],
+            state="needs_attention",
+            action="resume",
+            job_dir=str(job_dir),
+        )
+
+        resumed = self.client.post(f"/api/jobs/{job['id']}/resume")
+
+        self.assertEqual(200, resumed.status_code, resumed.text)
+        self.assertEqual(
+            str(checkpoint.resolve()),
+            resumed.json()["request"]["resume_job_dir"],
+        )
     def test_resume_fills_missing_default_and_ai33_providers(self):
         job = self.create_job()
         ollama = self.app.state.store.create_provider(

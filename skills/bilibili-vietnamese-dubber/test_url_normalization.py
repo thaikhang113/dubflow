@@ -76,6 +76,12 @@ class BilibiliUrlNormalizationTests(unittest.TestCase):
             source,
         )
 
+    def test_wrapper_reuses_resume_video_without_downloading_again(self):
+        run_sh = SCRIPT.parent.parent / 'run.sh'
+        source = run_sh.read_text(encoding='utf-8')
+        self.assertIn('OPENCLAW_RESUME_JOB_DIR', source)
+        self.assertIn('Resume: dùng lại video Bilibili đã tải', source)
+
     def test_child_pipeline_publishes_current_job_before_first_status(self):
         run_sh = SCRIPT.parents[2] / "douyin-vietnamese-dubber" / "run.sh"
         source = run_sh.read_text(encoding="utf-8")

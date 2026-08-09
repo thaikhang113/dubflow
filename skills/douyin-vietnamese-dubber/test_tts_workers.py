@@ -61,6 +61,10 @@ class TTSWorkerTests(unittest.TestCase):
         self.assertIn("convert_music_bed(found_no_vocals, no_vocals_wav)", source)
         self.assertIn("demucs_separate(demucs_input", source)
 
+        self.assertIn('SPEECH_ONLY_DEMUCS_CHUNK_SECONDS', source)
+        self.assertIn('def demucs_separate_chunked', source)
+        self.assertIn('def concat_audio', source)
+
     def test_ai33_pronunciation_dictionary_reaches_wrapper_and_checkpoint(self):
         source = RUN_SH.read_text(encoding="utf-8")
         self.assertIn("AI33_PRONUNCIATION_DICTIONARY_ID", source)
