@@ -9,10 +9,10 @@ Tài liệu này mô tả pipeline lõi từ nhánh `khang` và ứng dụng web
 - Pipeline lõi: `skills/douyin-vietnamese-dubber/run.sh`.
 - Nguồn đầu vào: file video local, URL Douyin/TikTok và URL Bilibili.
 - Bilibili: tải qua Chrome CDP đã đăng nhập và `yt-dlp`, sau đó tái sử dụng pipeline lõi.
-- ASR: `whisper.cpp`.
+- ASR: `ASR_PROVIDER=auto|whisper|qwen3`; auto dùng Qwen3 trên runtime đủ mạnh, fallback Whisper khi hardware yếu hoặc Qwen service lỗi, ghi `asr_provider_report.json`.
 - OCR subtitle: 9Router vision, có đường fallback được cấu hình trong runtime.
 - Dịch: Ollama mặc định; 9Router là đường opt-in.
-- TTS: AI33, Kokoro, Resona hoặc Edge TTS tùy voice registry/preset.
+- TTS: VieNeu (`vieneu:<voice>`), AI33, Kokoro, Resona hoặc Edge TTS tùy voice registry/preset. VieNeu preflight fail thì fallback AI33 cho toàn job nếu đã cấu hình; cue lỗi retry 1 lần rồi dừng, không tạo silence.
 - AI33 chạy tối đa 3 worker song song để tránh rate limit.
 - Audio TTS chuẩn: 48 kHz mono; audio final: 48 kHz stereo AAC.
 - Nhạc nền: ưu tiên stem `no_vocals.wav` từ Demucs, có ducking khi giọng Việt phát.
@@ -1059,6 +1059,10 @@ google_flow_debug/
 | `WHISPER_DIR` | `$HOME/whisper.cpp` |
 | `WHISPER_BIN` | `$WHISPER_DIR/build/bin/whisper-cli` |
 | `WHISPER_MODEL` | `$WHISPER_DIR/models/ggml-small.bin` |
+| `ASR_PROVIDER` | `auto`, `whisper` hoặc `qwen3` |
+| `QWEN_ASR_ENDPOINT` | `http://qwen-asr:8000` |
+| `VIENEU_ENDPOINT` | `http://vieneu:8000` |
+| `VIENEU_STYLE` | Style gửi tới VieNeu |
 | `BILIBILI_CDP_URL` | `http://127.0.0.1:9222` |
 | `OLLAMA_API_BASE` | `http://127.0.0.1:11434` |
 | `NINEROUTER_API_BASE` | host `127.0.0.1:20128/v1`, container `172.19.0.1:20128/v1` |

@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
+import json
+import subprocess
+import sys
+import tempfile
+import threading
 import unittest
+import wave
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 RUN_SH = Path(__file__).with_name("run.sh")
@@ -89,6 +96,116 @@ class TTSWorkerTests(unittest.TestCase):
         self.assertIn("normalize_speech_loudness(segment_out, segment_index)", source)
         self.assertIn('"loudness_normalized_segments": 0', source)
 
+
+    def test_vieneu_health_and_wav_synthesis_use_fake_http_with_one_retry(self):
+        source = RUN_SH.read_text(encoding="utf-8")
+        self.assertIn("def vieneu_health_check", source)
+        self.assertIn("def synthesize_vieneu_http", source)
+        self.assertIn("VIENEU_STYLE", source)
+        self.assertIn("if (voice or '').lower().startswith('vieneu')", source)
+        self.assertIn('if [[ "$voice_lower" == vieneu:* ]]; then', source)
+        client = source.split("# VIENEU_HTTP_CLIENT_BEGIN\n", 1)[1].split(
+            "# VIENEU_HTTP_CLIENT_END", 1
+        )[0]
+        requests = []
+        wav_buffer = __import__("io").BytesIO()
+        with wave.open(wav_buffer, "wb") as output:
+            output.setnchannels(1)
+            output.setsampwidth(2)
+            output.setframerate(48000)
+            output.writeframes(b"\x00\x02" * 2400)
+        wav_bytes = wav_buffer.getvalue()
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.assert_path("/health")
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"status":"ok"}')
+
+            def do_POST(self):
+                self.assert_path("/v1/synthesize")
+                length = int(self.headers["Content-Length"])
+                requests.append(json.loads(self.rfile.read(length)))
+                if len(requests) == 1:
+                    self.send_response(503)
+                    self.end_headers()
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "audio/wav")
+                self.send_header("Content-Length", str(len(wav_bytes)))
+                self.end_headers()
+                self.wfile.write(wav_bytes)
+
+            def assert_path(self, expected):
+                if self.path != expected:
+                    raise AssertionError(f"unexpected path {self.path}")
+
+            def log_message(self, *_args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                output = Path(directory) / "vieneu.wav"
+                script = client + """
+print(json.dumps({
+    "health": vieneu_health_check(sys.argv[1]),
+    "result": synthesize_vieneu_http(
+        "Xin chao", "vieneu:mai", "documentary", sys.argv[2], sys.argv[1]
+    ),
+}))
+"""
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        "-c",
+                        script,
+                        f"http://127.0.0.1:{server.server_port}",
+                        str(output),
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                payload = json.loads(result.stdout)
+                self.assertTrue(payload["health"])
+                self.assertEqual(2, payload["result"]["attempts"])
+                self.assertEqual("vieneu", payload["result"]["engine"])
+                with wave.open(str(output), "rb") as rendered:
+                    self.assertEqual((48000, 1, 2), (
+                        rendered.getframerate(),
+                        rendered.getnchannels(),
+                        rendered.getsampwidth(),
+                    ))
+        finally:
+            server.shutdown()
+            thread.join()
+            server.server_close()
+
+        self.assertEqual(2, len(requests))
+        self.assertEqual(
+            {"text": "Xin chao", "voice": "mai", "style": "documentary"},
+            requests[-1],
+        )
+
+    def test_vieneu_preflight_falls_back_as_one_provider_or_stops_without_silence(self):
+        source = RUN_SH.read_text(encoding="utf-8")
+        self.assertIn("prepare_tts_provider || exit 1", source)
+        self.assertIn('VOICE="ai33:${AI33_DEFAULT_VOICE_ID}"', source)
+        self.assertIn('"VieNeuUnavailable"', source)
+        vieneu_client = source.split(
+            "# VIENEU_HTTP_CLIENT_BEGIN\n", 1
+        )[1].split("# VIENEU_HTTP_CLIENT_END", 1)[0]
+        vieneu_body = vieneu_client[
+            vieneu_client.index("def synthesize_vieneu_http")
+        :]
+        self.assertIn('"fallback_silence": False', vieneu_body)
+        self.assertIn('"vieneu_failed": True', vieneu_body)
+        self.assertIn('"provider": "vieneu"', source)
+        self.assertIn('"backend": "http"', source)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

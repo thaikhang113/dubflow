@@ -13,6 +13,9 @@ WHISPER_MODEL="${WHISPER_MODEL:-$WHISPER_DIR/models/ggml-small.bin}"
 ASR_PROVIDER="${ASR_PROVIDER:-auto}"
 QWEN_ASR_ENDPOINT="${QWEN_ASR_ENDPOINT:-http://qwen-asr:8000}"
 QWEN_ASR_MODEL="${QWEN_ASR_MODEL:-qwen3-asr}"
+VIENEU_ENDPOINT="${VIENEU_ENDPOINT:-http://vieneu:8000}"
+VIENEU_STYLE="${VIENEU_STYLE:-default}"
+VIENEU_DEFAULT_VOICE="${VIENEU_DEFAULT_VOICE:-default}"
 OPENCLAW_RUNTIME_PROFILE="${OPENCLAW_RUNTIME_PROFILE:-standard}"
 if [[ "${OPENCLAW_RUNTIME_PROFILE,,}" == "free_low_gpu" ]]; then
   OPENCLAW_AI_PROVIDER="${OPENCLAW_AI_PROVIDER:-ollama}"
@@ -358,6 +361,12 @@ resolve_voice() {
       printf '%s' "resona:${RESONA_DEFAULT_VOICE_ID:-ZJEpWoOyElCKuEljNTkm}"
       ;;
     resona:*)
+      printf '%s' "$preset"
+      ;;
+    vieneu)
+      printf '%s' "vieneu:${VIENEU_DEFAULT_VOICE:-default}"
+      ;;
+    vieneu:*)
       printf '%s' "$preset"
       ;;
     ai33|vbee|vbee-maiphuong|vbee-mai-phuong|maiphuong|mai-phuong|mai_phuong|elevenlabs|elevenlabs-phanh|eleven-phanh|phanh|phan|ai33:*|elevenlabs_*|vbee_*)
@@ -1663,6 +1672,7 @@ generate_vietnamese_voice() {
   RESONA_SHORT_GROUP_MAX_INTERNAL_GAP_MS="$RESONA_SHORT_GROUP_MAX_INTERNAL_GAP_MS" \
   RESONA_POLL_INTERVAL_SECONDS="$RESONA_POLL_INTERVAL_SECONDS" RESONA_TIMEOUT_SECONDS="$RESONA_TIMEOUT_SECONDS" \
   RESONA_FALLBACK_VOICE_IDS="${RESONA_FALLBACK_VOICE_IDS:-}" \
+  VIENEU_ENDPOINT="$VIENEU_ENDPOINT" VIENEU_STYLE="$VIENEU_STYLE" \
   AI33_TTS_WRAPPER="$AI33_TTS_WRAPPER" AI33_API_BASE="$AI33_API_BASE" AI33_API_KEY="$AI33_API_KEY" \
   AI33_TTS_WORKERS="$AI33_TTS_WORKERS" \
   AI33_MAI_PHUONG_VOICE_ID="$AI33_MAI_PHUONG_VOICE_ID" AI33_PHANH_VOICE_ID="$AI33_PHANH_VOICE_ID" AI33_DEFAULT_VOICE_ID="$AI33_DEFAULT_VOICE_ID" \
@@ -1744,6 +1754,7 @@ segments_dir.mkdir(parents=True, exist_ok=True)
 concat_list = root / 'tts_concat.txt'
 stats_path = root / 'tts_stats.json'
 ai33_checkpoint_path = root / 'tts_checkpoint.json'
+vieneu_checkpoint_path = ai33_checkpoint_path
 ai33_provider_state_path = root / 'ai33_provider_state.json'
 alignment_report_path = root / 'tts_alignment_report.json'
 speed_report_path = root / 'speed_report.csv'
@@ -1861,6 +1872,8 @@ def _safe_error_text(exc):
 
 def _classify_tts_exception(exc):
     msg = _safe_error_text(exc)
+    if 'VieNeu' in msg:
+        return 'VieNeuSynthesisFailed'
     if 'VoiceInvalid' in msg:
         return 'VoiceInvalid'
     if 'AI33AuthMissing' in msg:
@@ -1885,7 +1898,7 @@ def _early_voice_report_fields():
     lower = raw_voice.lower()
     fields = {
         "voice_name": raw_voice,
-        "tts_engine_requested": "ai33" if lower.startswith("ai33") else ("kokoro" if lower.startswith("kokoro") else ("resona" if lower.startswith("resona") else ("capcut" if lower.startswith("capcut:") else "edge-tts"))),
+        "tts_engine_requested": "ai33" if lower.startswith("ai33") else ("kokoro" if lower.startswith("kokoro") else ("vieneu" if lower.startswith("vieneu") else ("resona" if lower.startswith("resona") else ("capcut" if lower.startswith("capcut:") else "edge-tts")))),
     }
     if lower.startswith("ai33"):
         voice_id = raw_voice.split(":", 1)[1].strip() if ":" in raw_voice else raw_voice
@@ -1893,6 +1906,12 @@ def _early_voice_report_fields():
             "voice_id": voice_id,
             "canonical_voice": f"ai33:{voice_id}",
             "ai33_voice_used": voice_id,
+        })
+    elif lower.startswith("vieneu"):
+        voice_id = raw_voice.split(":", 1)[1].strip() if ":" in raw_voice else raw_voice
+        fields.update({
+            "voice_id": voice_id,
+            "canonical_voice": f"vieneu:{voice_id}",
         })
     return fields
 
@@ -2122,6 +2141,8 @@ except Exception:
 resona_poll_interval = max(1.0, float(os.environ.get('RESONA_POLL_INTERVAL_SECONDS', '2')))
 resona_timeout_seconds = max(30, int(os.environ.get('RESONA_TIMEOUT_SECONDS', '180')))
 resona_debug_dir = root / 'resona_tts_debug'
+vieneu_endpoint = os.environ.get('VIENEU_ENDPOINT', 'http://vieneu:8000')
+vieneu_style = os.environ.get('VIENEU_STYLE', 'default')
 
 # --- AI33 TTS (ElevenLabs provider qua AI33 API) ---
 ai33_wrapper = Path(os.environ.get('AI33_TTS_WRAPPER') or (skill_dir / 'ai33_tts_synthesize.py'))
@@ -2284,6 +2305,8 @@ def synthesize_ai33_tts(mp3_path: Path, wav_path: Path, text: str, voice_spec: s
     # Keep provider-affecting knobs secret-free and bind the native speed used
     # for this cue; a speed retry must never reuse the 1.0x audio by accident.
     cue_settings_fingerprint = hashlib.sha256(json.dumps({
+        'provider': 'ai33', 'voice': voice_id, 'style': os.environ.get('VIENEU_STYLE', 'default'),
+        'backend': 'ai33-http',
         'speed': speed_value, 'context_chaining': ai33_context_chaining,
         'with_transcript': ai33_with_transcript, 'sample_rate': tts_master_sample_rate,
         'channels': tts_master_channels, 'api_base': ai33_api_base,
@@ -2380,6 +2403,108 @@ def synthesize_ai33_tts(mp3_path: Path, wav_path: Path, text: str, voice_spec: s
         "ai33_stage": (re.search(r'stage=([a-z_]+)', stderr) or [None, 'provider'])[1],
     }
 
+
+# VIENEU_HTTP_CLIENT_BEGIN
+import json
+import sys
+from pathlib import Path
+
+def vieneu_health_check(endpoint: str) -> bool:
+    import urllib.request
+    try:
+        with urllib.request.urlopen(endpoint.rstrip("/") + "/health", timeout=10) as response:
+            return 200 <= response.status < 300
+    except Exception:
+        return False
+
+def _vieneu_validate_wav(path: Path):
+    import math, struct, wave
+    try:
+        with wave.open(str(path), "rb") as rendered:
+            rate = rendered.getframerate()
+            channels = rendered.getnchannels()
+            width = rendered.getsampwidth()
+            frames = rendered.getnframes()
+            raw = rendered.readframes(frames)
+    except (OSError, EOFError, wave.Error) as exc:
+        raise ValueError("VieNeuWavInvalid") from exc
+    if rate != 48000 or channels != 1 or width != 2 or frames <= 0:
+        raise ValueError("VieNeuWavInvalid")
+    samples = struct.iter_unpack("<h", raw)
+    rms = math.sqrt(sum(sample * sample for sample, in samples) / max(1, frames))
+    if rms < 128:
+        raise ValueError("VieNeuWavSilent")
+    return {"sample_rate": rate, "channels": channels, "rms": rms}
+
+def synthesize_vieneu_http(text: str, voice_spec: str, style: str, output_path: str, endpoint: str, cue_index: int = 0):
+    import json, os, tempfile, urllib.error, urllib.request
+    text = (text or "").strip()
+    voice = voice_spec.split(":", 1)[1].strip() if ":" in voice_spec else voice_spec.strip()
+    settings = {"provider": "vieneu", "voice": voice, "style": style, "backend": "http"}
+    checkpoint_config = None
+    identity = None
+    if cue_index and "entries" in globals():
+        checkpoint_config = tts_checkpoint.CheckpointConfig(
+            source_fingerprint, voice, {"settings_fingerprint": tts_checkpoint.fingerprint_settings(settings)},
+            len(entries), tts_master_sample_rate, tts_master_channels, 1, 1800000,
+        )
+        identity = tts_checkpoint.CueIdentity(
+            cue_index - 1, text, voice, checkpoint_config.settings,
+        )
+        if cue_index not in forced_cue_ids and tts_checkpoint.reusable_cue(
+            vieneu_checkpoint_path, checkpoint_config, identity
+        ):
+            tts_checkpoint.materialize_cue(vieneu_checkpoint_path, checkpoint_config, identity, output_path)
+            return {
+                "ok": True, "fallback_silence": False, "engine": "vieneu",
+                "attempts": 0, "checkpoint_reused": True, "vieneu_voice": voice,
+                "vieneu_style": style,
+            }
+    payload = json.dumps({"text": text, "voice": voice, "style": style}).encode("utf-8")
+    last_error = "VieNeuSynthesisFailed"
+    for attempt in range(1, 3):
+        temporary = None
+        try:
+            request = urllib.request.Request(
+                endpoint.rstrip("/") + "/v1/synthesize",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=180) as response:
+                audio = response.read()
+            fd, temporary = tempfile.mkstemp(
+                prefix=".vieneu-", suffix=".wav", dir=str(Path(output_path).parent)
+            )
+            os.close(fd)
+            Path(temporary).write_bytes(audio)
+            _vieneu_validate_wav(Path(temporary))
+            os.replace(temporary, output_path)
+            if checkpoint_config is not None:
+                tts_checkpoint.complete_cue(
+                    vieneu_checkpoint_path, checkpoint_config, identity, output_path, attempt,
+                )
+            return {
+                "ok": True, "fallback_silence": False, "engine": "vieneu",
+                "attempts": attempt, "vieneu_voice": voice, "vieneu_style": style,
+            }
+        except ValueError as exc:
+            last_error = str(exc)
+        except Exception as exc:
+            last_error = f"VieNeuSynthesisFailed: {str(exc)[:160]}"
+        finally:
+            if temporary:
+                Path(temporary).unlink(missing_ok=True)
+    if checkpoint_config is not None:
+        tts_checkpoint.record_failure(
+            vieneu_checkpoint_path, checkpoint_config, identity,
+            "provider", last_error, 2,
+        )
+    return {
+        "ok": False, "fallback_silence": False, "engine": "vieneu",
+        "vieneu_failed": True, "error_code": last_error, "attempts": 2,
+    }
+# VIENEU_HTTP_CLIENT_END
 
 def synthesize_resona_tts(mp3_path: Path, wav_path: Path, text: str, voice_spec: str, slot_ms: int):
     """Gọi Resona adapter. KHÔNG fallback Edge khi API lỗi thật.
@@ -3038,6 +3163,11 @@ def synthesize_tts(mp3_path: Path, wav_path: Path, text: str, voice: str, slot_m
         # Compatibility dispatch shape: return synthesize_ai33_tts(mp3_path, wav_path, text, voice, slot_ms, ai33_speed)
         return synthesize_ai33_tts(mp3_path, wav_path, text, voice, slot_ms, ai33_speed, cue_index)
 
+    if (voice or '').lower().startswith('vieneu'):
+        return synthesize_vieneu_http(
+            text, voice, vieneu_style, str(wav_path), vieneu_endpoint, cue_index,
+        )
+
     if (voice or '').lower().startswith('capcut:'):
         raise RuntimeError('CapCut TTS disabled in OpenClaw pipeline; choose kokoro:<voice>, ai33/maiphuong/phanh, resona, nam, nu or vi-vn-*.')
 
@@ -3434,7 +3564,7 @@ stats = {
     "tts_master_sample_rate": tts_master_sample_rate,
     "tts_master_channels": tts_master_channels,
     "total_audio_speed_max": round(total_audio_speed_max, 4),
-    "tts_engine_requested": "kokoro" if voice_name.lower().startswith("kokoro") else ("ai33" if voice_name.lower().startswith("ai33") else ("resona" if voice_name.lower().startswith("resona") else ("capcut" if voice_name.lower().startswith("capcut:") else "edge-tts"))),
+    "tts_engine_requested": "kokoro" if voice_name.lower().startswith("kokoro") else ("ai33" if voice_name.lower().startswith("ai33") else ("vieneu" if voice_name.lower().startswith("vieneu") else ("resona" if voice_name.lower().startswith("resona") else ("capcut" if voice_name.lower().startswith("capcut:") else "edge-tts")))),
     "tts_engine_used": "",
     "tts_engines_used": [],
     "kokoro_segments": 0,
@@ -3480,6 +3610,9 @@ stats = {
     "resona_short_group_max_duration_ms": resona_short_group_max_duration_ms,
     "resona_fail_error_codes": [],
     "resona_voice_used": resona_probe_report.get("voice_used") or resolve_resona_voice_id(voice_name),
+    "vieneu_segments": 0,
+    "vieneu_failed_segments": 0,
+    "vieneu_style": vieneu_style,
     "resona_probe": resona_probe_report,
     "edge_segments": 0,
     "edge_fallback_reason": "",
@@ -3533,6 +3666,8 @@ if voice_name.lower().startswith("ai33") and ai33_tts_workers > 1 and entries:
     prefetch_dir.mkdir(parents=True, exist_ok=True)
     ai33_voice_id = resolve_ai33_voice_id(voice_name)
     ai33_prefetch_settings_hash = hashlib.sha256(json.dumps({
+        'provider': 'ai33', 'voice': ai33_voice_id, 'style': os.environ.get('VIENEU_STYLE', 'default'),
+        'backend': 'ai33-http',
         'speed': 1.0, 'context_chaining': ai33_context_chaining,
         'with_transcript': ai33_with_transcript, 'sample_rate': tts_master_sample_rate,
         'channels': tts_master_channels, 'api_base': ai33_api_base,
@@ -3677,6 +3812,24 @@ with concat_list.open('w', encoding='utf-8') as manifest:
                 stats["tts_cues_reused"] = stats["tts_reusable_cues"]
             if tts_result.get("ai33_voice"):
                 stats["ai33_voice_used"] = tts_result.get("ai33_voice")
+        if engine == "vieneu" and tts_result.get("ok"):
+            stats["vieneu_segments"] += 1
+            stats["tts_completed_cues"] += 1
+            stats["tts_cues_completed"] = stats["tts_completed_cues"]
+            if tts_result.get("vieneu_voice"):
+                stats["voice_id"] = tts_result["vieneu_voice"]
+        if tts_result.get("vieneu_failed"):
+            stats["vieneu_failed_segments"] += 1
+            stats["tts_failed_cue"] = entry_index
+            stats["tts_resume_from_cue"] = entry_index
+            stats["tts_failed_code"] = tts_result.get("error_code") or "VieNeuSynthesisFailed"
+            stats["tts_failed_stage"] = "provider"
+            stats["tts_failed_attempts"] = tts_result.get("attempts", 2)
+            stats_path.write_text(json.dumps(stats, ensure_ascii=False, indent=2), encoding="utf-8")
+            raise RuntimeError(
+                f"VieNeuCueFailed cue={entry_index} code={stats['tts_failed_code']} "
+                f"attempts={stats['tts_failed_attempts']}"
+            )
         if tts_result.get("ai33_failed"):
             stats["tts_failed_cue"] = entry_index
             stats["tts_resume_from_cue"] = entry_index
@@ -4190,6 +4343,23 @@ run_tts_voice_qa() {
   fi
 }
 
+prepare_tts_provider() {
+  local voice_lower="${VOICE,,}"
+  [[ "$voice_lower" == vieneu:* ]] || return 0
+  if curl -fsS --max-time "${VIENEU_HEALTH_TIMEOUT_SECONDS:-10}" \
+    "${VIENEU_ENDPOINT%/}/health" >/dev/null 2>&1; then
+    return 0
+  fi
+  if [[ -n "$AI33_API_KEY" && -f "$AI33_TTS_WRAPPER" ]]; then
+    VOICE="ai33:${AI33_DEFAULT_VOICE_ID}"
+    echo "VieNeu health fail; dùng AI33 cho toàn job: $VOICE"
+    return 0
+  fi
+  status_update "needs_attention" "66" "VieNeu không khả dụng" "0" "VieNeuUnavailable" \
+    "Health ${VIENEU_ENDPOINT%/}/health fail; AI33 chưa cấu hình để fallback toàn job."
+  return 1
+}
+
 tts_resume_cache_is_complete() {
   python3 - "$1" "$2" "$3" "$4" "$5" "$TTS_MASTER_SAMPLE_RATE" "$TTS_MASTER_CHANNELS" <<'PY'
 import hashlib, json, re, subprocess, sys
@@ -4326,6 +4496,8 @@ if [[ "$voice_lower" == ai33:* ]]; then
   [[ -n "$AI33_API_KEY" ]] || fail "Thiếu AI33_API_KEY cho voice $VOICE."
 elif [[ "$voice_lower" == resona:* ]]; then
   [[ -n "$RESONA_API_TOKEN" ]] || fail "Thiếu RESONA_API_TOKEN cho voice $VOICE."
+elif [[ "$voice_lower" == vieneu:* ]]; then
+  :
 elif [[ "$voice_lower" == kokoro:* ]]; then
   [[ -x "$KOKORO_TTS_PYTHON" ]] || fail "Kokoro TTS runtime chưa sẵn sàng: không thấy executable $KOKORO_TTS_PYTHON"
 else
@@ -5261,6 +5433,7 @@ export DOUYIN_DUBBER_API_KEY="${DOUYIN_DUBBER_API_KEY:-$API_KEY}"
 export DOUYIN_DUBBER_MODEL="$MODEL"
 export DOUYIN_DUBBER_SEGMENTS_JSON="${DUBBING_SEGMENTS_JSON:-}"
 export TTS_REWRITE_MAX_ATTEMPTS="${TTS_REWRITE_MAX_ATTEMPTS:-1}"
+prepare_tts_provider || exit 1
 set +e
 tts_total_timeout="${TTS_TOTAL_TIMEOUT_SECONDS:-3600}"
 if [[ -n "$RESUME_JOB_DIR" ]] && tts_resume_cache_is_complete \
