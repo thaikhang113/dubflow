@@ -1,3 +1,4 @@
+import json
 import sys
 import tempfile
 import time
@@ -153,6 +154,34 @@ subprocess.run([
             worker.stop()
         self.assertEqual("needs_attention", failed["state"])
         self.assertEqual("BilibiliLoginRequired", failed["error_code"])
+
+    def test_refresh_finds_nested_status_before_output_pointer_exists(self):
+        job = self.store.enqueue_job(
+            {
+                "platform": "bilibili",
+                "source": "https://www.bilibili.com/video/BV1",
+            }
+        )
+        job_root = self.settings.jobs_dir / job["id"]
+        output_dir = job_root / "Bilibili" / "input-20260809-133716"
+        output_dir.mkdir(parents=True)
+        (output_dir / "job_status.json").write_text(
+            json.dumps(
+                {
+                    "state": "running",
+                    "phase": "preprocess",
+                    "progress_percent": 18,
+                    "label": "Đang tách giọng/nhạc trước ASR",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        Worker(self.store, self.settings, self.secrets)._refresh(job["id"], job_root)
+
+        refreshed = self.store.get_job(job["id"])
+        self.assertEqual(18, refreshed["progress"])
+        self.assertEqual(str(output_dir), refreshed["job_dir"])
 
 
 if __name__ == "__main__":

@@ -297,6 +297,7 @@ class Worker:
             return 0
 
     def _output_dir(self, job_root: Path) -> Path | None:
+        root = job_root.resolve()
         for pointer in (
             job_root / "LATEST_OUTPUT_DIR.txt",
             job_root / "Bilibili" / "LATEST_OUTPUT_DIR.txt",
@@ -306,11 +307,26 @@ class Worker:
             except (OSError, IndexError):
                 continue
             try:
-                candidate.relative_to(job_root.resolve())
+                candidate.relative_to(root)
             except ValueError:
                 continue
             if candidate.is_dir():
                 return candidate
+        try:
+            statuses = sorted(
+                job_root.rglob("job_status.json"),
+                key=lambda path: path.stat().st_mtime,
+                reverse=True,
+            )
+        except OSError:
+            return None
+        for status in statuses:
+            candidate = status.parent.resolve()
+            try:
+                candidate.relative_to(root)
+            except ValueError:
+                continue
+            return candidate
         return None
 
     @staticmethod
