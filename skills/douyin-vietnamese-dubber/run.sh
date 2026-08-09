@@ -13,7 +13,7 @@ WHISPER_MODEL="${WHISPER_MODEL:-$WHISPER_DIR/models/ggml-small.bin}"
 OPENCLAW_RUNTIME_PROFILE="${OPENCLAW_RUNTIME_PROFILE:-standard}"
 if [[ "${OPENCLAW_RUNTIME_PROFILE,,}" == "free_low_gpu" ]]; then
   OPENCLAW_AI_PROVIDER="${OPENCLAW_AI_PROVIDER:-ollama}"
-  OLLAMA_MODEL="${OLLAMA_MODEL:-qwen2.5:3b}"
+OLLAMA_MODEL="${OLLAMA_MODEL:-qwen3:1.7b}"
   if [[ -z "${EDGE_TTS_VOICE:-}" && -z "${EDGE_TTS_VOICE_PRESET:-}" && -z "${DOUYIN_TTS_VOICE_PRESET:-}" && -z "${OPENCLAW_DEFAULT_TTS_VOICE:-}" ]]; then
     EDGE_TTS_VOICE="${EDGE_TTS_VOICE:-vi-VN-HoaiMyNeural}"
   fi
@@ -87,9 +87,10 @@ case "${SYNC_MODE,,}" in
     ALLOW_VIDEO_RETIME="${ALLOW_VIDEO_RETIME:-1}"
     ALLOW_FREEZE_FRAME="${ALLOW_FREEZE_FRAME:-1}"
     LOCAL_RETIME_SCENE_SAFE="${LOCAL_RETIME_SCENE_SAFE:-1}"
-    MAX_FREEZE_PER_SEGMENT_MS="${MAX_FREEZE_PER_SEGMENT_MS:-300}"
-    MAX_FREEZE_PER_SCENE_MS="${MAX_FREEZE_PER_SCENE_MS:-300}"
+    MAX_FREEZE_PER_SEGMENT_MS="${MAX_FREEZE_PER_SEGMENT_MS:-1500}"
+    MAX_FREEZE_PER_SCENE_MS="${MAX_FREEZE_PER_SCENE_MS:-1500}"
     FRAME_STRICT_MAX_SEGMENT_DRIFT_MS="${FRAME_STRICT_MAX_SEGMENT_DRIFT_MS:-40}"
+    FRAME_STRICT_TOTAL_DRIFT_PER_SEGMENT_MS="${FRAME_STRICT_TOTAL_DRIFT_PER_SEGMENT_MS:-10}"
     STRICT_QUALITY_GATE="${STRICT_QUALITY_GATE:-1}"
     ;;
   quality|quality_dub)
@@ -130,6 +131,10 @@ case "${SYNC_MODE,,}" in
     DEFAULT_SUBTITLE_ONLY_RATIO="${DEFAULT_SUBTITLE_ONLY_RATIO:-2.0}"
     ;;
 esac
+export SYNC_MODE TTS_SYNC_POLICY
+FRAME_STRICT_MAX_SEGMENT_DRIFT_MS="${FRAME_STRICT_MAX_SEGMENT_DRIFT_MS:-80}"
+FRAME_STRICT_TOTAL_DRIFT_PER_SEGMENT_MS="${FRAME_STRICT_TOTAL_DRIFT_PER_SEGMENT_MS:-5}"
+export FRAME_STRICT_MAX_SEGMENT_DRIFT_MS FRAME_STRICT_TOTAL_DRIFT_PER_SEGMENT_MS
 ALLOW_AGGRESSIVE_ATEMPO="${ALLOW_AGGRESSIVE_ATEMPO:-0}"
 MAX_TTS_SPEED="${MAX_TTS_SPEED:-$TOTAL_AUDIO_SPEED_MAX}"
 SUBTITLE_ONLY_IF_RATIO_ABOVE="${SUBTITLE_ONLY_IF_RATIO_ABOVE:-$DEFAULT_SUBTITLE_ONLY_RATIO}"
@@ -200,7 +205,7 @@ VI_SUBTITLE_FONT_DIR="${VI_SUBTITLE_FONT_DIR:-/home/haonguyen/.openclaw/assets/f
 VI_SUBTITLE_MAX_FONT_SIZE="${VI_SUBTITLE_MAX_FONT_SIZE:-72}"
 VI_SUBTITLE_TARGET_BAND_FILL="${VI_SUBTITLE_TARGET_BAND_FILL:-0.70}"
 VI_SUBTITLE_SAFE_WIDTH_RATIO="${VI_SUBTITLE_SAFE_WIDTH_RATIO:-0.88}"
-VI_SUBTITLE_SAFE_HEIGHT_RATIO="${VI_SUBTITLE_SAFE_HEIGHT_RATIO:-0.72}"
+VI_SUBTITLE_SAFE_HEIGHT_RATIO="${VI_SUBTITLE_SAFE_HEIGHT_RATIO:-1.0}"
 VI_SUBTITLE_MIN_BAND_FILL_WARN="${VI_SUBTITLE_MIN_BAND_FILL_WARN:-0.32}"
 VI_SUBTITLE_MAX_SMALL_CUE_RATIO="${VI_SUBTITLE_MAX_SMALL_CUE_RATIO:-0.25}"
 VI_SUBTITLE_LAYOUT_GATE="${VI_SUBTITLE_LAYOUT_GATE:-fail}"
@@ -302,7 +307,7 @@ OCR_TRANSCRIPT_DISABLE_PADDLE_FALLBACK="${OCR_TRANSCRIPT_DISABLE_PADDLE_FALLBACK
 SUBTITLE_MASK_ROUNDED="${SUBTITLE_MASK_ROUNDED:-1}"
 SUBTITLE_MASK_RADIUS="${SUBTITLE_MASK_RADIUS:-18}"
 SUBTITLE_MASK_ALPHA="${SUBTITLE_MASK_ALPHA:-0.82}"
-OPTIMIZER_TIMEOUT_SECONDS="${OPTIMIZER_TIMEOUT_SECONDS:-1800}"
+OPTIMIZER_TIMEOUT_SECONDS="${OPTIMIZER_TIMEOUT_SECONDS:-7200}"
 SPEECH_ONLY_PREPROCESS_ENABLED="${SPEECH_ONLY_PREPROCESS:-1}"
 SPEECH_ONLY_TIMEOUT_SECONDS="${SPEECH_ONLY_TIMEOUT_SECONDS:-10800}"
 MUSIC_BED_VOLUME="${MUSIC_BED_VOLUME:-$DEFAULT_MUSIC_BED_VOLUME}"
@@ -1221,6 +1226,7 @@ build_translation_memory_context() {
     return 0
   }
   [[ -d "$TRANSLATION_MEMORY_DIR" ]] || return 0
+  [[ -n "${TRANSLATION_SERIES_ID:-}${TRANSLATION_GENRE_TAGS:-}" ]] || return 0
 
   set +e
   python3 "$TRANSLATION_MEMORY_CONTEXT_SCRIPT" \
@@ -1400,12 +1406,21 @@ TRANSLATE_EOF
 load_manual_translation_if_available() {
   local manual_json="$OUT_DIR/transcript_vi.json"
   [[ -s "$manual_json" ]] || return 1
-  python3 - "$manual_json" "$VIETNAMESE_SRT" "$DUB_SRT" <<'PY'
-import json, sys
+  python3 - "$manual_json" "$ORIGINAL_SRT" "$VIETNAMESE_SRT" "$DUB_SRT" <<'PY'
+import json, re, sys
 from pathlib import Path
-json_path, vi_srt, dub_srt = sys.argv[1:]
+json_path, original_srt, vi_srt, dub_srt = sys.argv[1:]
 data = json.loads(Path(json_path).read_text(encoding='utf-8'))
 segments = data.get('segments') if isinstance(data, dict) else data
+original_text = Path(original_srt).read_text(encoding='utf-8', errors='replace')
+original_count = sum(
+    1 for block in re.split(r'\n\s*\n', original_text.strip())
+    if '-->' in block
+)
+if len(segments) != original_count:
+    raise SystemExit(
+        f'transcript_vi.json incomplete: segments={len(segments)}/{original_count}'
+    )
 if not isinstance(segments, list) or not segments: raise SystemExit('transcript_vi.json không có segments hợp lệ')
 lines = []
 for i, seg in enumerate(segments, 1):
@@ -1636,7 +1651,7 @@ try:
                 if isinstance(region, dict) and region.get('kind') == 'speech'
                 and float(region.get('end', 0)) > float(region.get('start', 0))
             ),
-            key=${key:?Set key in the environment}
+            key=lambda region: region['start_ms']
         )
 except Exception:
     source_speech_regions = []
@@ -2939,7 +2954,7 @@ entries = [
 # per-cue so editing cue 50 does not discard 121 valid AI33 checkpoint WAVs.
 source_fingerprint = hashlib.sha256(json.dumps(
     [{"start_ms": start, "end_ms": end} for start, end, _text, _source_cue_id in entries],
-    sort_keys=${sort_keys:?Set sort_keys in the environment}
+    sort_keys=True
 ).encode('utf-8')).hexdigest()
 
 source_entry_count = len(entries)
@@ -4018,6 +4033,60 @@ run_tts_voice_qa() {
   fi
 }
 
+tts_resume_cache_is_complete() {
+  python3 - "$1" "$2" "$3" "$4" "$5" "$TTS_MASTER_SAMPLE_RATE" "$TTS_MASTER_CHANNELS" <<'PY'
+import hashlib, json, re, subprocess, sys
+from pathlib import Path
+
+srt_path, voice_path, stats_path, checkpoint_path, voice, sample_rate, channels = sys.argv[1:]
+if not voice.lower().startswith("ai33:"):
+    raise SystemExit(1)
+try:
+    stats = json.loads(Path(stats_path).read_text(encoding="utf-8"))
+    checkpoint = json.loads(Path(checkpoint_path).read_text(encoding="utf-8"))
+    blocks = re.split(r"\n\s*\n", Path(srt_path).read_text(encoding="utf-8", errors="replace").strip())
+    entries = []
+    for block in blocks:
+        lines = [line.strip() for line in block.splitlines() if line.strip()]
+        timing = next((line for line in lines if "-->" in line), "")
+        start_raw, end_raw = [part.strip() for part in timing.split("-->", 1)]
+        def millis(value):
+            match = re.fullmatch(r"(\d+):(\d+):(\d+)[,.](\d+)", value)
+            if not match:
+                raise ValueError("invalid SRT timestamp")
+            hour, minute, second, fraction = match.groups()
+            return ((int(hour) * 60 + int(minute)) * 60 + int(second)) * 1000 + int(fraction.ljust(3, "0")[:3])
+        entries.append({"start_ms": millis(start_raw), "end_ms": millis(end_raw)})
+    source_fingerprint = hashlib.sha256(json.dumps(entries, sort_keys=True).encode("utf-8")).hexdigest()
+    expected_voice = voice.split(":", 1)[1]
+    cues = checkpoint.get("cues") or {}
+    completed = int(stats.get("tts_completed_cues") or 0)
+    total = int(stats.get("tts_total_cues") or 0)
+    if not (
+        entries and completed == total == len(entries)
+        and not stats.get("tts_failed_code")
+        and stats.get("canonical_voice") == voice
+        and checkpoint.get("canonical_voice") == expected_voice
+        and checkpoint.get("source_fingerprint") == source_fingerprint
+        and int(checkpoint.get("total_cues") or 0) == total
+        and len(cues) == total
+        and all(item.get("status") == "completed" and Path(item.get("wav_path") or "").is_file() for item in cues.values())
+    ):
+        raise SystemExit(1)
+    probe = json.loads(subprocess.check_output([
+        "ffprobe", "-v", "error", "-select_streams", "a:0",
+        "-show_entries", "stream=sample_rate,channels:format=duration",
+        "-of", "json", voice_path,
+    ], text=True))
+    stream = (probe.get("streams") or [{}])[0]
+    duration = float((probe.get("format") or {}).get("duration") or 0)
+    if int(stream.get("sample_rate") or 0) != int(sample_rate) or int(stream.get("channels") or 0) != int(channels) or duration <= 0:
+        raise SystemExit(1)
+except Exception:
+    raise SystemExit(1)
+PY
+}
+
 srt_has_spoken_text() {
   local srt_path="$1"
   python3 - "$srt_path" <<'PY'
@@ -4031,6 +4100,20 @@ for block in re.split(r'\n\s*\n', text.strip()):
     if len(lines) >= 3 and '-->' in lines[1] and re.sub(r'<[^>]+>', '', ' '.join(lines[2:])).strip():
         raise SystemExit(0)
 raise SystemExit(1)
+PY
+}
+
+dubbing_cache_is_complete() {
+  local report_path="$1"
+  python3 - "$report_path" <<'PY'
+import json, sys
+try:
+    report = json.load(open(sys.argv[1], encoding='utf-8'))
+except Exception:
+    raise SystemExit(1)
+if report.get('translate_failed_groups') or int(report.get('translate_failed_segments') or 0):
+    raise SystemExit(1)
+raise SystemExit(0)
 PY
 }
 
@@ -4159,7 +4242,7 @@ else
 fi
 echo "Speed caps: target=${TARGET_MAX_SPEED}x soft=${SOFT_MAX_SPEED}x hard=${HARD_MAX_SPEED}x overhang=${ALLOW_AUDIO_OVERHANG}s"
 echo "Subtitle burn-in: burn=${BURN_VIET_SUBTITLE} mask=${MASK_ORIGINAL_SUBTITLE} mask_style=${SUBTITLE_MASK_STYLE} band_detect_engine=${SUBTITLE_BAND_DETECT_ENGINE} ocr_engine=${SUBTITLE_OCR_ENGINE} vision_model=${OCR_VISION_MODEL} band_sample_count=${SUBTITLE_BAND_SAMPLE_COUNT} band_height_ratio=${SUBTITLE_BAND_HEIGHT_RATIO} band_blur=${SUBTITLE_BAND_BLUR} band_tint=${SUBTITLE_BAND_TINT_OPACITY} text_color=${SUBTITLE_TEXT_COLOR} text_align=${SUBTITLE_TEXT_ALIGN} dynamic_mask=${SUBTITLE_DYNAMIC_MASK} mask_height_ratio=${SUBTITLE_MASK_HEIGHT_RATIO} mask_opacity=${SUBTITLE_MASK_OPACITY} bottom_margin_ratio=${SUBTITLE_BOTTOM_MARGIN_RATIO} font_size_ratio=${SUBTITLE_FONT_SIZE_RATIO} vi_min_font_size=${VI_SUBTITLE_MIN_FONT_SIZE} vi_max_font_size=${VI_SUBTITLE_MAX_FONT_SIZE} vi_max_lines=${VI_SUBTITLE_MAX_LINES} vi_wrap_chars=${VI_SUBTITLE_WRAP_CHARS} vi_target_band_fill=${VI_SUBTITLE_TARGET_BAND_FILL} vi_safe_width_ratio=${VI_SUBTITLE_SAFE_WIDTH_RATIO} vi_safe_height_ratio=${VI_SUBTITLE_SAFE_HEIGHT_RATIO} vi_min_band_fill_warn=${VI_SUBTITLE_MIN_BAND_FILL_WARN} vi_max_small_cue_ratio=${VI_SUBTITLE_MAX_SMALL_CUE_RATIO} vi_font_file=${VI_SUBTITLE_FONT_FILE} vi_font_name=${VI_SUBTITLE_FONT_NAME} vi_font_preset=${VI_SUBTITLE_FONT_PRESET} vi_font_dir=${VI_SUBTITLE_FONT_DIR} vi_layout_gate=${VI_SUBTITLE_LAYOUT_GATE} subtitle_render_failure_policy=${SUBTITLE_RENDER_FAILURE_POLICY} box_mode=${SUBTITLE_BOX_MODE} max_lines=${SUBTITLE_MAX_LINES} max_chars=${SUBTITLE_MAX_CHARS_PER_LINE}"
-echo "Optimizer timeout: ${OPTIMIZER_TIMEOUT_SECONDS:-1800}s"
+echo "Optimizer timeout: ${OPTIMIZER_TIMEOUT_SECONDS:-7200}s"
 echo "Speech-only preprocess: ${SPEECH_ONLY_PREPROCESS_ENABLED:-1}"
 echo "Speech-only config: subtitle_mode=${SUBTITLE_MODE:-dialogue_only}, ignore_background_music=${IGNORE_BACKGROUND_MUSIC:-true}, ignore_song_lyrics=${IGNORE_SONG_LYRICS:-true}, keep_original_music_bed=${KEEP_ORIGINAL_MUSIC_BED:-true}"
 echo "Music bed: volume=${MUSIC_BED_VOLUME}; ducking=${ENABLE_BGM_DUCKING} amount=${BGM_DUCK_AMOUNT}; voice_volume=${VOICE_VOLUME}; tts_master=${TTS_MASTER_SAMPLE_RATE}Hz/${TTS_MASTER_CHANNELS}ch; final_audio=${FINAL_AUDIO_SAMPLE_RATE}Hz/${FINAL_AUDIO_CHANNELS}ch/${FINAL_AUDIO_BITRATE}; loudness=${FINAL_LOUDNESS_TARGET}LUFS TP=${FINAL_TRUE_PEAK_LIMIT}dBFS; slow_fit=${ALLOW_SLOW_FIT} (${POST_ATEMPO_MIN}..0.99 opt-in); allow_final_trim=${ALLOW_FINAL_TRIM}; retime=${ALLOW_VIDEO_RETIME}/${ALLOW_FREEZE_FRAME}/safe=${LOCAL_RETIME_SCENE_SAFE} max_freeze=${MAX_FREEZE_PER_SEGMENT_MS}/${MAX_FREEZE_PER_SCENE_MS}ms"
@@ -4639,7 +4722,8 @@ if [[ "$tx_gate_status" -eq 7 ]]; then
 fi
 
 if [[ -n "$RESUME_JOB_DIR" && -s "$VIETNAMESE_SRT" && -s "$DUB_SRT" ]] \
-  && srt_has_spoken_text "$VIETNAMESE_SRT" && srt_has_spoken_text "$DUB_SRT"; then
+  && srt_has_spoken_text "$VIETNAMESE_SRT" && srt_has_spoken_text "$DUB_SRT" \
+  && dubbing_cache_is_complete "$DUBBING_REPORT_JSON"; then
   # A TTS-only resume must not spend time or quota re-running translation.  The
   # AI33 cue manifest fingerprints dub.srt, so a changed cue is still precisely
   # invalidated before any provider call.
@@ -4982,9 +5066,15 @@ export DOUYIN_DUBBER_SEGMENTS_JSON="${DUBBING_SEGMENTS_JSON:-}"
 export TTS_REWRITE_MAX_ATTEMPTS="${TTS_REWRITE_MAX_ATTEMPTS:-1}"
 set +e
 tts_total_timeout="${TTS_TOTAL_TIMEOUT_SECONDS:-3600}"
-run_with_status_heartbeat_guarded "tts" "66" "Đang tạo giọng Việt bằng TTS" "$tts_total_timeout" "${OPENCLAW_LONG_STEP_HEARTBEAT_SECONDS:-30}" \
-  generate_vietnamese_voice "$TTS_SOURCE_SRT" "$VIETNAMESE_VOICE_WAV" "$VOICE" "$TMP_DIR" "$VIDEO_DURATION"
-tts_synth_status=$?
+if [[ -n "$RESUME_JOB_DIR" ]] && tts_resume_cache_is_complete \
+  "$TTS_SOURCE_SRT" "$VIETNAMESE_VOICE_WAV" "$TTS_STATS_JSON" "$TMP_DIR/tts_checkpoint.json" "$VOICE"; then
+  echo "Dùng cached vietnamese_voice.wav/tts_stats.json hợp lệ."
+  tts_synth_status=0
+else
+  run_with_status_heartbeat_guarded "tts" "66" "Đang tạo giọng Việt bằng TTS" "$tts_total_timeout" "${OPENCLAW_LONG_STEP_HEARTBEAT_SECONDS:-30}" \
+    generate_vietnamese_voice "$TTS_SOURCE_SRT" "$VIETNAMESE_VOICE_WAV" "$VOICE" "$TMP_DIR" "$VIDEO_DURATION"
+  tts_synth_status=$?
+fi
 set -e
 # Copy reports ra OUT_DIR trước khi handle exit 9 (để dashboard/Telegram có thông tin).
 cp "$TMP_DIR/resona_probe_report.json" "$OUT_DIR/resona_probe_report.json" 2>/dev/null || true
@@ -5440,7 +5530,9 @@ trimmed_ms = stats.get('trimmed_ms', 0) or 0
 # its natural speech plus an explicit needs-attention report; strict can stop it.
 if adapt_needs_attention:
     reason = f"adapt_needs_attention={adapt_needs_attention}>0"
-    if relaxed_short_audio_mode and not strict_quality_gate:
+    if frame_strict:
+        sync_warning_reasons.append(reason)
+    elif relaxed_short_audio_mode and not strict_quality_gate:
         needs_attention_reasons.append(reason)
     else:
         sync_fail_reasons.append(reason)
@@ -5900,8 +5992,9 @@ if [[ "${BURN_VIET_SUBTITLE:-1}" != "0" && -x "$SUBTITLE_MASK_RENDER_SCRIPT" && 
   fi
   set +e
   OCR_VISION_API_KEY="${OCR_VISION_API_KEY:-$API_KEY}"
-  if [[ "$SUBTITLE_BAND_DETECT_ENGINE" == "9router_vision" ]]; then
-    [[ -n "$OCR_VISION_API_KEY" ]] || fail "Thiếu OCR_VISION_API_KEY cho subtitle band 9Router vision."
+  if [[ "$SUBTITLE_BAND_DETECT_ENGINE" == "9router_vision" && -z "$OCR_VISION_API_KEY" ]]; then
+    echo "WARN: Thiếu OCR_VISION_API_KEY; dùng CV để detect/render subtitle band."
+    SUBTITLE_BAND_DETECT_ENGINE="cv"
   fi
   export OCR_VISION_API_KEY
   run_with_status_heartbeat "subtitle_render" "84" "Đang detect vị trí sub gốc + render blur band" "$subtitle_render_timeout" "${OPENCLAW_LONG_STEP_HEARTBEAT_SECONDS:-30}" \

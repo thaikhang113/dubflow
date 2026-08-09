@@ -128,9 +128,9 @@ def build_job_environment(
     environment = {
         "OPENCLAW_AI_PROVIDER": "ollama",
         "OPENCLAW_AI_API_BASE": "http://host.docker.internal:11434",
-        "OPENCLAW_AI_MODEL": "qwen2.5:3b",
+        "OPENCLAW_AI_MODEL": "qwen3:1.7b",
         "OLLAMA_API_BASE": "http://host.docker.internal:11434",
-        "OLLAMA_MODEL": "qwen2.5:3b",
+        "OLLAMA_MODEL": "qwen3:1.7b",
         "AI33_TTS_WORKERS": "3",
         "BASE_ROOT": str(job_root),
         "DOUYIN_VIDEOS_DIR": str(job_root),

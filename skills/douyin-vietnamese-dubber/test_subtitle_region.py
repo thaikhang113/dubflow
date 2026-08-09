@@ -124,6 +124,14 @@ def test_pipeline_defaults_to_localized_blur():
     assert 'SUBTITLE_MASK_STYLE="${SUBTITLE_MASK_STYLE:-localized_blur}"' in run_sh
 
 
+def test_localized_blur_uses_stable_band_for_vietnamese_text_layout():
+    source = (SKILL_DIR / "subtitle_mask_render.py").read_text(encoding="utf-8")
+    run_sh = (SKILL_DIR / "run.sh").read_text(encoding="utf-8")
+    assert 'text_box = {"x": band["x"], "y": band["y"], "w": band["w"], "h": band["h"]}' in source
+    assert 'fit_vi_subtitle_text(event.get("text", ""), text_box,' in source
+    assert 'VI_SUBTITLE_SAFE_HEIGHT_RATIO="${VI_SUBTITLE_SAFE_HEIGHT_RATIO:-1.0}"' in run_sh
+
+
 def test_localized_blur_filter_renders_with_ffmpeg():
     if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
         return

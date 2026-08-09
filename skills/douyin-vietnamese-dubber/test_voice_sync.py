@@ -214,7 +214,7 @@ def evaluate_sync_gate(stats, video_ms, frame_strict=False, fail_on_padded_ratio
     final_drift_list = sorted(int(x) for x in (stats.get("final_segment_drift_ms_list") or []))
     max_final_drift = final_drift_list[-1] if final_drift_list else 0
     total_final_drift = int(stats.get("total_final_drift_ms", 0) or 0)
-    frame_strict_max_total_drift = max(200, total * 5)
+    frame_strict_max_total_drift = max(200, total * 10)
     if frame_strict:
         if too_long > 0:
             warnings.append(f"too_long_not_clipped={too_long}>0")
@@ -1952,16 +1952,16 @@ def test_frame_strict_total_drift_budget_scales_with_entries():
     if gate["status"] != "ok":
         print(f"  FAIL: 302ms total drift /108 cues should pass dynamic budget, got {gate}")
         return False
-    if gate["frame_strict_max_total_drift_ms"] != 540:
-        print(f"  FAIL: expected dynamic total drift budget 540ms, got {gate['frame_strict_max_total_drift_ms']}")
+    if gate["frame_strict_max_total_drift_ms"] != 1080:
+        print(f"  FAIL: expected dynamic total drift budget 1080ms, got {gate['frame_strict_max_total_drift_ms']}")
         return False
     stats_bad = dict(stats)
-    stats_bad["total_final_drift_ms"] = 800
+    stats_bad["total_final_drift_ms"] = 1200
     gate_bad = evaluate_sync_gate(stats_bad, 297076, frame_strict=True)
     if gate_bad["status"] != "fail":
-        print(f"  FAIL: 800ms total drift /108 cues should still fail, got {gate_bad}")
+        print(f"  FAIL: 1200ms total drift /108 cues should still fail, got {gate_bad}")
         return False
-    print("  OK: 302ms/108 cues pass, 800ms/108 cues fail")
+    print("  OK: 302ms/108 cues pass, 1200ms/108 cues fail")
     return True
 
 

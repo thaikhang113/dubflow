@@ -91,16 +91,17 @@ class BilibiliUrlNormalizationTests(unittest.TestCase):
         self.assertLess(mkdir_at, latest_at)
         self.assertLess(latest_at, queued_at)
 
-    def test_wrapper_always_brands_before_final_handoff(self):
+    def test_wrapper_treats_missing_brand_asset_as_optional_by_default(self):
         run_sh = SCRIPT.parent.parent / "run.sh"
         source = run_sh.read_text(encoding="utf-8")
 
-        self.assertNotIn('BILIBILI_BRANDING="${BILIBILI_BRANDING:-0}"', source)
-        self.assertNotIn('if [[ "$BILIBILI_BRANDING" == "1" ]]', source)
         self.assertIn(
             'ORGANIZE_OUTPUT=0 AUTO_TELEGRAM_RESULT=0 bash "$DOUYIN_PIPELINE" "$VIDEO_FILE"',
             source,
         )
+        self.assertIn('BILIBILI_BRAND_REQUIRED="${BILIBILI_BRAND_REQUIRED:-0}"', source)
+        self.assertIn('if [[ "$brand_status" -ne 0 && "$BILIBILI_BRAND_REQUIRED" == "1" ]]', source)
+        self.assertIn('WARN: Bỏ qua branding vì asset/logo chưa sẵn sàng', source)
         brand_at = source.index('python3 "$SINGLE_JOB_BRAND_SCRIPT"')
         organize_at = source.index('python3 "$ORGANIZE_SCRIPT"')
         self.assertLess(brand_at, organize_at)

@@ -79,7 +79,7 @@ class HostLoginHelperTests(unittest.TestCase):
                     "ollama",
                     "ollama",
                     "pull",
-                    "qwen2.5:3b",
+            "qwen3:1.7b",
                 ],
             ],
             [call.args[0] for call in run.call_args_list],

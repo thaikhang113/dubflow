@@ -31,6 +31,7 @@ LATEST_OUTPUT="$BILI_BASE/LATEST_OUTPUT_DIR.txt"
 LATEST_SOURCE="$BILI_BASE/LATEST_SOURCE_URL.txt"
 BILIBILI_BRAND_INCLUDE_INTRO="${BILIBILI_BRAND_INCLUDE_INTRO:-0}"
 BILIBILI_BRAND_INCLUDE_OUTRO="${BILIBILI_BRAND_INCLUDE_OUTRO:-0}"
+BILIBILI_BRAND_REQUIRED="${BILIBILI_BRAND_REQUIRED:-0}"
 SINGLE_JOB_BRAND_SCRIPT="${SINGLE_JOB_BRAND_SCRIPT:-$SKILL_ROOT/series-compilation-orchestrator/scripts/single_job_brand.py}"
 BRAND_ASSETS_JSON="${BRAND_ASSETS_JSON:-$SKILL_ROOT/series-compilation-orchestrator/assets/brand-assets.json}"
 
@@ -66,6 +67,7 @@ PY
 validate_branding_flags() {
   case "$BILIBILI_BRAND_INCLUDE_INTRO" in 0|1) ;; *) fail "BILIBILI_BRAND_INCLUDE_INTRO chỉ nhận 0 hoặc 1" ;; esac
   case "$BILIBILI_BRAND_INCLUDE_OUTRO" in 0|1) ;; *) fail "BILIBILI_BRAND_INCLUDE_OUTRO chỉ nhận 0 hoặc 1" ;; esac
+  case "$BILIBILI_BRAND_REQUIRED" in 0|1) ;; *) fail "BILIBILI_BRAND_REQUIRED chỉ nhận 0 hoặc 1" ;; esac
 }
 
 # edge-tts (pip --user) nằm ở ~/.local/bin. Đảm bảo wrapper host-runner và
@@ -351,7 +353,15 @@ cp "$META_JSON" "$OUT_DIR/bilibili_meta.json" 2>/dev/null || true
 # Hardening: cookies stay only in JOB_CACHE for yt-dlp; never copy into job output.
 rm -f "$OUT_DIR/bilibili_cookies.txt" 2>/dev/null || true
 [[ -s "$COVER_FILE" ]] && cp "$COVER_FILE" "$OUT_DIR/thumbnail_reference_bilibili.jpg" 2>/dev/null || true
-python3 "$SINGLE_JOB_BRAND_SCRIPT" --input "$OUT_DIR/final_video_vi.mp4" --output "$OUT_DIR/final_video_vi.mp4" --assets "$BRAND_ASSETS_JSON" --include-intro "$BILIBILI_BRAND_INCLUDE_INTRO" --include-outro "$BILIBILI_BRAND_INCLUDE_OUTRO" || fail "Bilibili branding thất bại; không organize/upload"
+set +e
+python3 "$SINGLE_JOB_BRAND_SCRIPT" --input "$OUT_DIR/final_video_vi.mp4" --output "$OUT_DIR/final_video_vi.mp4" --assets "$BRAND_ASSETS_JSON" --include-intro "$BILIBILI_BRAND_INCLUDE_INTRO" --include-outro "$BILIBILI_BRAND_INCLUDE_OUTRO"
+brand_status=$?
+set -e
+if [[ "$brand_status" -ne 0 && "$BILIBILI_BRAND_REQUIRED" == "1" ]]; then
+  fail "Bilibili branding thất bại; không organize/upload"
+elif [[ "$brand_status" -ne 0 ]]; then
+  echo "WARN: Bỏ qua branding vì asset/logo chưa sẵn sàng; giữ video đã qua quality gate."
+fi
 cp "$OUT_DIR/final_video_vi.mp4" "$BILI_BASE/final_video_vi.mp4"
 ORGANIZE_SCRIPT="${ORGANIZE_OUTPUT_SCRIPT:-$(dirname "$DOUYIN_PIPELINE")/organize_output.py}"
 TELEGRAM_SCRIPT="${TELEGRAM_RESULT_SCRIPT:-$(dirname "$DOUYIN_PIPELINE")/telegram-send-result.sh}"

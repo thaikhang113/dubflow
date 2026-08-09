@@ -2266,12 +2266,13 @@ def main():
             mask_segments = list(event_masks)
         mask_count = write_mask_ass(mask_ass, width, height, mask_segments, args, colour="white", opacity=1.0)
         mask_by_index = {box.get("event_index"): box for box in event_masks}
+        text_box = {"x": band["x"], "y": band["y"], "w": band["w"], "h": band["h"]}
         layouts = []
         for idx, event in enumerate(events, 1):
             start, end = event_time(event)
             cue_box = mask_by_index.get(idx) or fallback_text_box(width, height, event.get("text", ""), args, band=band)
-            fit = fit_vi_subtitle_text(event.get("text", ""), cue_box, width, height, font_path, fit_options)
-            cx, cy, use_pos = compute_cue_pos(cue_box, len(fit.get("lines", [])), height, fit_options.get("vertical_offset_ratio", 0.0))
+            fit = fit_vi_subtitle_text(event.get("text", ""), text_box, width, height, font_path, fit_options)
+            cx, cy, use_pos = compute_cue_pos(text_box, len(fit.get("lines", [])), height, fit_options.get("vertical_offset_ratio", 0.0))
             layouts.append({
                 "start_raw": event["start_raw"], "end_raw": event["end_raw"],
                 "start": round(start, 3), "end": round(end, 3), "text": event.get("text", ""),
@@ -2279,7 +2280,7 @@ def main():
                 "font_size": fit["font_size"], "text_width": fit["text_width"],
                 "text_height": fit["text_height"], "fill_ratio": fit["fill_ratio"],
                 "fit_status": fit["status"], "fit_reason": fit["reason"],
-                "pos_x": cx, "pos_y": cy, "use_pos": use_pos, "band_box": cue_box,
+                "pos_x": cx, "pos_y": cy, "use_pos": use_pos, "band_box": text_box,
             })
         median_fill, small_cue_ratio = write_layout_report(
             layout_report_path, layouts, None, width, height, args, fit_options["min_size"]

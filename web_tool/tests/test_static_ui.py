@@ -72,7 +72,7 @@ class StaticUiTests(unittest.TestCase):
             "function installLocalOllama",
             "http://127.0.0.1:18794/ollama/install",
             "http://ollama:11434",
-            "qwen2.5:3b",
+            "qwen3:1.7b",
             "Đang cài Ollama và tải model...",
         ):
             with self.subTest(marker=marker):

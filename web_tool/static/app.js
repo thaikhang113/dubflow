@@ -277,7 +277,7 @@ async function installLocalOllama() {
           name: "Ollama local",
           kind: "ollama",
           endpoint: "http://ollama:11434",
-          model: "qwen2.5:3b",
+          model: "qwen3:1.7b",
           timeout_seconds: 180,
           api_key: "",
         }),
@@ -289,7 +289,7 @@ async function installLocalOllama() {
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
         default_provider_id: provider.id,
-        default_model: "qwen2.5:3b",
+        default_model: "qwen3:1.7b",
         default_voice: settings.default_voice || "",
         queue_poll_seconds: settings.queue_poll_seconds || 2,
         telegram_chat_id: settings.telegram_chat_id || "",
@@ -300,7 +300,7 @@ async function installLocalOllama() {
     await loadProviders();
     await loadSettings();
     await loadDoctor();
-    notify("Ollama local và model qwen2.5:3b đã sẵn sàng.");
+    notify("Ollama local và model qwen3:1.7b đã sẵn sàng.");
   } catch (error) {
     notify(
       `Không cài được Ollama: ${error.message}. Hãy mở Docker Desktop và chạy host helper.`,
@@ -675,7 +675,7 @@ function resetChannelForm() {
   document.querySelector("#channel-form").reset();
   document.querySelector("#channel-id").value = "";
   document.querySelector("#channel-interval").value = "60";
-  document.querySelector("#channel-model").value = "qwen2.5:3b";
+    document.querySelector("#channel-model").value = "qwen3:1.7b";
   document.querySelector("#channel-voice").value =
     "ai33:vbee_hn_female_ngochuyen_full_48k-fhg";
   document.querySelector("#channel-enabled").checked = true;

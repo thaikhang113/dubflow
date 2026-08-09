@@ -123,7 +123,7 @@ class IntegrationRequest(BaseModel):
 
 class RuntimeSettingsRequest(BaseModel):
     default_provider_id: str = ""
-    default_model: str = Field(default="qwen2.5:3b", max_length=200)
+    default_model: str = Field(default="qwen3:1.7b", max_length=200)
     default_voice: str = Field(
         default="ai33:vbee_hn_female_ngochuyen_full_48k-fhg",
         max_length=200,
@@ -353,7 +353,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         values = store.get_settings(
             {
                 "default_provider_id": "",
-                "default_model": "qwen2.5:3b",
+            "default_model": "qwen3:1.7b",
                 "default_voice": "ai33:vbee_hn_female_ngochuyen_full_48k-fhg",
                 "queue_poll_seconds": "2",
                 "telegram_chat_id": "",
@@ -494,7 +494,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         defaults = store.get_settings(
             {
                 "default_provider_id": "",
-                "default_model": "qwen2.5:3b",
+                "default_model": "qwen3:1.7b",
                 "default_voice": "ai33:vbee_hn_female_ngochuyen_full_48k-fhg",
             }
         )

@@ -172,10 +172,18 @@ class AI33PollingTests(unittest.TestCase):
         self.assertIn("aresample=48000", conversion)
         self.assertNotIn("asetrate", conversion)
 
-    def test_source_below_requested_sample_rate_is_rejected_before_upsample(self):
+    def test_44k1_source_is_accepted_for_48k_output_resampling(self):
+        ai33.validate_source_audio(
+            {"codec": "mp3", "duration_ms": 1000, "sample_rate": 44100},
+            requested_sample_rate=48000,
+            attempts=1,
+            voice_id="vbee_hn_female_ngochuyen_full_48k-fhg",
+        )
+
+    def test_source_below_44k1_is_rejected_for_48k_voice(self):
         with self.assertRaises(ai33.AI33Error) as raised:
             ai33.validate_source_audio(
-                {"codec": "mp3", "duration_ms": 1000, "sample_rate": 24000},
+                {"codec": "mp3", "duration_ms": 1000, "sample_rate": 32000},
                 requested_sample_rate=48000,
                 attempts=1,
                 voice_id="vbee_hn_female_ngochuyen_full_48k-fhg",

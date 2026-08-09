@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent
 REPO_ROOT = ROOT.parents[1]
 EXTENSION_DIR = ROOT / "extension"
 PROFILE_DIR = Path.home() / ".auto-vietsub" / "bilibili-browser"
-OLLAMA_MODEL = "qwen2.5:3b"
+OLLAMA_MODEL = "qwen3:1.7b"
 ALLOWED_ORIGINS = {
     "http://127.0.0.1:18793",
     "http://localhost:18793",

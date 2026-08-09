@@ -14,7 +14,7 @@ class RuntimeProfileTests(unittest.TestCase):
 
         expected = (
             'OPENCLAW_AI_PROVIDER="${OPENCLAW_AI_PROVIDER:-ollama}"',
-            'OLLAMA_MODEL="${OLLAMA_MODEL:-qwen2.5:3b}"',
+        'OLLAMA_MODEL="${OLLAMA_MODEL:-qwen3:1.7b}"',
             'EDGE_TTS_VOICE="${EDGE_TTS_VOICE:-vi-VN-HoaiMyNeural}"',
             'SUBTITLE_OCR_ENGINE="${SUBTITLE_OCR_ENGINE:-paddleocr}"',
             'SUBTITLE_BAND_DETECT_ENGINE="${SUBTITLE_BAND_DETECT_ENGINE:-cv}"',
@@ -64,6 +64,40 @@ class RuntimeProfileTests(unittest.TestCase):
             RUN_SH,
         )
 
+
+    def test_sync_profile_is_exported_to_quality_gate_processes(self):
+        self.assertRegex(RUN_SH, re.compile(r"^export SYNC_MODE TTS_SYNC_POLICY$", re.M))
+        self.assertIn(
+            'FRAME_STRICT_TOTAL_DRIFT_PER_SEGMENT_MS="${FRAME_STRICT_TOTAL_DRIFT_PER_SEGMENT_MS:-10}"',
+            RUN_SH,
+        )
+        self.assertIn('MAX_FREEZE_PER_SEGMENT_MS="${MAX_FREEZE_PER_SEGMENT_MS:-1500}"', RUN_SH)
+        self.assertIn('MAX_FREEZE_PER_SCENE_MS="${MAX_FREEZE_PER_SCENE_MS:-1500}"', RUN_SH)
+        self.assertRegex(
+            RUN_SH,
+            re.compile(r"^export FRAME_STRICT_MAX_SEGMENT_DRIFT_MS FRAME_STRICT_TOTAL_DRIFT_PER_SEGMENT_MS$", re.M),
+        )
+        self.assertIn(
+            "if frame_strict:\n        sync_warning_reasons.append(reason)",
+            RUN_SH,
+        )
+        self.assertIn("tts_resume_cache_is_complete()", RUN_SH)
+        self.assertIn(
+            'if [[ -n "$RESUME_JOB_DIR" ]] && tts_resume_cache_is_complete',
+            RUN_SH,
+        )
+        self.assertIn('echo "Dùng cached vietnamese_voice.wav/tts_stats.json hợp lệ."', RUN_SH)
+
+    def test_subtitle_band_falls_back_to_cv_without_vision_key(self):
+        self.assertIn(
+            'if [[ "$SUBTITLE_BAND_DETECT_ENGINE" == "9router_vision" && -z "$OCR_VISION_API_KEY" ]]; then',
+            RUN_SH,
+        )
+        self.assertIn('SUBTITLE_BAND_DETECT_ENGINE="cv"', RUN_SH)
+        self.assertNotIn(
+            'fail "Thiếu OCR_VISION_API_KEY cho subtitle band 9Router vision."',
+            RUN_SH,
+        )
 
 if __name__ == "__main__":
     unittest.main()

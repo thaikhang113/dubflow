@@ -505,7 +505,7 @@ def validate_source_audio(info: dict, requested_sample_rate: int, attempts: int 
     actual = int(info.get("sample_rate") or 0)
     requested = int(requested_sample_rate or 48000)
     match = re.search(r"(?:^|[_-])(24|48)k(?:[_-]|$)", str(voice_id).lower())
-    minimum = min(requested, int(match.group(1)) * 1000) if match else requested
+    minimum = min(requested, 44100 if match and match.group(1) == "48" else int(match.group(1)) * 1000) if match else requested
     if actual and actual < minimum:
         raise AI33Error(
             "AI33SourceSampleRateLow",

@@ -65,6 +65,16 @@ def main():
     check(safe_freeze["action"] == "tail_freeze_local", safe_freeze)
     check(safe_freeze["freeze_ms"] == 400, safe_freeze)
 
+    exact_sync_rounding_freeze = module.decide_video_fit(
+        video_seconds=354.082, voice_seconds=355.182,
+        allow_video_retime=True, allow_freeze_frame=True,
+        scene_safe=True,
+        max_freeze_per_segment_ms=1500, max_freeze_per_scene_ms=1500,
+        max_output_duration_increase=10.0,
+    )
+    check(exact_sync_rounding_freeze["action"] == "tail_freeze_local", exact_sync_rounding_freeze)
+    check(exact_sync_rounding_freeze["freeze_ms"] == 1100, exact_sync_rounding_freeze)
+
     too_long = module.decide_video_fit(
         video_seconds=60.0, voice_seconds=60.8,
         allow_video_retime=True, allow_freeze_frame=True,

@@ -1784,6 +1784,16 @@ def main() -> int:
         return asyncio.run(run(Path(sys.argv[1])))
     except Exception as exc:
         log(f"FATAL: {exc}")
+        output_dir = Path(sys.argv[1]).resolve()
+        output_dir.mkdir(parents=True, exist_ok=True)
+        write_flow_bridge_status(
+            output_dir,
+            "fatal",
+            "needs_user_attention",
+            str(exc),
+            100,
+            extra={"reason": classify_flow_error(str(exc))},
+        )
         return 1
 
 
