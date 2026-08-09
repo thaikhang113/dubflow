@@ -220,6 +220,31 @@ raise SystemExit(1)
 
         self.assertEqual(60, failed["progress"])
 
+    def test_running_status_clears_stale_error_code(self):
+        job = self.enqueue()
+        self.store.update_job(job["id"], error_code="PipelineError")
+        job_root = self.settings.jobs_dir / job["id"]
+        output_dir = job_root / "output"
+        output_dir.mkdir(parents=True)
+        (job_root / "LATEST_OUTPUT_DIR.txt").write_text(
+            str(output_dir),
+            encoding="utf-8",
+        )
+        (output_dir / "job_status.json").write_text(
+            json.dumps(
+                {
+                    "state": "running",
+                    "phase": "optimizer",
+                    "progress_percent": 46,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        Worker(self.store, self.settings, self.secrets)._refresh(job["id"], job_root)
+
+        self.assertEqual("", self.store.get_job(job["id"])["error_code"])
+
 
 if __name__ == "__main__":
     unittest.main()

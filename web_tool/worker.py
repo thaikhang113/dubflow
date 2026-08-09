@@ -275,6 +275,8 @@ class Worker:
         error_code = status.get("error_code")
         if error_code:
             fields["error_code"] = str(error_code)[:200]
+        elif status.get("state") == "running":
+            fields["error_code"] = ""
         self._update(job_id, **fields)
 
     def _update(self, job_id: str, **fields) -> dict:
