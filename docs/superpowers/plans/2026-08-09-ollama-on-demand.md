@@ -49,4 +49,4 @@
 - [x] Restart host helper.
 - [x] Run the real Ollama install action.
 - [x] Confirm model `qwen2.5:3b`, provider creation and Doctor readiness.
-- [ ] Commit and push `origin/tool`.
+- [x] Commit and push `origin/tool`.
