@@ -107,7 +107,10 @@ function showView(name) {
   if (name === "bilibili-login") loadBilibiliStatus();
   if (name === "channels") loadChannels();
   if (name === "series") loadSeries();
-  if (name === "settings") loadSettings();
+  if (name === "settings") {
+    loadSettings();
+    loadDoctor();
+  }
 }
 
 function providerOptions(select, providers, emptyLabel) {
@@ -495,6 +498,24 @@ async function startBilibiliLogin() {
   }
 }
 
+async function openHostBilibiliLogin() {
+  try {
+    const response = await fetch("http://127.0.0.1:18794/open", {
+      method: "POST",
+    });
+    const result = await response.json();
+    if (!response.ok || !result.ok) {
+      throw new Error(result.message || result.error_code || `HTTP ${response.status}`);
+    }
+    notify("Chrome đã mở. Đăng nhập Bilibili, cookie sẽ tự đồng bộ.");
+  } catch (error) {
+    notify(
+      `Host helper chưa chạy: ${error.message}. Chạy script trong tools/bilibili-host-login.`,
+      true,
+    );
+  }
+}
+
 async function importBilibiliCookies(event) {
   event.preventDefault();
   const file = document.querySelector("#bilibili-cookie-file").files[0];
@@ -804,6 +825,64 @@ async function loadSettings() {
   }
 }
 
+function doctorItems(title, values, className = "") {
+  if (!values.length) return null;
+  const block = element("div", `doctor-items ${className}`.trim());
+  block.append(element("strong", "", title));
+  const list = element("ul");
+  values.forEach((value) => list.append(element("li", "", value)));
+  block.append(list);
+  return block;
+}
+
+function renderDoctor(report) {
+  const target = document.querySelector("#settings-doctor-result");
+  clear(target);
+  const summary = element("div", "doctor-summary");
+  summary.append(element(
+    "strong",
+    "",
+    report.ready ? "Pipeline mặc định sẵn sàng" : "Pipeline mặc định còn thiếu cấu hình",
+  ));
+  summary.append(element(
+    "span",
+    report.ready ? "doctor-badge ready" : "doctor-badge missing",
+    report.ready ? "Sẵn sàng" : "Cần bổ sung",
+  ));
+  target.append(summary);
+  (report.workflows || []).forEach((workflow) => {
+    const row = element("article", "doctor-row");
+    const heading = element("div", "doctor-row-heading");
+    heading.append(element("strong", "", workflow.label));
+    heading.append(element(
+      "span",
+      `doctor-badge ${workflow.status}`,
+      workflow.status === "ready"
+        ? "Sẵn sàng"
+        : workflow.status === "optional"
+          ? "Tùy chọn"
+          : "Thiếu",
+    ));
+    row.append(heading);
+    const missing = doctorItems("Thiếu", workflow.missing || [], "missing");
+    const optional = doctorItems("Tùy chọn", workflow.optional || []);
+    if (missing) row.append(missing);
+    if (optional) row.append(optional);
+    if (!missing && !optional) {
+      row.append(element("p", "muted", "Đã có đủ cấu hình cần thiết."));
+    }
+    target.append(row);
+  });
+}
+
+async function loadDoctor() {
+  try {
+    renderDoctor(await api("/api/runtime/doctor"));
+  } catch (error) {
+    notify(`Doctor lỗi: ${error.message}`, true);
+  }
+}
+
 async function saveSettings(event) {
   event.preventDefault();
   try {
@@ -822,6 +901,7 @@ async function saveSettings(event) {
     });
     document.querySelector("#settings-telegram-token").value = "";
     await loadSettings();
+    await loadDoctor();
     notify("Đã lưu settings.");
   } catch (error) {
     notify(`Không lưu được settings: ${error.message}`, true);
@@ -864,6 +944,7 @@ document.querySelector("#refresh-jobs").addEventListener("click", loadJobs);
 document.querySelector("#refresh-providers").addEventListener("click", loadProviders);
 document.querySelector("#queue-pause").addEventListener("click", toggleQueue);
 document.querySelector("#bilibili-login-start").addEventListener("click", startBilibiliLogin);
+document.querySelector("#bilibili-host-open").addEventListener("click", openHostBilibiliLogin);
 document.querySelector("#bilibili-cookie-form").addEventListener("submit", importBilibiliCookies);
 document.querySelector("#bilibili-login-clear").addEventListener("click", clearBilibiliLogin);
 document.querySelector("#channel-form").addEventListener("submit", saveChannel);
@@ -889,7 +970,7 @@ document.querySelector("#trend-mode").addEventListener("change", (event) => {
   document.querySelector("#trend-days").max = event.target.value === "archive" ? "180" : "30";
 });
 document.querySelector("#settings-form").addEventListener("submit", saveSettings);
-document.querySelector("#settings-doctor").addEventListener("click", () => showRuntime("/api/runtime/doctor"));
+document.querySelector("#settings-doctor").addEventListener("click", loadDoctor);
 document.querySelector("#settings-telegram-test").addEventListener("click", () => showRuntime("/api/telegram/test"));
 document.querySelector("#settings-hyperframes").addEventListener("click", () => showRuntime("/api/hyperframes/status"));
 document.querySelector("#settings-thumbnail").addEventListener("click", () => showRuntime("/api/thumbnail/status"));

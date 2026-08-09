@@ -1168,6 +1168,43 @@ http://127.0.0.1:18793
 
 API key, Telegram token, cookie và browser profile nằm trong Docker-managed volumes. Web chỉ trả trạng thái `configured`, không trả lại giá trị secret.
 
+#### Doctor
+
+Mở **Settings** để Doctor tự kiểm tra:
+
+- video local;
+- Bilibili;
+- dịch Ollama;
+- giọng AI33;
+- Telegram;
+- Trend Scout.
+
+Mỗi workflow báo `Sẵn sàng`, `Thiếu` hoặc `Tùy chọn`. Doctor chỉ hiện tên cấu hình còn thiếu như `AI33_API_KEY`, không hiện giá trị key, token hoặc cookie.
+
+#### Mở Chrome trên máy để đăng nhập Bilibili
+
+Chạy host helper trước. Windows PowerShell:
+
+```powershell
+.\tools\bilibili-host-login\start-bilibili-helper.ps1
+```
+
+Linux:
+
+```bash
+./tools/bilibili-host-login/start-bilibili-helper.sh
+```
+
+Sau đó mở **Bilibili Login** và bấm **Mở Chrome trên máy**. Helper mở Chrome/Edge/Chromium với profile riêng tại:
+
+```text
+~/.auto-vietsub/bilibili-browser
+```
+
+Đăng nhập trong cửa sổ đó. Extension cục bộ chỉ đọc cookie thuộc `bilibili.com` rồi gửi vào API local `127.0.0.1:18793`; tool tự chuyển trạng thái sang đã đăng nhập. Helper chỉ bind `127.0.0.1:18794`, không dùng profile Chrome chính, không nhận command/path tùy ý và không mở Chrome CDP ra mạng.
+
+QR và nhập `cookies.txt` vẫn dùng được khi không chạy host helper.
+
 #### Ollama
 
 Nếu Ollama chạy trên máy host, endpoint dùng trong provider:

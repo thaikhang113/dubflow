@@ -120,10 +120,16 @@ class BilibiliLogin:
         self._lock = threading.Lock()
         self._thread = None
         self._qr = b""
+        try:
+            cookie_count = len(
+                _parse_netscape(self.cookie_path.read_text(encoding="utf-8"))
+            )
+        except (OSError, UnicodeError, ValueError):
+            cookie_count = 0
         self._status = {
-            "state": "logged_in" if self.cookie_path.is_file() else "logged_out",
-            "logged_in": self.cookie_path.is_file(),
-            "cookie_count": 0,
+            "state": "logged_in" if cookie_count else "logged_out",
+            "logged_in": bool(cookie_count),
+            "cookie_count": cookie_count,
             "qr_available": False,
             "error_code": "",
             "last_checked": _now(),

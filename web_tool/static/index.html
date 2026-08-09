@@ -190,7 +190,10 @@
                 <h2 id="bilibili-login-heading">Đăng nhập bằng QR</h2>
                 <p>QR lấy trực tiếp từ trang Bilibili trong Chromium cục bộ.</p>
               </div>
-              <button class="primary" id="bilibili-login-start" type="button">Tạo QR</button>
+              <div class="inline-actions">
+                <button class="secondary" id="bilibili-host-open" type="button">Mở Chrome trên máy</button>
+                <button class="primary" id="bilibili-login-start" type="button">Tạo QR</button>
+              </div>
             </div>
             <div class="login-state">
               <div>
@@ -491,7 +494,10 @@
                 <button class="secondary" id="settings-export" type="button">Export output</button>
               </div>
             </div>
-            <pre id="settings-result" class="integration-result">Chưa kiểm tra runtime.</pre>
+            <div id="settings-doctor-result" class="doctor-list" aria-live="polite">
+              <p class="muted">Mở Settings để kiểm tra runtime.</p>
+            </div>
+            <pre id="settings-result" class="integration-result">Chưa chạy tích hợp khác.</pre>
           </section>
         </div>
       </section>

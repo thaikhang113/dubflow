@@ -20,6 +20,7 @@ from .integrations import (
     hyperframes_status,
     run_series_action,
     run_trend_action,
+    host_login_helper_available,
     runtime_doctor,
     test_telegram,
     thumbnail_status,
@@ -395,7 +396,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/runtime/doctor")
     def doctor():
-        return runtime_doctor(settings, store.list_providers())
+        values = public_settings()
+        return runtime_doctor(
+            settings,
+            store.list_providers(),
+            runtime_settings=values,
+            login_status=bilibili_login.status(),
+            telegram_configured=values["telegram_configured"],
+            host_helper_available=host_login_helper_available(),
+        )
 
     @app.post("/api/telegram/test")
     def telegram_test():

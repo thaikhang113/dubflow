@@ -39,6 +39,21 @@ class BilibiliLoginTests(unittest.TestCase):
         stored = self.settings.secrets_dir / "bilibili-cookies.txt"
         self.assertTrue(stored.is_file())
 
+    def test_existing_cookie_file_restores_login_count(self):
+        (self.settings.secrets_dir / "bilibili-cookies.txt").write_text(
+            netscape(
+                ".bilibili.com\tTRUE\t/\tTRUE\t0\tSESSDATA\tsecret",
+                ".bilibili.com\tTRUE\t/\tTRUE\t0\tbili_jct\tcsrf",
+            ),
+            encoding="utf-8",
+        )
+        login = BilibiliLogin(
+            self.settings,
+            SecretStore(self.settings.secrets_dir),
+        )
+        self.assertTrue(login.status()["logged_in"])
+        self.assertEqual(2, login.status()["cookie_count"])
+
     def test_rejects_missing_header_malformed_line_and_foreign_domain(self):
         cases = (
             ".bilibili.com\tTRUE\t/\tTRUE\t0\tSESSDATA\tsecret\n",

@@ -652,6 +652,79 @@ h3 {
   overflow-wrap: anywhere;
 }
 
+.doctor-list {
+  display: grid;
+  gap: 8px;
+}
+
+.doctor-summary,
+.doctor-row-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.doctor-summary {
+  padding: 12px;
+  border: 1px solid #355345;
+  border-radius: 6px;
+  background: #142019;
+}
+
+.doctor-row {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #2d3731;
+  border-radius: 6px;
+  background: #131815;
+}
+
+.doctor-badge {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.doctor-badge.ready {
+  background: #173c2d;
+  color: #9ce1c2;
+}
+
+.doctor-badge.missing {
+  background: #412321;
+  color: #ffb0aa;
+}
+
+.doctor-badge.optional {
+  background: #3c3218;
+  color: #f2d081;
+}
+
+.doctor-items {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.doctor-items strong {
+  color: #c7cfca;
+}
+
+.doctor-items.missing strong,
+.doctor-items.missing li {
+  color: #ffb0aa;
+}
+
+.doctor-items ul {
+  margin: 5px 0 0;
+  padding-left: 18px;
+}
+
 @media (max-width: 1080px) {
   .jobs-form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

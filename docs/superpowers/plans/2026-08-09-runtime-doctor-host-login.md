@@ -27,10 +27,10 @@
 - Modify: `web_tool/app.py`
 - Modify: `web_tool/tests/test_integrations.py`
 
-- [ ] Add failing tests for workflow status, missing key names and secret isolation.
-- [ ] Run `python -m unittest -v web_tool.tests.test_integrations` and verify RED.
-- [ ] Extend `runtime_doctor()` and pass current settings/login/Telegram state from the API.
-- [ ] Run the integration tests and verify GREEN.
+- [x] Add failing tests for workflow status, missing key names and secret isolation.
+- [x] Run `python -m unittest -v web_tool.tests.test_integrations` and verify RED.
+- [x] Extend `runtime_doctor()` and pass current settings/login/Telegram state from the API.
+- [x] Run the integration tests and verify GREEN.
 
 ### Task 2: Host Login Helper
 
@@ -42,10 +42,10 @@
 - Create: `tools/bilibili-host-login/extension/background.js`
 - Create: `web_tool/tests/test_host_login_helper.py`
 
-- [ ] Add failing tests for local bind, CORS allowlist, fixed Chrome command and unsupported method.
-- [ ] Verify RED.
-- [ ] Implement the stdlib helper, scripts and extension.
-- [ ] Verify GREEN.
+- [x] Add failing tests for local bind, CORS allowlist, fixed Chrome command and unsupported method.
+- [x] Verify RED.
+- [x] Implement the stdlib helper, scripts and extension.
+- [x] Verify GREEN.
 
 ### Task 3: Web UI
 
@@ -55,10 +55,10 @@
 - Modify: `web_tool/static/styles.css`
 - Modify: `web_tool/tests/test_static_ui.py`
 
-- [ ] Add failing UI contract tests for Doctor workflow output, automatic load and host login button.
-- [ ] Verify RED.
-- [ ] Add structured checklist rendering and host-helper open flow.
-- [ ] Verify GREEN and run desktop/mobile browser QA.
+- [x] Add failing UI contract tests for Doctor workflow output, automatic load and host login button.
+- [x] Verify RED.
+- [x] Add structured checklist rendering and host-helper open flow.
+- [x] Verify GREEN and run desktop/mobile browser QA.
 
 ### Task 4: Documentation And Delivery
 
@@ -66,6 +66,6 @@
 - Modify: `README.md`
 - Modify: this plan
 
-- [ ] Document Windows/Linux helper startup and security boundary.
-- [ ] Run full web/pipeline/Docker/security verification.
+- [x] Document Windows/Linux helper startup and security boundary.
+- [x] Run full web/pipeline/Docker/security verification.
 - [ ] Commit and push `origin/tool`.

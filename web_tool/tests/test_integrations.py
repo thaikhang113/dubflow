@@ -3,8 +3,8 @@ from io import BytesIO
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
+from types import SimpleNamespace
 from zipfile import ZipFile
 
 from fastapi.testclient import TestClient
@@ -149,6 +149,102 @@ class IntegrationTests(unittest.TestCase):
         self.assertIn("demucs", report["checks"])
         self.assertIn("volumes", report["checks"])
         self.assertNotIn("token", repr(report).lower())
+
+    @patch("web_tool.integrations.os.access", return_value=True)
+    @patch("web_tool.integrations.importlib.util.find_spec", return_value=object())
+    @patch("web_tool.integrations.shutil.which", side_effect=lambda name: f"/bin/{name}")
+    def test_runtime_doctor_explains_workflow_requirements(
+        self,
+        _which,
+        _find_spec,
+        _access,
+    ):
+        whisper = (
+            self.settings.models_dir
+            / "whisper.cpp"
+            / "build"
+            / "bin"
+            / "whisper-cli"
+        )
+        whisper.parent.mkdir(parents=True, exist_ok=True)
+        whisper.write_bytes(b"binary")
+        providers = [
+            {
+                "id": "provider-ollama",
+                "kind": "ollama",
+                "configured": False,
+                "endpoint": "http://ollama:11434",
+            },
+            {
+                "id": "provider-ai33",
+                "kind": "ai33",
+                "configured": False,
+                "endpoint": "https://api.ai33.pro",
+            },
+        ]
+        report = runtime_doctor(
+            self.settings,
+            providers,
+            runtime_settings={
+                "default_provider_id": "provider-ollama",
+                "default_voice": "ai33:vbee_voice",
+                "telegram_chat_id": "",
+            },
+            login_status={"logged_in": False},
+            telegram_configured=False,
+            host_helper_available=False,
+            ollama_available=True,
+        )
+        workflows = {item["id"]: item for item in report["workflows"]}
+        self.assertEqual("ready", workflows["ollama_translation"]["status"])
+        self.assertIn("AI33_API_KEY", workflows["ai33_voice"]["missing"])
+        self.assertIn("AI33_API_KEY", workflows["local_video"]["missing"])
+        self.assertIn("Bilibili cookie", workflows["bilibili"]["optional"])
+        self.assertIn("Host login helper", workflows["bilibili"]["optional"])
+        self.assertEqual("optional", workflows["telegram"]["status"])
+        self.assertNotIn("api.ai33.pro", repr(report))
+        self.assertNotIn("token", repr(report).lower())
+
+    @patch("web_tool.integrations.os.access", return_value=True)
+    @patch("web_tool.integrations.importlib.util.find_spec", return_value=object())
+    @patch("web_tool.integrations.shutil.which", side_effect=lambda name: f"/bin/{name}")
+    def test_runtime_doctor_reports_unreachable_ollama(
+        self,
+        _which,
+        _find_spec,
+        _access,
+    ):
+        whisper = (
+            self.settings.models_dir
+            / "whisper.cpp"
+            / "build"
+            / "bin"
+            / "whisper-cli"
+        )
+        whisper.parent.mkdir(parents=True, exist_ok=True)
+        whisper.write_bytes(b"binary")
+        report = runtime_doctor(
+            self.settings,
+            [
+                {
+                    "id": "provider-ollama",
+                    "kind": "ollama",
+                    "configured": False,
+                    "endpoint": "http://ollama:11434",
+                }
+            ],
+            runtime_settings={
+                "default_provider_id": "provider-ollama",
+                "default_voice": "vi-VN-HoaiMyNeural",
+            },
+            ollama_available=False,
+        )
+        workflows = {item["id"]: item for item in report["workflows"]}
+        self.assertIn(
+            "Ollama endpoint không kết nối được",
+            workflows["ollama_translation"]["missing"],
+        )
+        self.assertFalse(report["ready"])
 
     def test_output_export_contains_only_managed_output(self):
         output = self.settings.output_dir / "job-one"

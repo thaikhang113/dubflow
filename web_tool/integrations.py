@@ -301,7 +301,51 @@ def thumbnail_status(settings) -> dict:
     return payload
 
 
-def runtime_doctor(settings, providers) -> dict:
+def _workflow(identifier, label, required, missing, optional=()):
+    return {
+        "id": identifier,
+        "label": label,
+        "status": "ready" if not missing else "missing",
+        "required": list(required),
+        "missing": list(missing),
+        "optional": list(optional),
+    }
+
+def host_login_helper_available() -> bool:
+    endpoint = os.environ.get(
+        "BILIBILI_HOST_HELPER_URL",
+        "http://host.docker.internal:18794",
+    ).rstrip("/")
+    try:
+        with urllib.request.urlopen(f"{endpoint}/status", timeout=1) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            return response.status == 200 and payload.get("ok") is True
+    except Exception:
+        return False
+
+def _ollama_available(provider) -> bool:
+    if not provider:
+        return False
+    endpoint = str(provider.get("endpoint") or "").rstrip("/")
+    if not endpoint:
+        return False
+    try:
+        with urllib.request.urlopen(f"{endpoint}/api/tags", timeout=1) as response:
+            return 200 <= response.status < 400
+    except Exception:
+        return False
+
+def runtime_doctor(
+    settings,
+    providers,
+    runtime_settings=None,
+    login_status=None,
+    telegram_configured=False,
+    host_helper_available=False,
+    ollama_available=None,
+) -> dict:
+    runtime_settings = runtime_settings or {}
+    login_status = login_status or {}
     whisper = settings.models_dir / "whisper.cpp" / "build" / "bin" / (
         "whisper-cli.exe" if os.name == "nt" else "whisper-cli"
     )
@@ -315,22 +359,167 @@ def runtime_doctor(settings, providers) -> dict:
         "yt_dlp": bool(shutil.which("yt-dlp")),
         "whisper": whisper.is_file(),
         "demucs": importlib.util.find_spec("demucs") is not None,
+        "edge_tts": bool(shutil.which("edge-tts")),
+        "host_login_helper": bool(host_helper_available),
         "volumes": writable,
         "providers": [
             {"id": provider["id"], "kind": provider["kind"], "configured": provider["configured"]}
             for provider in providers
         ],
     }
-    return {
-        "ok": (
-            checks["ffmpeg"]
-            and checks["chromium"]
-            and checks["yt_dlp"]
-            and checks["whisper"]
-            and checks["demucs"]
-            and all(writable.values())
+    core_required = ("FFmpeg", "Whisper", "Demucs", "Runtime volumes")
+    core_missing = []
+    if not checks["ffmpeg"]:
+        core_missing.append("FFmpeg")
+    if not checks["whisper"]:
+        core_missing.append("Whisper model/binary")
+    if not checks["demucs"]:
+        core_missing.append("Demucs")
+    if not all(writable.values()):
+        core_missing.append("Writable runtime volumes")
+
+    providers_by_id = {provider["id"]: provider for provider in providers}
+    translation = providers_by_id.get(
+        str(runtime_settings.get("default_provider_id") or "")
+    )
+    if translation and translation.get("kind") == "ai33":
+        translation = None
+    if translation is None:
+        translation = next(
+            (
+                provider
+                for provider in providers
+                if provider.get("kind") in {"ollama", "openai_compatible"}
+            ),
+            None,
+        )
+    ollama = (
+        translation
+        if translation and translation.get("kind") == "ollama"
+        else next(
+            (
+                provider
+                for provider in providers
+                if provider.get("kind") == "ollama"
+            ),
+            None,
+        )
+    )
+    if ollama_available is None:
+        ollama_available = _ollama_available(ollama)
+    checks["ollama"] = bool(ollama_available)
+    translation_missing = []
+    if translation is None:
+        translation_missing.append("Ollama hoặc provider dịch")
+    elif translation.get("kind") == "ollama" and not ollama_available:
+        translation_missing.append("Ollama endpoint không kết nối được")
+    elif (
+        translation.get("kind") == "openai_compatible"
+        and not translation.get("configured")
+    ):
+        translation_missing.append("API key provider dịch")
+
+    ai33 = next(
+        (provider for provider in providers if provider.get("kind") == "ai33"),
+        None,
+    )
+    ai33_missing = []
+    if ai33 is None:
+        ai33_missing.extend(("AI33 provider", "AI33_API_KEY"))
+    elif not ai33.get("configured"):
+        ai33_missing.append("AI33_API_KEY")
+
+    voice = str(runtime_settings.get("default_voice") or "")
+    voice_missing = ai33_missing if voice.startswith("ai33:") else []
+    if not voice.startswith("ai33:") and not checks["edge_tts"]:
+        voice_missing = ["Edge TTS"]
+
+    local_missing = core_missing + translation_missing + list(voice_missing)
+    if ollama is None:
+        ollama_missing = ["Ollama provider/endpoint"]
+    elif not ollama_available:
+        ollama_missing = ["Ollama endpoint không kết nối được"]
+    else:
+        ollama_missing = []
+    bilibili_missing = list(local_missing)
+    if not checks["yt_dlp"]:
+        bilibili_missing.append("yt-dlp")
+    bilibili_optional = []
+    if not login_status.get("logged_in"):
+        bilibili_optional.append("Bilibili cookie")
+    if not host_helper_available:
+        bilibili_optional.append("Host login helper")
+
+    telegram_missing = []
+    if not telegram_configured:
+        telegram_missing.append("Telegram bot credential")
+    if not str(runtime_settings.get("telegram_chat_id") or "").strip():
+        telegram_missing.append("Telegram chat ID")
+    telegram = _workflow(
+        "telegram",
+        "Telegram",
+        ("Telegram bot credential", "Telegram chat ID"),
+        telegram_missing,
+    )
+    telegram["status"] = "ready" if not telegram_missing else "optional"
+
+    trend_runner = Path(
+        os.environ.get(
+            "OPENCLAW_HOST_RUNNER",
+            "/home/node/host-bin/openclaw-call-host-runner.sh",
+        )
+    ).is_file()
+    trend = _workflow(
+        "trend",
+        "Trend Scout",
+        ("Trend host runner", "PostgreSQL"),
+        () if trend_runner else ("Trend host runner",),
+    )
+    if trend["missing"]:
+        trend["status"] = "optional"
+
+    workflows = [
+        _workflow(
+            "local_video",
+            "Video local",
+            core_required + ("Provider dịch", "Provider giọng"),
+            local_missing,
         ),
+        _workflow(
+            "bilibili",
+            "Bilibili",
+            core_required + ("yt-dlp", "Provider dịch", "Provider giọng"),
+            bilibili_missing,
+            bilibili_optional,
+        ),
+        _workflow(
+            "ollama_translation",
+            "Dịch bằng Ollama",
+            ("Ollama provider/endpoint",),
+            ollama_missing,
+        ),
+        _workflow(
+            "ai33_voice",
+            "Giọng AI33",
+            ("AI33 provider", "AI33_API_KEY"),
+            ai33_missing,
+        ),
+        telegram,
+        trend,
+    ]
+    core_ok = (
+        checks["ffmpeg"]
+        and checks["chromium"]
+        and checks["yt_dlp"]
+        and checks["whisper"]
+        and checks["demucs"]
+        and all(writable.values())
+    )
+    return {
+        "ok": core_ok,
+        "ready": not local_missing,
         "checks": checks,
+        "workflows": workflows,
     }
 
 
