@@ -1192,7 +1192,11 @@ payload = {
 }
 if provider == 'ollama':
     payload['think'] = False
-    payload['options'] = {'temperature': 0.2, 'num_predict': int(float(__import__('os').environ.get('OLLAMA_NUM_PREDICT', '4096')))}
+        payload['options'] = {
+            'temperature': 0.2,
+            'num_ctx': int(float(__import__('os').environ.get('OLLAMA_NUM_CTX', '2048'))),
+            'num_predict': int(float(__import__('os').environ.get('OLLAMA_NUM_PREDICT', '1024'))),
+        }
     url = api_base.rstrip('/') + '/api/chat'
     headers = {'Content-Type': 'application/json'}
 else:

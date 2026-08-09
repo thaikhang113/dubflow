@@ -257,7 +257,7 @@ class Worker:
             pid=None,
             error_code=error_code or "PipelineFailed",
             message=sanitize(message),
-            progress=self._progress(status),
+            progress=max(current["progress"], self._progress(status)),
         )
 
     def _refresh(self, job_id: str, job_root: Path) -> None:
@@ -265,7 +265,8 @@ class Worker:
         status = read_job_status(output_dir or job_root)
         if not status:
             return
-        fields = {"progress": self._progress(status)}
+        current = self.store.get_job(job_id)
+        fields = {"progress": max(current["progress"], self._progress(status))}
         if output_dir:
             fields["job_dir"] = str(output_dir)
         message = status.get("label") or status.get("error_message") or status.get("reason")

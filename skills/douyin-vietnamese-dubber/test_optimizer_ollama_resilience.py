@@ -73,6 +73,8 @@ class OptimizerOllamaResilienceTests(unittest.TestCase):
             self.optimizer.chat("http://ollama", "unused", "model", [{"role": "user", "content": "hi"}], api_provider="ollama")
 
         self.assertEqual("json", captured["payload"]["format"])
+        self.assertEqual(2048, captured["payload"]["options"]["num_ctx"])
+        self.assertEqual(1024, captured["payload"]["options"]["num_predict"])
 
     def test_non_ollama_chat_does_not_request_ollama_json_format(self):
         captured = {}
@@ -223,7 +225,7 @@ class OptimizerOllamaResilienceTests(unittest.TestCase):
     def test_ollama_default_batch_is_conservative_but_override_is_preserved(self):
         with mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop("OPTIMIZER_TRANSLATE_BATCH_SIZE", None)
-            self.assertEqual(10, self.optimizer.translate_batch_size_for_provider("ollama"))
+            self.assertEqual(5, self.optimizer.translate_batch_size_for_provider("ollama"))
             self.assertEqual(20, self.optimizer.translate_batch_size_for_provider("ninerouter"))
         with mock.patch.dict(os.environ, {"OPTIMIZER_TRANSLATE_BATCH_SIZE": "17"}, clear=False):
             self.assertEqual(17, self.optimizer.translate_batch_size_for_provider("ollama"))

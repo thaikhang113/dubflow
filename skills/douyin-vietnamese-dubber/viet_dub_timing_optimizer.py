@@ -35,7 +35,7 @@ def env_int(name, default):
 
 def translate_batch_size_for_provider(api_provider):
     """Use a smaller default for Ollama while retaining the env override."""
-    default = 10 if api_provider == "ollama" else 20
+    default = 5 if api_provider == "ollama" else 20
     return max(1, env_int("OPTIMIZER_TRANSLATE_BATCH_SIZE", default))
 
 
@@ -68,7 +68,8 @@ CONFIG = {
     "tts_timeout_seconds": env_int("EDGE_TTS_TIMEOUT_SECONDS", 20),
     "translate_batch_size": env_int("OPTIMIZER_TRANSLATE_BATCH_SIZE", 20),
     "translate_min_batch_size": env_int("OPTIMIZER_TRANSLATE_MIN_BATCH_SIZE", 1),
-    "ollama_num_predict": env_int("OLLAMA_NUM_PREDICT", 4096),
+    "ollama_num_ctx": env_int("OLLAMA_NUM_CTX", 2048),
+    "ollama_num_predict": env_int("OLLAMA_NUM_PREDICT", 1024),
     # Timeout chat API: ngắn hơn để tránh kẹt lâu khi 9router chậm; fallback khi timeout.
     "chat_timeout_seconds": env_int("OPTIMIZER_CHAT_TIMEOUT_SECONDS", 90),
     "batch_timeout_seconds": env_int("OPTIMIZER_BATCH_TIMEOUT_SECONDS", 180),
@@ -214,6 +215,7 @@ def chat(api_base, api_key, model, messages, temperature=0.2, timeout=None, api_
             "think": False,
             "options": {
                 "temperature": temperature,
+                "num_ctx": CONFIG["ollama_num_ctx"],
                 "num_predict": CONFIG["ollama_num_predict"],
             },
         }

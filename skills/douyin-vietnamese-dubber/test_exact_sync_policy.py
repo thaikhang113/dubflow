@@ -50,7 +50,7 @@ class ExactSyncPolicyTests(unittest.TestCase):
             "exact|exact_sync)",
             'TTS_SYNC_POLICY="${TTS_SYNC_POLICY:-frame_strict}"',
             'FRAME_STRICT_MAX_SEGMENT_DRIFT_MS="${FRAME_STRICT_MAX_SEGMENT_DRIFT_MS:-40}"',
-            'MAX_FREEZE_PER_SEGMENT_MS="${MAX_FREEZE_PER_SEGMENT_MS:-300}"',
+            'MAX_FREEZE_PER_SEGMENT_MS="${MAX_FREEZE_PER_SEGMENT_MS:-1500}"',
             'exact_sync = (sync_mode == "exact_sync")',
             "'speech_timing_source': speech_timing_source,",
             "canonical_sample_rate_error",

@@ -183,6 +183,43 @@ subprocess.run([
         self.assertEqual(18, refreshed["progress"])
         self.assertEqual(str(output_dir), refreshed["job_dir"])
 
+    def test_failed_pipeline_does_not_reset_existing_progress(self):
+        script = self.write_script(
+            "fail-after-progress.py",
+            """
+import json
+import os
+import time
+from pathlib import Path
+
+root = Path(os.environ["DOUYIN_VIDEOS_DIR"])
+out = root / "fake-output"
+out.mkdir(parents=True)
+(root / "LATEST_OUTPUT_DIR.txt").write_text(str(out), encoding="utf-8")
+(out / "job_status.json").write_text(json.dumps({
+    "state": "running", "phase": "optimizer", "progress_percent": 60
+}), encoding="utf-8")
+time.sleep(0.5)
+(out / "job_status.json").write_text(json.dumps({
+    "state": "running", "phase": "error", "progress_percent": 0,
+    "error_code": "PipelineError", "error_message": "failed"
+}), encoding="utf-8")
+raise SystemExit(1)
+""",
+        )
+        job = self.enqueue()
+        worker = Worker(self.store, self.settings, self.secrets)
+        with patch(
+            "web_tool.worker.build_job_command",
+            return_value=[sys.executable, str(script)],
+        ):
+            worker.start()
+            worker.notify()
+            failed = wait_for(self.store, job["id"], {"needs_attention", "failed"})
+            worker.stop()
+
+        self.assertEqual(60, failed["progress"])
+
 
 if __name__ == "__main__":
     unittest.main()
