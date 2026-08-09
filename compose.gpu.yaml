@@ -7,3 +7,21 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+  qwen-asr:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  vieneu:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

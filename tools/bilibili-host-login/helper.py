@@ -5,7 +5,9 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlsplit
 
 
 SERVER_ADDRESS = ("127.0.0.1", 18794)
@@ -18,6 +20,29 @@ HARDWARE_STATE_PATH = Path.home() / ".auto-vietsub" / "hardware.json"
 OLLAMA_MODEL = "translategemma:4b"
 WHISPER_MODELS = {"small", "medium"}
 HARDWARE_MODES = {"auto", "cpu", "gpu"}
+INSTALL_COMPONENTS = {
+    "qwen-asr": (
+        "qwen-asr",
+        "QwenAsr",
+        "from huggingface_hub import snapshot_download;"
+        "snapshot_download('Qwen/Qwen3-ASR-0.6B');"
+        "snapshot_download('Qwen/Qwen3-ForcedAligner-0.6B')",
+    ),
+    "vieneu": (
+        "vieneu",
+        "VieNeu",
+        "from huggingface_hub import snapshot_download;"
+        "snapshot_download("
+        "repo_id='pnnbao-ump/VieNeu-TTS-v3-Turbo',"
+        "revision='75ff82a72f54d55ed389e1eeb12041d3c4bac7d4',"
+        "cache_dir='/models')",
+    ),
+}
+INSTALL_STATES = {
+    component: {"ok": True, "component": component, "state": "idle"}
+    for component in INSTALL_COMPONENTS
+}
+INSTALL_LOCK = threading.Lock()
 ALLOWED_ORIGINS = {
     "http://127.0.0.1:18793",
     "http://localhost:18793",
@@ -157,6 +182,106 @@ def install_whisper(model: str, run=subprocess.run, docker=None) -> dict:
     if result.returncode != 0:
         return {"ok": False, "error_code": "WhisperModelPullFailed"}
     return {"ok": True, "state": "whisper_ready", "model": model}
+
+def install_component(component: str, run=subprocess.run, docker=None) -> dict:
+    selected = INSTALL_COMPONENTS.get(str(component or ""))
+    if selected is None:
+        return {"ok": False, "error_code": "InstallComponentInvalid"}
+    service, error_prefix, install_script = selected
+    docker = docker or shutil.which("docker")
+    if not docker:
+        return {"ok": False, "error_code": "DockerNotFound"}
+    commands = (
+        [
+            docker,
+            "compose",
+            "--profile",
+            "local-ai",
+            "run",
+            "--rm",
+            "--build",
+            service,
+            "python",
+            "-c",
+            install_script,
+        ],
+        [
+            docker,
+            "compose",
+            "--profile",
+            "local-ai",
+            "up",
+            "-d",
+            "--wait",
+            service,
+        ],
+    )
+    for command in commands:
+        try:
+            result = run(
+                command,
+                cwd=REPO_ROOT,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=7200,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "error_code": f"{error_prefix}InstallTimeout"}
+        except OSError:
+            return {"ok": False, "error_code": "DockerUnavailable"}
+        if result.returncode != 0:
+            return {"ok": False, "error_code": f"{error_prefix}InstallFailed"}
+    return {"ok": True, "component": component, "state": "ready"}
+
+def install_status(component: str) -> dict:
+    if component not in INSTALL_COMPONENTS:
+        return {"ok": False, "error_code": "InstallComponentInvalid"}
+    with INSTALL_LOCK:
+        return dict(INSTALL_STATES[component])
+
+def start_install(
+    component: str,
+    run=subprocess.run,
+    docker=None,
+    thread_factory=threading.Thread,
+) -> dict:
+    if component not in INSTALL_COMPONENTS:
+        return {"ok": False, "error_code": "InstallComponentInvalid"}
+    installing = {"ok": True, "component": component, "state": "installing"}
+    with INSTALL_LOCK:
+        if INSTALL_STATES[component]["state"] == "installing":
+            return dict(INSTALL_STATES[component])
+        INSTALL_STATES[component] = installing
+
+    def worker():
+        result = install_component(component, run=run, docker=docker)
+        status = (
+            {"ok": True, "component": component, "state": "ready"}
+            if result["ok"]
+            else {
+                "ok": False,
+                "component": component,
+                "state": "failed",
+                "error_code": result["error_code"],
+            }
+        )
+        with INSTALL_LOCK:
+            INSTALL_STATES[component] = status
+
+    try:
+        thread_factory(target=worker, daemon=True).start()
+    except RuntimeError:
+        with INSTALL_LOCK:
+            INSTALL_STATES[component] = {
+                "ok": False,
+                "component": component,
+                "state": "failed",
+                "error_code": "InstallStartFailed",
+            }
+        return dict(INSTALL_STATES[component])
+    return dict(installing)
 
 def detect_hardware(run=subprocess.run, docker=None) -> dict:
     docker = docker or shutil.which("docker")
@@ -348,6 +473,22 @@ class Handler(BaseHTTPRequestHandler):
         except PermissionError:
             self._json(403, {"ok": False, "error_code": "OriginRejected"})
             return
+        parsed = urlsplit(self.path)
+        if parsed.path == "/install/status":
+            components = parse_qs(
+                parsed.query,
+                keep_blank_values=True,
+            ).get("component", [])
+            if len(components) != 1:
+                self._json(
+                    400,
+                    {"ok": False, "error_code": "InstallComponentInvalid"},
+                    origin,
+                )
+                return
+            result = install_status(components[0])
+            self._json(200 if result["ok"] else 400, result, origin)
+            return
         if self.path == "/hardware":
             self._json(
                 200,
@@ -374,6 +515,10 @@ class Handler(BaseHTTPRequestHandler):
             result = open_login()
         elif self.path == "/ollama/install":
             result = install_ollama()
+        elif self.path == "/qwen-asr/install":
+            result = start_install("qwen-asr")
+        elif self.path == "/vieneu/install":
+            result = start_install("vieneu")
         elif self.path == "/whisper/install":
             try:
                 length = int(self.headers.get("Content-Length", "0"))

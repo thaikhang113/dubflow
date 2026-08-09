@@ -40,6 +40,52 @@ services:
     volumes:
       - ollama-models:/root/.ollama
 
+  qwen-asr:
+    build:
+      context: ./services/qwen_asr
+    image: auto-vietsub-qwen-asr:local
+    profiles: ["local-ai"]
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18795:8000"
+    environment:
+      QWEN_ASR_BIND_HOST: 0.0.0.0
+      QWEN_ASR_BIND_PORT: "8000"
+      QWEN_ASR_MODELS_DIR: /models
+      QWEN_ASR_JOBS_DIR: /data/jobs
+    volumes:
+      - qwen-asr-models:/models
+      - tool-jobs:/data/jobs:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 120
+      start_period: 30s
+
+  vieneu:
+    build:
+      context: ./services/vieneu_tts
+    image: auto-vietsub-vieneu:local
+    profiles: ["local-ai"]
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18796:8000"
+    environment:
+      VIENEU_BIND_HOST: 0.0.0.0
+      VIENEU_BIND_PORT: "8000"
+      VIENEU_MODELS_DIR: /models
+    volumes:
+      - vieneu-models:/models
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 120
+      start_period: 30s
+
   trend-db:
     image: postgres:17-bookworm
     profiles: ["trend"]
@@ -65,4 +111,6 @@ volumes:
   tool-models:
   tool-browser:
   ollama-models:
+  qwen-asr-models:
+  vieneu-models:
   trend-db-data:

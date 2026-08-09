@@ -1,8 +1,10 @@
 import importlib.util
+import http.client
 from pathlib import Path
 import tempfile
+import threading
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 
 class HostLoginHelperTests(unittest.TestCase):
@@ -117,6 +119,241 @@ class HostLoginHelperTests(unittest.TestCase):
             "WhisperModelInvalid",
             helper.install_whisper("../../secret", run=run, docker="docker")["error_code"],
         )
+
+    def test_local_ai_install_uses_only_fixed_compose_commands(self):
+        helper = self.load_helper()
+        run = Mock(return_value=Mock(returncode=0))
+
+        install_scripts = {
+            "qwen-asr": (
+                "from huggingface_hub import snapshot_download;"
+                "snapshot_download('Qwen/Qwen3-ASR-0.6B');"
+                "snapshot_download('Qwen/Qwen3-ForcedAligner-0.6B')"
+            ),
+            "vieneu": (
+                "from huggingface_hub import snapshot_download;"
+                "snapshot_download("
+                "repo_id='pnnbao-ump/VieNeu-TTS-v3-Turbo',"
+                "revision='75ff82a72f54d55ed389e1eeb12041d3c4bac7d4',"
+                "cache_dir='/models')"
+            ),
+        }
+        for component, install_script in install_scripts.items():
+            with self.subTest(component=component):
+                run.reset_mock()
+                result = helper.install_component(
+                    component,
+                    run=run,
+                    docker="docker",
+                )
+                self.assertEqual("ready", result["state"])
+                self.assertEqual(
+                    [
+                        "docker",
+                        "compose",
+                        "--profile",
+                        "local-ai",
+                        "run",
+                        "--rm",
+                        "--build",
+                        component,
+                        "python",
+                        "-c",
+                        install_script,
+                    ],
+                    run.call_args_list[0].args[0],
+                )
+                self.assertEqual(
+                    [
+                        "docker",
+                        "compose",
+                        "--profile",
+                        "local-ai",
+                        "up",
+                        "-d",
+                        "--wait",
+                        component,
+                    ],
+                    run.call_args_list[1].args[0],
+                )
+
+        run.reset_mock()
+        result = helper.install_component(
+            "../../secret",
+            run=run,
+            docker="docker",
+        )
+        self.assertEqual("InstallComponentInvalid", result["error_code"])
+        run.assert_not_called()
+
+    def test_background_install_tracks_one_active_job_per_component(self):
+        helper = self.load_helper()
+        threads = []
+
+        class DeferredThread:
+            def __init__(self, *, target, daemon):
+                self.target = target
+                self.daemon = daemon
+                threads.append(self)
+
+            def start(self):
+                return None
+
+        run = Mock(return_value=Mock(returncode=0))
+        first = helper.start_install(
+            "qwen-asr",
+            run=run,
+            docker="docker",
+            thread_factory=DeferredThread,
+        )
+        second = helper.start_install(
+            "qwen-asr",
+            run=run,
+            docker="docker",
+            thread_factory=DeferredThread,
+        )
+
+        self.assertEqual("installing", first["state"])
+        self.assertEqual("installing", second["state"])
+        self.assertEqual(1, len(threads))
+        self.assertTrue(threads[0].daemon)
+        self.assertEqual(
+            {"ok": True, "component": "qwen-asr", "state": "installing"},
+            helper.install_status("qwen-asr"),
+        )
+
+        threads[0].target()
+
+        self.assertEqual(
+            {"ok": True, "component": "qwen-asr", "state": "ready"},
+            helper.install_status("qwen-asr"),
+        )
+
+    def test_failed_background_install_exposes_no_process_output(self):
+        helper = self.load_helper()
+        run = Mock(
+            return_value=Mock(returncode=1, stdout="secret", stderr="secret")
+        )
+
+        class ImmediateThread:
+            def __init__(self, *, target, daemon):
+                self.target = target
+
+            def start(self):
+                self.target()
+
+        result = helper.start_install(
+            "vieneu",
+            run=run,
+            docker="docker",
+            thread_factory=ImmediateThread,
+        )
+
+        self.assertEqual("installing", result["state"])
+        status = helper.install_status("vieneu")
+        self.assertEqual("failed", status["state"])
+        self.assertEqual("VieNeuInstallFailed", status["error_code"])
+        self.assertNotIn("secret", repr(status))
+
+    def test_install_endpoints_accept_only_allowlisted_components(self):
+        helper = self.load_helper()
+        server = helper.ThreadingHTTPServer(("127.0.0.1", 0), helper.Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        host, port = server.server_address
+        headers = {"Origin": "http://127.0.0.1:18793"}
+        try:
+            with patch.object(
+                helper,
+                "start_install",
+                return_value={
+                    "ok": True,
+                    "component": "qwen-asr",
+                    "state": "installing",
+                },
+            ) as start:
+                connection = http.client.HTTPConnection(host, port)
+                connection.request("POST", "/qwen-asr/install", headers=headers)
+                response = connection.getresponse()
+                payload = response.read().decode("utf-8")
+                self.assertEqual(200, response.status)
+                self.assertIn('"state": "installing"', payload)
+                start.assert_called_once_with("qwen-asr")
+
+            with patch.object(
+                helper,
+                "install_status",
+                return_value={
+                    "ok": True,
+                    "component": "vieneu",
+                    "state": "ready",
+                },
+            ) as status:
+                connection = http.client.HTTPConnection(host, port)
+                connection.request(
+                    "GET",
+                    "/install/status?component=vieneu",
+                    headers=headers,
+                )
+                response = connection.getresponse()
+                payload = response.read().decode("utf-8")
+                self.assertEqual(200, response.status)
+                self.assertIn('"state": "ready"', payload)
+                status.assert_called_once_with("vieneu")
+
+            connection = http.client.HTTPConnection(host, port)
+            connection.request(
+                "GET",
+                "/install/status?component=../../secret",
+                headers=headers,
+            )
+            response = connection.getresponse()
+            self.assertEqual(400, response.status)
+            self.assertIn(
+                "InstallComponentInvalid",
+                response.read().decode("utf-8"),
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    def test_compose_defines_local_ai_services_and_gpu_overrides(self):
+        compose = (self.root / "compose.yaml").read_text(encoding="utf-8")
+        gpu_compose = (self.root / "compose.gpu.yaml").read_text(encoding="utf-8")
+
+        for service, next_service, context, host_port, volume in (
+            (
+                "qwen-asr",
+                "vieneu",
+                "services/qwen_asr",
+                "18795",
+                "qwen-asr-models",
+            ),
+            (
+                "vieneu",
+                "trend-db",
+                "services/vieneu_tts",
+                "18796",
+                "vieneu-models",
+            ),
+        ):
+            with self.subTest(service=service):
+                service_block = compose.split(
+                    f"\n  {service}:\n",
+                    1,
+                )[1].split(f"\n  {next_service}:\n", 1)[0]
+                self.assertIn('profiles: ["local-ai"]', service_block)
+                self.assertIn(context, service_block)
+                self.assertIn(f"127.0.0.1:{host_port}:", service_block)
+                self.assertIn(f"{volume}:/models", service_block)
+                self.assertIn("healthcheck:", service_block)
+                self.assertIn(f"\n  {volume}:", compose)
+                self.assertIn(f"\n  {service}:", gpu_compose)
+
+        qwen = compose.split("\n  qwen-asr:\n", 1)[1].split("\n  vieneu:\n", 1)[0]
+        self.assertIn("tool-jobs:/data/jobs:ro", qwen)
+
     def test_hardware_detection_selects_profiles_from_verified_vram(self):
         helper = self.load_helper()
         for memory_mb, expected in ((4096, "hybrid"), (8192, "gpu")):
