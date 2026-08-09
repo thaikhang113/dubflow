@@ -1,5 +1,7 @@
 import importlib.util
 import http.client
+import io
+import json
 from pathlib import Path
 import tempfile
 import threading
@@ -122,13 +124,17 @@ class HostLoginHelperTests(unittest.TestCase):
 
     def test_local_ai_install_uses_only_fixed_compose_commands(self):
         helper = self.load_helper()
-        run = Mock(return_value=Mock(returncode=0))
-
         install_scripts = {
             "qwen-asr": (
                 "from huggingface_hub import snapshot_download;"
-                "snapshot_download('Qwen/Qwen3-ASR-0.6B');"
-                "snapshot_download('Qwen/Qwen3-ForcedAligner-0.6B')"
+                "snapshot_download("
+                "repo_id='Qwen/Qwen3-ASR-0.6B',"
+                "revision='5eb144179a02acc5e5ba31e748d22b0cf3e303b0',"
+                "cache_dir='/models');"
+                "snapshot_download("
+                "repo_id='Qwen/Qwen3-ForcedAligner-0.6B',"
+                "revision='c7cbfc2048c462b0d63a45797104fc9db3ad62b7',"
+                "cache_dir='/models')"
             ),
             "vieneu": (
                 "from huggingface_hub import snapshot_download;"
@@ -138,44 +144,67 @@ class HostLoginHelperTests(unittest.TestCase):
                 "cache_dir='/models')"
             ),
         }
-        for component, install_script in install_scripts.items():
-            with self.subTest(component=component):
-                run.reset_mock()
-                result = helper.install_component(
-                    component,
-                    run=run,
-                    docker="docker",
-                )
-                self.assertEqual("ready", result["state"])
-                self.assertEqual(
-                    [
-                        "docker",
-                        "compose",
-                        "--profile",
-                        "local-ai",
-                        "run",
-                        "--rm",
-                        "--build",
-                        component,
-                        "python",
-                        "-c",
-                        install_script,
-                    ],
-                    run.call_args_list[0].args[0],
-                )
-                self.assertEqual(
-                    [
-                        "docker",
-                        "compose",
-                        "--profile",
-                        "local-ai",
-                        "up",
-                        "-d",
-                        "--wait",
-                        component,
-                    ],
-                    run.call_args_list[1].args[0],
-                )
+        health_payloads = {
+            "qwen-asr": {"model_ready": True, "aligner_ready": True},
+            "vieneu": {"ready": True},
+        }
+        health_urls = {
+            "qwen-asr": "http://127.0.0.1:18795/health",
+            "vieneu": "http://127.0.0.1:18796/health",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            helper.REPO_ROOT = Path(tmp)
+            for context in ("qwen_asr", "vieneu_tts"):
+                (helper.REPO_ROOT / "services" / context).mkdir(parents=True)
+            for component, install_script in install_scripts.items():
+                with self.subTest(component=component):
+                    run = Mock(return_value=Mock(returncode=0))
+                    urlopen = Mock(
+                        return_value=io.BytesIO(
+                            json.dumps(health_payloads[component]).encode()
+                        )
+                    )
+                    with patch.object(helper, "read_hardware_state", return_value={}):
+                        result = helper.install_component(
+                            component,
+                            run=run,
+                            docker="docker",
+                            urlopen=urlopen,
+                        )
+                    self.assertEqual("ready", result["state"])
+                    self.assertEqual(
+                        [
+                            "docker",
+                            "compose",
+                            "--profile",
+                            "local-ai",
+                            "run",
+                            "--rm",
+                            "--build",
+                            component,
+                            "python",
+                            "-c",
+                            install_script,
+                        ],
+                        run.call_args_list[0].args[0],
+                    )
+                    self.assertEqual(
+                        [
+                            "docker",
+                            "compose",
+                            "--profile",
+                            "local-ai",
+                            "up",
+                            "-d",
+                            "--wait",
+                            component,
+                        ],
+                        run.call_args_list[1].args[0],
+                    )
+                    urlopen.assert_called_once_with(
+                        health_urls[component],
+                        timeout=30,
+                    )
 
         run.reset_mock()
         result = helper.install_component(
@@ -184,6 +213,85 @@ class HostLoginHelperTests(unittest.TestCase):
             docker="docker",
         )
         self.assertEqual("InstallComponentInvalid", result["error_code"])
+        run.assert_not_called()
+
+    def test_local_ai_install_rejects_http_200_until_models_are_ready(self):
+        helper = self.load_helper()
+        with tempfile.TemporaryDirectory() as tmp:
+            helper.REPO_ROOT = Path(tmp)
+            (helper.REPO_ROOT / "services" / "qwen_asr").mkdir(parents=True)
+            run = Mock(return_value=Mock(returncode=0))
+            urlopen = Mock(
+                return_value=io.BytesIO(
+                    json.dumps(
+                        {"model_ready": True, "aligner_ready": False}
+                    ).encode()
+                )
+            )
+            with patch.object(helper, "read_hardware_state", return_value={}):
+                result = helper.install_component(
+                    "qwen-asr",
+                    run=run,
+                    docker="docker",
+                    urlopen=urlopen,
+                )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual("QwenAsrNotReady", result["error_code"])
+
+    def test_local_ai_install_uses_gpu_override_only_for_selected_gpu(self):
+        helper = self.load_helper()
+        with tempfile.TemporaryDirectory() as tmp:
+            helper.REPO_ROOT = Path(tmp)
+            (helper.REPO_ROOT / "services" / "vieneu_tts").mkdir(parents=True)
+            urlopen = Mock(
+                side_effect=lambda *_args, **_kwargs: io.BytesIO(
+                    json.dumps({"ready": True}).encode()
+                )
+            )
+            for hardware, compose_files in (
+                (
+                    {"docker_gpu": True, "selected_profile": "gpu"},
+                    ["-f", "compose.yaml", "-f", "compose.gpu.yaml"],
+                ),
+                ({"docker_gpu": True, "selected_profile": "hybrid"}, []),
+                ({"docker_gpu": False, "selected_profile": "gpu"}, []),
+            ):
+                with self.subTest(hardware=hardware):
+                    run = Mock(return_value=Mock(returncode=0))
+                    urlopen.reset_mock()
+                    with patch.object(
+                        helper,
+                        "read_hardware_state",
+                        return_value=hardware,
+                    ):
+                        result = helper.install_component(
+                            "vieneu",
+                            run=run,
+                            docker="docker",
+                            urlopen=urlopen,
+                        )
+                    self.assertTrue(result["ok"])
+                    self.assertEqual(
+                        ["docker", "compose", *compose_files],
+                        run.call_args_list[0].args[0][
+                            : 2 + len(compose_files)
+                        ],
+                    )
+
+    def test_local_ai_install_fails_clearly_when_build_context_is_missing(self):
+        helper = self.load_helper()
+        with tempfile.TemporaryDirectory() as tmp:
+            helper.REPO_ROOT = Path(tmp)
+            run = Mock()
+            result = helper.install_component(
+                "qwen-asr",
+                run=run,
+                docker="docker",
+            )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual("QwenAsrBuildContextMissing", result["error_code"])
         run.assert_not_called()
 
     def test_background_install_tracks_one_active_job_per_component(self):
@@ -199,35 +307,37 @@ class HostLoginHelperTests(unittest.TestCase):
             def start(self):
                 return None
 
-        run = Mock(return_value=Mock(returncode=0))
-        first = helper.start_install(
-            "qwen-asr",
-            run=run,
-            docker="docker",
-            thread_factory=DeferredThread,
-        )
-        second = helper.start_install(
-            "qwen-asr",
-            run=run,
-            docker="docker",
-            thread_factory=DeferredThread,
-        )
+        with patch.object(
+            helper,
+            "install_component",
+            return_value={"ok": True, "component": "qwen-asr", "state": "ready"},
+        ):
+            first = helper.start_install(
+                "qwen-asr",
+                docker="docker",
+                thread_factory=DeferredThread,
+            )
+            second = helper.start_install(
+                "qwen-asr",
+                docker="docker",
+                thread_factory=DeferredThread,
+            )
 
-        self.assertEqual("installing", first["state"])
-        self.assertEqual("installing", second["state"])
-        self.assertEqual(1, len(threads))
-        self.assertTrue(threads[0].daemon)
-        self.assertEqual(
-            {"ok": True, "component": "qwen-asr", "state": "installing"},
-            helper.install_status("qwen-asr"),
-        )
+            self.assertEqual("installing", first["state"])
+            self.assertEqual("installing", second["state"])
+            self.assertEqual(1, len(threads))
+            self.assertTrue(threads[0].daemon)
+            self.assertEqual(
+                {"ok": True, "component": "qwen-asr", "state": "installing"},
+                helper.install_status("qwen-asr"),
+            )
 
-        threads[0].target()
+            threads[0].target()
 
-        self.assertEqual(
-            {"ok": True, "component": "qwen-asr", "state": "ready"},
-            helper.install_status("qwen-asr"),
-        )
+            self.assertEqual(
+                {"ok": True, "component": "qwen-asr", "state": "ready"},
+                helper.install_status("qwen-asr"),
+            )
 
     def test_failed_background_install_exposes_no_process_output(self):
         helper = self.load_helper()
@@ -242,18 +352,58 @@ class HostLoginHelperTests(unittest.TestCase):
             def start(self):
                 self.target()
 
-        result = helper.start_install(
-            "vieneu",
-            run=run,
-            docker="docker",
-            thread_factory=ImmediateThread,
-        )
+        with tempfile.TemporaryDirectory() as tmp:
+            helper.REPO_ROOT = Path(tmp)
+            (helper.REPO_ROOT / "services" / "vieneu_tts").mkdir(parents=True)
+            with patch.object(helper, "read_hardware_state", return_value={}):
+                result = helper.start_install(
+                    "vieneu",
+                    run=run,
+                    docker="docker",
+                    thread_factory=ImmediateThread,
+                )
 
         self.assertEqual("installing", result["state"])
         status = helper.install_status("vieneu")
         self.assertEqual("failed", status["state"])
         self.assertEqual("VieNeuInstallFailed", status["error_code"])
         self.assertNotIn("secret", repr(status))
+
+    def test_background_install_exception_marks_failed_and_allows_retry(self):
+        helper = self.load_helper()
+
+        class ImmediateThread:
+            def __init__(self, *, target, daemon):
+                self.target = target
+
+            def start(self):
+                self.target()
+
+        with patch.object(
+            helper,
+            "install_component",
+            side_effect=[
+                RuntimeError("secret"),
+                {"ok": True, "component": "qwen-asr", "state": "ready"},
+            ],
+        ):
+            helper.start_install(
+                "qwen-asr",
+                docker="docker",
+                thread_factory=ImmediateThread,
+            )
+            failed = helper.install_status("qwen-asr")
+            helper.start_install(
+                "qwen-asr",
+                docker="docker",
+                thread_factory=ImmediateThread,
+            )
+            retried = helper.install_status("qwen-asr")
+
+        self.assertEqual("failed", failed["state"])
+        self.assertEqual("QwenAsrInstallFailed", failed["error_code"])
+        self.assertNotIn("secret", repr(failed))
+        self.assertEqual("ready", retried["state"])
 
     def test_install_endpoints_accept_only_allowlisted_components(self):
         helper = self.load_helper()
@@ -353,6 +503,21 @@ class HostLoginHelperTests(unittest.TestCase):
 
         qwen = compose.split("\n  qwen-asr:\n", 1)[1].split("\n  vieneu:\n", 1)[0]
         self.assertIn("tool-jobs:/data/jobs:ro", qwen)
+
+    def test_local_ai_build_contexts_exist_after_service_branches_merge(self):
+        contexts = (
+            self.root / "services" / "qwen_asr",
+            self.root / "services" / "vieneu_tts",
+        )
+        missing = [str(path.relative_to(self.root)) for path in contexts if not path.is_dir()]
+        if missing:
+            self.skipTest(
+                "service branches not cherry-picked yet: " + ", ".join(missing)
+            )
+        for context in contexts:
+            with self.subTest(context=context):
+                self.assertTrue((context / "Dockerfile").is_file())
+                self.assertTrue((context / "app.py").is_file())
 
     def test_hardware_detection_selects_profiles_from_verified_vram(self):
         helper = self.load_helper()

@@ -8,6 +8,7 @@ import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
+import urllib.request
 
 
 SERVER_ADDRESS = ("127.0.0.1", 18794)
@@ -24,13 +25,25 @@ INSTALL_COMPONENTS = {
     "qwen-asr": (
         "qwen-asr",
         "QwenAsr",
+        "services/qwen_asr",
+        "http://127.0.0.1:18795/health",
+        ("model_ready", "aligner_ready"),
         "from huggingface_hub import snapshot_download;"
-        "snapshot_download('Qwen/Qwen3-ASR-0.6B');"
-        "snapshot_download('Qwen/Qwen3-ForcedAligner-0.6B')",
+        "snapshot_download("
+        "repo_id='Qwen/Qwen3-ASR-0.6B',"
+        "revision='5eb144179a02acc5e5ba31e748d22b0cf3e303b0',"
+        "cache_dir='/models');"
+        "snapshot_download("
+        "repo_id='Qwen/Qwen3-ForcedAligner-0.6B',"
+        "revision='c7cbfc2048c462b0d63a45797104fc9db3ad62b7',"
+        "cache_dir='/models')",
     ),
     "vieneu": (
         "vieneu",
         "VieNeu",
+        "services/vieneu_tts",
+        "http://127.0.0.1:18796/health",
+        ("ready",),
         "from huggingface_hub import snapshot_download;"
         "snapshot_download("
         "repo_id='pnnbao-ump/VieNeu-TTS-v3-Turbo',"
@@ -183,18 +196,31 @@ def install_whisper(model: str, run=subprocess.run, docker=None) -> dict:
         return {"ok": False, "error_code": "WhisperModelPullFailed"}
     return {"ok": True, "state": "whisper_ready", "model": model}
 
-def install_component(component: str, run=subprocess.run, docker=None) -> dict:
+def install_component(
+    component: str,
+    run=subprocess.run,
+    docker=None,
+    urlopen=urllib.request.urlopen,
+) -> dict:
     selected = INSTALL_COMPONENTS.get(str(component or ""))
     if selected is None:
         return {"ok": False, "error_code": "InstallComponentInvalid"}
-    service, error_prefix, install_script = selected
+    service, error_prefix, context, health_url, ready_fields, install_script = selected
+    if not (REPO_ROOT / context).is_dir():
+        return {"ok": False, "error_code": f"{error_prefix}BuildContextMissing"}
     docker = docker or shutil.which("docker")
     if not docker:
         return {"ok": False, "error_code": "DockerNotFound"}
+    hardware = read_hardware_state()
+    compose = [docker, "compose"]
+    if (
+        hardware.get("docker_gpu") is True
+        and hardware.get("selected_profile") == "gpu"
+    ):
+        compose += ["-f", "compose.yaml", "-f", "compose.gpu.yaml"]
     commands = (
         [
-            docker,
-            "compose",
+            *compose,
             "--profile",
             "local-ai",
             "run",
@@ -206,8 +232,7 @@ def install_component(component: str, run=subprocess.run, docker=None) -> dict:
             install_script,
         ],
         [
-            docker,
-            "compose",
+            *compose,
             "--profile",
             "local-ai",
             "up",
@@ -233,6 +258,18 @@ def install_component(component: str, run=subprocess.run, docker=None) -> dict:
             return {"ok": False, "error_code": "DockerUnavailable"}
         if result.returncode != 0:
             return {"ok": False, "error_code": f"{error_prefix}InstallFailed"}
+    try:
+        with urlopen(health_url, timeout=30) as response:
+            body = response.read(65537)
+        if len(body) > 65536:
+            raise ValueError
+        health = json.loads(body)
+    except (OSError, TypeError, ValueError):
+        return {"ok": False, "error_code": f"{error_prefix}NotReady"}
+    if not isinstance(health, dict) or any(
+        health.get(field) is not True for field in ready_fields
+    ):
+        return {"ok": False, "error_code": f"{error_prefix}NotReady"}
     return {"ok": True, "component": component, "state": "ready"}
 
 def install_status(component: str) -> dict:
@@ -256,7 +293,13 @@ def start_install(
         INSTALL_STATES[component] = installing
 
     def worker():
-        result = install_component(component, run=run, docker=docker)
+        try:
+            result = install_component(component, run=run, docker=docker)
+        except Exception:
+            result = {
+                "ok": False,
+                "error_code": f"{INSTALL_COMPONENTS[component][1]}InstallFailed",
+            }
         status = (
             {"ok": True, "component": component, "state": "ready"}
             if result["ok"]
