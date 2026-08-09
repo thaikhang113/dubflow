@@ -26,6 +26,7 @@ STATUS_FIELDS = {
     "resume_from_cue",
     "artifacts",
 }
+WHISPER_MODELS = {"small", "medium"}
 
 
 def _request(job: dict) -> dict:
@@ -125,19 +126,22 @@ def build_job_environment(
         raise ValueError("invalid job directory")
 
     whisper_dir = settings.models_dir / "whisper.cpp"
+    whisper_model = str(request.get("whisper_model") or "medium").strip().lower()
+    if whisper_model not in WHISPER_MODELS:
+        raise ValueError("invalid whisper model")
     environment = {
         "OPENCLAW_AI_PROVIDER": "ollama",
         "OPENCLAW_AI_API_BASE": "http://host.docker.internal:11434",
-        "OPENCLAW_AI_MODEL": "qwen3:1.7b",
+        "OPENCLAW_AI_MODEL": "translategemma:4b",
         "OLLAMA_API_BASE": "http://host.docker.internal:11434",
-        "OLLAMA_MODEL": "qwen3:1.7b",
+        "OLLAMA_MODEL": "translategemma:4b",
         "AI33_TTS_WORKERS": "3",
         "BASE_ROOT": str(job_root),
         "DOUYIN_VIDEOS_DIR": str(job_root),
         "BILIBILI_OUTPUT_ROOT": str(job_root),
         "WHISPER_DIR": str(whisper_dir),
         "WHISPER_BIN": str(whisper_dir / "build" / "bin" / "whisper-cli"),
-        "WHISPER_MODEL": str(whisper_dir / "models" / "ggml-small.bin"),
+        "WHISPER_MODEL": str(whisper_dir / "models" / f"ggml-{whisper_model}.bin"),
         "CHROME_CDP_URL": "http://127.0.0.1:9222",
         "BILIBILI_CDP_URL": "http://127.0.0.1:9222",
     }

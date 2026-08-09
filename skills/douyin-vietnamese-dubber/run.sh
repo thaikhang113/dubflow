@@ -13,7 +13,7 @@ WHISPER_MODEL="${WHISPER_MODEL:-$WHISPER_DIR/models/ggml-small.bin}"
 OPENCLAW_RUNTIME_PROFILE="${OPENCLAW_RUNTIME_PROFILE:-standard}"
 if [[ "${OPENCLAW_RUNTIME_PROFILE,,}" == "free_low_gpu" ]]; then
   OPENCLAW_AI_PROVIDER="${OPENCLAW_AI_PROVIDER:-ollama}"
-OLLAMA_MODEL="${OLLAMA_MODEL:-qwen3:1.7b}"
+OLLAMA_MODEL="${OLLAMA_MODEL:-translategemma:4b}"
   if [[ -z "${EDGE_TTS_VOICE:-}" && -z "${EDGE_TTS_VOICE_PRESET:-}" && -z "${DOUYIN_TTS_VOICE_PRESET:-}" && -z "${OPENCLAW_DEFAULT_TTS_VOICE:-}" ]]; then
     EDGE_TTS_VOICE="${EDGE_TTS_VOICE:-vi-VN-HoaiMyNeural}"
   fi

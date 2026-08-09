@@ -14,7 +14,7 @@ class RuntimeProfileTests(unittest.TestCase):
 
         expected = (
             'OPENCLAW_AI_PROVIDER="${OPENCLAW_AI_PROVIDER:-ollama}"',
-        'OLLAMA_MODEL="${OLLAMA_MODEL:-qwen3:1.7b}"',
+        'OLLAMA_MODEL="${OLLAMA_MODEL:-translategemma:4b}"',
             'EDGE_TTS_VOICE="${EDGE_TTS_VOICE:-vi-VN-HoaiMyNeural}"',
             'SUBTITLE_OCR_ENGINE="${SUBTITLE_OCR_ENGINE:-paddleocr}"',
             'SUBTITLE_BAND_DETECT_ENGINE="${SUBTITLE_BAND_DETECT_ENGINE:-cv}"',

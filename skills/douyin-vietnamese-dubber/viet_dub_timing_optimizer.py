@@ -97,6 +97,16 @@ REVIEW_FILM_STYLE_RULE = (
 )
 
 
+def translation_model_rules(model):
+    if "translategemma" not in (model or "").lower():
+        return ""
+    return (
+        "\n- Ngôn ngữ nguồn: zh-Hans. Ngôn ngữ đích: vi."
+        "\n- Chỉ trả JSON đúng schema đã yêu cầu; không thêm giải thích."
+        "\n- Dịch đúng nghĩa, không thêm tình tiết, không để lại chữ Trung."
+    )
+
+
 def validate_vietnamese_translation(subtitle_per_cue, dub_text):
     """Reject malformed Vietnamese before it can reach TTS."""
     texts = [normalize_spoken_text(dub_text)]
@@ -506,6 +516,7 @@ Yêu cầu:
 Câu Trung (segments):
 {json.dumps(segments, ensure_ascii=False)}"""
     prompt += "\n- " + REVIEW_FILM_STYLE_RULE
+    prompt += translation_model_rules(model)
     last_error = None
     for attempt in range(CONFIG["translation_quality_retries"] + 1):
         strict = "\nBẮT BUỘC: CHỈ tiếng Việt; không được chứa bất kỳ ký tự Trung/CJK nào trong subtitle_segments hoặc dub_text." if attempt else ""
@@ -567,6 +578,7 @@ Trả về JSON duy nhất dạng:
 Input:
 """ + json.dumps({"items": prompt_items}, ensure_ascii=False)
     prompt += "\n- " + REVIEW_FILM_STYLE_RULE
+    prompt += translation_model_rules(model)
     content = chat(
         api_base,
         api_key,

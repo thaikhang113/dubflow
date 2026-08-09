@@ -129,6 +129,26 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual("qwen3:8b", environment["OPENCLAW_AI_MODEL"])
         self.assertEqual("qwen3:8b", environment["OLLAMA_MODEL"])
 
+    def test_job_selects_allowlisted_local_whisper_model(self):
+        environment = build_job_environment(
+            {
+                "id": "job-whisper-medium",
+                "request": {"whisper_model": "medium"},
+            },
+            {},
+            self.settings,
+        )
+        self.assertTrue(environment["WHISPER_MODEL"].endswith("ggml-medium.bin"))
+        with self.assertRaises(ValueError):
+            build_job_environment(
+                {
+                    "id": "job-whisper-invalid",
+                    "request": {"whisper_model": "../../secret"},
+                },
+                {},
+                self.settings,
+            )
+
     def test_reads_only_sanitized_structured_status(self):
         job_dir = Path(self.tmp.name) / "job"
         job_dir.mkdir()

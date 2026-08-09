@@ -14,7 +14,8 @@ ROOT = Path(__file__).resolve().parent
 REPO_ROOT = ROOT.parents[1]
 EXTENSION_DIR = ROOT / "extension"
 PROFILE_DIR = Path.home() / ".auto-vietsub" / "bilibili-browser"
-OLLAMA_MODEL = "qwen3:1.7b"
+OLLAMA_MODEL = "translategemma:4b"
+WHISPER_MODELS = {"small", "medium"}
 ALLOWED_ORIGINS = {
     "http://127.0.0.1:18793",
     "http://localhost:18793",
@@ -120,6 +121,41 @@ def install_ollama(run=subprocess.run, docker=None) -> dict:
             return {"ok": False, "error_code": error_code}
     return {"ok": True, "state": "ollama_ready", "model": OLLAMA_MODEL}
 
+def install_whisper(model: str, run=subprocess.run, docker=None) -> dict:
+    model = str(model or "").strip().lower()
+    if model not in WHISPER_MODELS:
+        return {"ok": False, "error_code": "WhisperModelInvalid"}
+    docker = docker or shutil.which("docker")
+    if not docker:
+        return {"ok": False, "error_code": "DockerNotFound"}
+    try:
+        result = run(
+            [
+                docker,
+                "compose",
+                "exec",
+                "-T",
+                "tool",
+                "bash",
+                "/opt/whisper.cpp/models/download-ggml-model.sh",
+                model,
+                "/data/models/whisper.cpp/models",
+            ],
+            cwd=REPO_ROOT,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=1800,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error_code": "WhisperInstallTimeout"}
+    except OSError:
+        return {"ok": False, "error_code": "DockerUnavailable"}
+    if result.returncode != 0:
+        return {"ok": False, "error_code": "WhisperModelPullFailed"}
+    return {"ok": True, "state": "whisper_ready", "model": model}
+
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "AutoVietsubHostLogin/1"
@@ -185,6 +221,18 @@ class Handler(BaseHTTPRequestHandler):
             result = open_login()
         elif self.path == "/ollama/install":
             result = install_ollama()
+        elif self.path == "/whisper/install":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length < 1 or length > 1024:
+                    raise ValueError
+                payload = json.loads(self.rfile.read(length))
+                if not isinstance(payload, dict):
+                    raise ValueError
+            except (ValueError, UnicodeError, json.JSONDecodeError):
+                self._json(400, {"ok": False, "error_code": "InvalidJson"}, origin)
+                return
+            result = install_whisper(payload.get("model"))
         else:
             self._json(404, {"ok": False, "error_code": "NotFound"}, origin)
             return

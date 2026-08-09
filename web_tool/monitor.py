@@ -111,6 +111,9 @@ class MonitorScheduler:
         if not channel["enabled"]:
             return channel
         try:
+            whisper_model = self.store.get_settings(
+                {"whisper_model": "medium"}
+            )["whisper_model"]
             videos = self.discovery(channel, count=10) or []
             enqueued = 0
             for video in videos:
@@ -128,6 +131,7 @@ class MonitorScheduler:
                     "preset": channel["preset"],
                     "channel_id": channel["id"],
                     "source_title": str(video.get("title") or "").strip(),
+                    "whisper_model": whisper_model,
                 }
                 provider = (
                     self.store.get_provider(channel["provider_id"])

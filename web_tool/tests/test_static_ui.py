@@ -72,11 +72,24 @@ class StaticUiTests(unittest.TestCase):
             "function installLocalOllama",
             "http://127.0.0.1:18794/ollama/install",
             "http://ollama:11434",
-            "qwen3:1.7b",
+            "translategemma:4b",
             "Đang cài Ollama và tải model...",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, self.javascript)
+
+    def test_settings_can_select_and_download_local_whisper(self):
+        for marker in (
+            'id="settings-whisper-model"',
+            'id="settings-whisper-install"',
+        ):
+            self.assertIn(marker, self.html)
+        for marker in (
+            "function installLocalWhisper",
+            "http://127.0.0.1:18794/whisper/install",
+            "whisper_model",
+        ):
+            self.assertIn(marker, self.javascript)
 
 
 if __name__ == "__main__":

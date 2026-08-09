@@ -101,6 +101,7 @@ class JobRequest(BaseModel):
     voice: str = ""
     series_id: str = ""
     preset: str = ""
+    whisper_model: str = Field(default="", pattern=r"^(|small|medium)$")
 
 
 class CookieImportRequest(BaseModel):
@@ -123,7 +124,7 @@ class IntegrationRequest(BaseModel):
 
 class RuntimeSettingsRequest(BaseModel):
     default_provider_id: str = ""
-    default_model: str = Field(default="qwen3:1.7b", max_length=200)
+    default_model: str = Field(default="translategemma:4b", max_length=200)
     default_voice: str = Field(
         default="ai33:vbee_hn_female_ngochuyen_full_48k-fhg",
         max_length=200,
@@ -132,6 +133,7 @@ class RuntimeSettingsRequest(BaseModel):
     telegram_chat_id: str = Field(default="", max_length=100)
     telegram_thread_id: str = Field(default="", max_length=100)
     telegram_bot_token: str = Field(default="", max_length=500)
+    whisper_model: str = Field(default="medium", pattern=r"^(small|medium)$")
 
 
 def _public_value(value):
@@ -353,8 +355,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         values = store.get_settings(
             {
                 "default_provider_id": "",
-            "default_model": "qwen3:1.7b",
+                "default_model": "translategemma:4b",
                 "default_voice": "ai33:vbee_hn_female_ngochuyen_full_48k-fhg",
+                "whisper_model": "medium",
                 "queue_poll_seconds": "2",
                 "telegram_chat_id": "",
                 "telegram_thread_id": "",
@@ -494,14 +497,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         defaults = store.get_settings(
             {
                 "default_provider_id": "",
-                "default_model": "qwen3:1.7b",
+                "default_model": "translategemma:4b",
                 "default_voice": "ai33:vbee_hn_female_ngochuyen_full_48k-fhg",
+                "whisper_model": "medium",
             }
         )
         if not values["model"].strip():
             values["model"] = defaults["default_model"]
         if not values["voice"].strip():
             values["voice"] = defaults["default_voice"]
+        if not values["whisper_model"].strip():
+            values["whisper_model"] = defaults["whisper_model"]
         if not any(
             values[key].strip()
             for key in ("translation_provider_id", "tts_provider_id", "provider_id")

@@ -134,6 +134,21 @@ def test_review_film_style_is_explicit_in_translation_prompt():
     return True
 
 
+def test_translategemma_prompt_locks_language_and_json_contract():
+    optimizer = load_optimizer()
+    rules = optimizer.translation_model_rules("translategemma:4b")
+    required = ("zh-Hans", "vi", "JSON", "không thêm")
+    missing = [value for value in required if value not in rules]
+    if missing:
+        print(f"FAIL: TranslateGemma prompt rules missing: {missing}")
+        return False
+    if optimizer.translation_model_rules("qwen3:4b"):
+        print("FAIL: generic models received TranslateGemma-only prompt rules")
+        return False
+    print("OK: TranslateGemma receives explicit zh-Hans to vi JSON rules")
+    return True
+
+
 def test_batch_and_adaptive_paths_reject_cjk():
     """Batch validation must fail before adaptive routing can hand CJK to TTS."""
     optimizer = load_optimizer()
@@ -193,6 +208,7 @@ def main():
     ok = test_non_cjk_name_identical_to_source_passes_srt_gate() and ok
     ok = test_repeated_tts_syllable_is_rejected() and ok
     ok = test_review_film_style_is_explicit_in_translation_prompt() and ok
+    ok = test_translategemma_prompt_locks_language_and_json_contract() and ok
     ok = test_batch_and_adaptive_paths_reject_cjk() and ok
     ok = test_pre_tts_gate_audits_actual_tts_source_before_voice_generation() and ok
     sys.exit(0 if ok else 1)

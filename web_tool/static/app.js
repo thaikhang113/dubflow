@@ -277,7 +277,7 @@ async function installLocalOllama() {
           name: "Ollama local",
           kind: "ollama",
           endpoint: "http://ollama:11434",
-          model: "qwen3:1.7b",
+          model: "translategemma:4b",
           timeout_seconds: 180,
           api_key: "",
         }),
@@ -289,7 +289,7 @@ async function installLocalOllama() {
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
         default_provider_id: provider.id,
-        default_model: "qwen3:1.7b",
+        default_model: "translategemma:4b",
         default_voice: settings.default_voice || "",
         queue_poll_seconds: settings.queue_poll_seconds || 2,
         telegram_chat_id: settings.telegram_chat_id || "",
@@ -300,7 +300,7 @@ async function installLocalOllama() {
     await loadProviders();
     await loadSettings();
     await loadDoctor();
-    notify("Ollama local và model qwen3:1.7b đã sẵn sàng.");
+    notify("Ollama local và model TranslateGemma 4B đã sẵn sàng.");
   } catch (error) {
     notify(
       `Không cài được Ollama: ${error.message}. Hãy mở Docker Desktop và chạy host helper.`,
@@ -675,7 +675,7 @@ function resetChannelForm() {
   document.querySelector("#channel-form").reset();
   document.querySelector("#channel-id").value = "";
   document.querySelector("#channel-interval").value = "60";
-    document.querySelector("#channel-model").value = "qwen3:1.7b";
+    document.querySelector("#channel-model").value = "translategemma:4b";
   document.querySelector("#channel-voice").value =
     "ai33:vbee_hn_female_ngochuyen_full_48k-fhg";
   document.querySelector("#channel-enabled").checked = true;
@@ -872,6 +872,7 @@ async function loadSettings() {
     document.querySelector("#settings-provider").value = settings.default_provider_id || "";
     document.querySelector("#settings-model").value = settings.default_model || "";
     document.querySelector("#settings-voice").value = settings.default_voice || "";
+    document.querySelector("#settings-whisper-model").value = settings.whisper_model || "medium";
     document.querySelector("#settings-queue-poll").value = settings.queue_poll_seconds;
     document.querySelector("#settings-telegram-chat").value = settings.telegram_chat_id || "";
     document.querySelector("#settings-telegram-thread").value = settings.telegram_thread_id || "";
@@ -890,6 +891,32 @@ async function loadSettings() {
     }
   } catch (error) {
     notify(`Không tải được settings: ${error.message}`, true);
+  }
+}
+
+async function installLocalWhisper() {
+  const installButton = document.querySelector("#settings-whisper-install");
+  const model = document.querySelector("#settings-whisper-model").value;
+  const originalLabel = installButton.textContent;
+  installButton.disabled = true;
+  installButton.textContent = "Đang tải model Whisper...";
+  try {
+    const response = await fetch("http://127.0.0.1:18794/whisper/install", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({model}),
+    });
+    const result = await response.json();
+    if (!response.ok || !result.ok) {
+      throw new Error(result.error_code || `HTTP ${response.status}`);
+    }
+    await loadDoctor();
+    notify(`Whisper ${model} đã sẵn sàng.`);
+  } catch (error) {
+    notify(`Không tải được Whisper: ${error.message}. Hãy mở Docker Desktop và chạy host helper.`, true);
+  } finally {
+    installButton.disabled = false;
+    installButton.textContent = originalLabel;
   }
 }
 
@@ -1019,6 +1046,7 @@ async function saveSettings(event) {
         default_provider_id: document.querySelector("#settings-provider").value,
         default_model: document.querySelector("#settings-model").value.trim(),
         default_voice: document.querySelector("#settings-voice").value.trim(),
+        whisper_model: document.querySelector("#settings-whisper-model").value,
         queue_poll_seconds: Number(document.querySelector("#settings-queue-poll").value),
         telegram_chat_id: document.querySelector("#settings-telegram-chat").value.trim(),
         telegram_thread_id: document.querySelector("#settings-telegram-thread").value.trim(),
@@ -1097,6 +1125,7 @@ document.querySelector("#trend-mode").addEventListener("change", (event) => {
   document.querySelector("#trend-days").max = event.target.value === "archive" ? "180" : "30";
 });
 document.querySelector("#settings-form").addEventListener("submit", saveSettings);
+document.querySelector("#settings-whisper-install").addEventListener("click", installLocalWhisper);
 document.querySelector("#settings-doctor").addEventListener("click", loadDoctor);
 document.querySelector("#settings-telegram-test").addEventListener("click", () => showRuntime("/api/telegram/test"));
 document.querySelector("#settings-hyperframes").addEventListener("click", () => showRuntime("/api/hyperframes/status"));

@@ -157,7 +157,7 @@
               </label>
               <label class="field">
                 <span>Model</span>
-            <input id="provider-model" name="model" type="text" placeholder="qwen3:1.7b" autocomplete="off">
+            <input id="provider-model" name="model" type="text" placeholder="translategemma:4b" autocomplete="off">
               </label>
               <label class="field">
                 <span>Timeout (giây)</span>
@@ -274,7 +274,7 @@
               </label>
               <label class="field">
                 <span>Model dịch</span>
-            <input id="channel-model" type="text" value="qwen3:1.7b" maxlength="200" autocomplete="off">
+            <input id="channel-model" type="text" value="translategemma:4b" maxlength="200" autocomplete="off">
               </label>
               <label class="field">
                 <span>Giọng</span>
@@ -482,6 +482,16 @@
                 <span>Giọng mặc định</span>
                 <input id="settings-voice" type="text" maxlength="200">
               </label>
+              <label class="field">
+                <span>Whisper local</span>
+                <select id="settings-whisper-model">
+                  <option value="medium">Chất lượng tốt (medium)</option>
+                  <option value="small">Nhanh hơn (small)</option>
+                </select>
+              </label>
+              <div class="command-field">
+                <button class="secondary" id="settings-whisper-install" type="button">Tải model Whisper</button>
+              </div>
               <label class="field">
                 <span>Queue poll (giây)</span>
                 <input id="settings-queue-poll" type="number" min="1" max="60">

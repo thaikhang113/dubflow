@@ -79,7 +79,7 @@ class HostLoginHelperTests(unittest.TestCase):
                     "ollama",
                     "ollama",
                     "pull",
-            "qwen3:1.7b",
+                    "translategemma:4b",
                 ],
             ],
             [call.args[0] for call in run.call_args_list],
@@ -92,6 +92,30 @@ class HostLoginHelperTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual("OllamaServiceStartFailed", result["error_code"])
         self.assertNotIn("secret", repr(result))
+
+    def test_whisper_install_accepts_only_fixed_models(self):
+        helper = self.load_helper()
+        run = Mock(return_value=Mock(returncode=0))
+        result = helper.install_whisper("medium", run=run, docker="docker")
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            [
+                "docker",
+                "compose",
+                "exec",
+                "-T",
+                "tool",
+                "bash",
+                "/opt/whisper.cpp/models/download-ggml-model.sh",
+                "medium",
+                "/data/models/whisper.cpp/models",
+            ],
+            run.call_args.args[0],
+        )
+        self.assertEqual(
+            "WhisperModelInvalid",
+            helper.install_whisper("../../secret", run=run, docker="docker")["error_code"],
+        )
 
 
 if __name__ == "__main__":
