@@ -163,8 +163,8 @@ class PipelineTests(unittest.TestCase):
             {},
             self.settings,
         )
-
         self.assertEqual("qwen3", environment["ASR_PROVIDER"])
+        self.assertEqual("http://qwen-asr:8000", environment["QWEN_ASR_ENDPOINT"])
         self.assertEqual("story", environment["VIENEU_STYLE"])
         self.assertEqual(
             "vieneu:hong-chau",
@@ -172,6 +172,24 @@ class PipelineTests(unittest.TestCase):
         )
         self.assertEqual("vieneu:hong-chau", environment["VOICE"])
         self.assertEqual("hybrid", environment["OPENCLAW_HARDWARE_PROFILE"])
+
+        legacy = build_job_environment(
+            {"id": "job-legacy-voice", "request": {"voice": "nu"}},
+            {},
+            self.settings,
+        )
+        self.assertEqual("nu", legacy["VOICE"])
+        self.assertNotIn("OPENCLAW_DEFAULT_TTS_VOICE", legacy)
+
+        with self.assertRaises(ValueError):
+            build_job_environment(
+                {
+                    "id": "job-invalid-asr",
+                    "request": {"asr_engine": "remote\nINJECTED=1"},
+                },
+                {},
+                self.settings,
+            )
 
     def test_managed_brand_logo_enables_required_bilibili_branding(self):
         logo = self.settings.data_dir / "branding-logo.png"

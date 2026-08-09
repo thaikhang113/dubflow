@@ -137,6 +137,9 @@ def build_job_environment(
         "OPENCLAW_AI_MODEL": "translategemma:4b",
         "OLLAMA_API_BASE": "http://host.docker.internal:11434",
         "OLLAMA_MODEL": "translategemma:4b",
+        "ASR_PROVIDER": "auto",
+        "QWEN_ASR_ENDPOINT": "http://qwen-asr:8000",
+        "VIENEU_ENDPOINT": "http://vieneu:8000",
         "AI33_TTS_WORKERS": "3",
         "BASE_ROOT": str(job_root),
         "DOUYIN_VIDEOS_DIR": str(job_root),
@@ -162,9 +165,7 @@ def build_job_environment(
             raise ValueError("invalid VieNeu style")
         environment["VIENEU_STYLE"] = vieneu_style
 
-    hardware_profile = str(
-        request.get("hardware_profile") or "cpu"
-    ).strip().lower()
+    hardware_profile = str(request.get("hardware_profile") or "cpu").strip().lower()
     if hardware_profile not in HARDWARE_PROFILES:
         raise ValueError("invalid hardware profile")
     environment["OPENCLAW_HARDWARE_PROFILE"] = hardware_profile

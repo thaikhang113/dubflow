@@ -1,9 +1,16 @@
+import json
 import re
+import subprocess
+import sys
+import tempfile
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 
-RUN_SH = Path(__file__).with_name("run.sh").read_text(encoding="utf-8")
+RUN_SH_PATH = Path(__file__).with_name("run.sh")
+RUN_SH = RUN_SH_PATH.read_text(encoding="utf-8")
 
 
 class RuntimeProfileTests(unittest.TestCase):
@@ -106,6 +113,82 @@ class RuntimeProfileTests(unittest.TestCase):
             RUN_SH,
         )
 
+
+    def test_asr_provider_auto_routes_and_fingerprints_provider_model_audio(self):
+        self.assertIn('ASR_PROVIDER="${ASR_PROVIDER:-auto}"', RUN_SH)
+        self.assertIn('QWEN_ASR_ENDPOINT="${QWEN_ASR_ENDPOINT:-http://qwen-asr:8000}"', RUN_SH)
+        self.assertIn('ASR_PROVIDER_REPORT_JSON="$OUT_DIR/asr_provider_report.json"', RUN_SH)
+        self.assertIn('"provider": provider, "model": model, "audio_sha256": audio_sha256', RUN_SH)
+        self.assertIn('if asr_hardware_is_weak; then', RUN_SH)
+        self.assertIn('run_qwen_asr "$WHISPER_AUDIO" "$ORIGINAL_SRT"', RUN_SH)
+        self.assertIn('run_whisper_asr "$WHISPER_AUDIO" "$ORIGINAL_SRT"', RUN_SH)
+
+    def test_qwen_http_client_posts_audio_and_writes_segments_as_srt(self):
+        client = RUN_SH.split("# QWEN_ASR_HTTP_CLIENT_BEGIN\n", 1)[1].split(
+            "# QWEN_ASR_HTTP_CLIENT_END", 1
+        )[0]
+        requests = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                length = int(self.headers["Content-Length"])
+                body = self.rfile.read(length)
+                requests.append((self.path, self.headers["Content-Type"], body))
+                payload = json.dumps(
+                    {
+                        "segments": [
+                            {"start": 0.0, "end": 1.25, "text": "Ni hao"},
+                            {"start": 1.25, "end": 2.5, "text": "Zai jian"},
+                        ]
+                    }
+                ).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def log_message(self, *_args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                audio = Path(directory) / "audio.wav"
+                output = Path(directory) / "original.srt"
+                audio.write_bytes(b"RIFFfake-wav")
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        "-c",
+                        client,
+                        str(audio),
+                        str(output),
+                        f"http://127.0.0.1:{server.server_port}",
+                        "qwen3-asr",
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(
+                    (
+                        "1\n00:00:00,000 --> 00:00:01,250\nNi hao\n\n"
+                        "2\n00:00:01,250 --> 00:00:02,500\nZai jian\n"
+                    ),
+                    output.read_text(encoding="utf-8"),
+                )
+        finally:
+            server.shutdown()
+            thread.join()
+            server.server_close()
+
+        self.assertEqual("/v1/transcribe", requests[0][0])
+        self.assertIn("multipart/form-data", requests[0][1])
+        self.assertIn(b"qwen3-asr", requests[0][2])
+        self.assertIn(b"RIFFfake-wav", requests[0][2])
 
 if __name__ == "__main__":
     unittest.main()

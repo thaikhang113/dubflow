@@ -10,6 +10,9 @@ BASE_DIR="${DOUYIN_VIDEOS_DIR:-$HOME/video douyin vietsub}"
 WHISPER_DIR="${WHISPER_DIR:-$HOME/whisper.cpp}"
 WHISPER_BIN="${WHISPER_BIN:-$WHISPER_DIR/build/bin/whisper-cli}"
 WHISPER_MODEL="${WHISPER_MODEL:-$WHISPER_DIR/models/ggml-small.bin}"
+ASR_PROVIDER="${ASR_PROVIDER:-auto}"
+QWEN_ASR_ENDPOINT="${QWEN_ASR_ENDPOINT:-http://qwen-asr:8000}"
+QWEN_ASR_MODEL="${QWEN_ASR_MODEL:-qwen3-asr}"
 OPENCLAW_RUNTIME_PROFILE="${OPENCLAW_RUNTIME_PROFILE:-standard}"
 if [[ "${OPENCLAW_RUNTIME_PROFILE,,}" == "free_low_gpu" ]]; then
   OPENCLAW_AI_PROVIDER="${OPENCLAW_AI_PROVIDER:-ollama}"
@@ -1343,6 +1346,131 @@ for block in blocks:
     body = ' '.join(lines[time_i + 1:]).strip()
     items.append({'index': int(idx) if str(idx).isdigit() else len(items) + 1, 'start': start, 'end': end, 'text': body})
 Path(json_path).write_text(json.dumps({'kind': kind, 'source_srt': str(srt_path), 'segments': items}, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+PY
+}
+
+asr_hardware_is_weak() {
+  [[ "${OPENCLAW_RUNTIME_PROFILE,,}" == "free_low_gpu" ]] || \
+    [[ "${OPENCLAW_HARDWARE_PROFILE,,}" == "cpu" ]]
+}
+
+asr_cache_matches() {
+  python3 - "$1" "$2" "$3" "$4" "$5" "$WHISPER_MODEL" "$QWEN_ASR_MODEL" <<'PY'
+import hashlib, json, sys
+from pathlib import Path
+
+report_path, srt_path, raw_path, audio_path, requested, whisper_model, qwen_model = sys.argv[1:]
+try:
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    provider = report["provider"]
+    model = qwen_model if provider == "qwen3" else whisper_model
+    audio_sha256 = hashlib.sha256(Path(audio_path).read_bytes()).hexdigest()
+    fingerprint = hashlib.sha256(json.dumps(
+        {"provider": provider, "model": model, "audio_sha256": audio_sha256},
+        sort_keys=True, separators=(",", ":"),
+    ).encode()).hexdigest()
+    valid = (
+        report.get("requested_provider") == requested
+        and report.get("model") == model
+        and report.get("audio_sha256") == audio_sha256
+        and report.get("cache_fingerprint") == fingerprint
+        and Path(srt_path).stat().st_size > 0
+        and Path(raw_path).stat().st_size > 0
+    )
+except Exception:
+    valid = False
+raise SystemExit(0 if valid else 1)
+PY
+}
+
+write_asr_provider_report() {
+  python3 - "$1" "$2" "$3" "$4" "$5" "$6" <<'PY'
+import hashlib, json, sys
+from pathlib import Path
+
+report_path, requested, provider, model, audio_path, fallback_reason = sys.argv[1:]
+audio_sha256 = hashlib.sha256(Path(audio_path).read_bytes()).hexdigest()
+identity = {"provider": provider, "model": model, "audio_sha256": audio_sha256}
+identity["cache_fingerprint"] = hashlib.sha256(json.dumps(
+    identity, sort_keys=True, separators=(",", ":"),
+).encode()).hexdigest()
+identity.update({
+    "requested_provider": requested,
+    "fallback_reason": fallback_reason or None,
+})
+Path(report_path).write_text(
+    json.dumps(identity, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+)
+PY
+}
+
+run_whisper_asr() {
+  local audio_path="$1"
+  local output_srt="$2"
+  local output_base="${output_srt%.srt}"
+  "$WHISPER_BIN" -m "$WHISPER_MODEL" -f "$audio_path" -l zh -osrt -of "$output_base"
+  [[ -s "$output_srt" ]]
+}
+
+run_qwen_asr() {
+  python3 - "$1" "$2" "$QWEN_ASR_ENDPOINT" "$QWEN_ASR_MODEL" <<'PY'
+# QWEN_ASR_HTTP_CLIENT_BEGIN
+import json
+import sys
+import urllib.request
+import uuid
+from pathlib import Path
+
+audio_path, output_path, endpoint, model = sys.argv[1:]
+boundary = "----openclaw-" + uuid.uuid4().hex
+audio = Path(audio_path).read_bytes()
+parts = [
+    (
+        f"--{boundary}\r\n"
+        'Content-Disposition: form-data; name="model"\r\n\r\n'
+        f"{model}\r\n"
+    ).encode(),
+    (
+        f"--{boundary}\r\n"
+        'Content-Disposition: form-data; name="file"; filename="audio.wav"\r\n'
+        "Content-Type: audio/wav\r\n\r\n"
+    ).encode() + audio + b"\r\n",
+    f"--{boundary}--\r\n".encode(),
+]
+url = endpoint.rstrip("/")
+if not url.endswith("/v1/transcribe"):
+    url += "/v1/transcribe"
+request = urllib.request.Request(
+    url,
+    data=b"".join(parts),
+    headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+    method="POST",
+)
+with urllib.request.urlopen(request, timeout=180) as response:
+    payload = json.load(response)
+segments = payload.get("segments")
+if not isinstance(segments, list) or not segments:
+    raise SystemExit("Qwen ASR response has no segments")
+
+def timestamp(value):
+    millis = max(0, int(round(float(value) * 1000)))
+    hours, millis = divmod(millis, 3600000)
+    minutes, millis = divmod(millis, 60000)
+    seconds, millis = divmod(millis, 1000)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
+
+blocks = []
+for index, segment in enumerate(segments, 1):
+    text = str(segment.get("text") or "").strip()
+    start = float(segment.get("start") or 0)
+    end = float(segment.get("end") or start)
+    if text and end > start:
+        blocks.append(f"{index}\n{timestamp(start)} --> {timestamp(end)}\n{text}")
+if not blocks:
+    raise SystemExit("Qwen ASR response has no usable segments")
+Path(output_path).write_text("\n\n".join(blocks) + "\n", encoding="utf-8")
+# QWEN_ASR_HTTP_CLIENT_END
 PY
 }
 
@@ -4189,6 +4317,11 @@ need_cmd ffmpeg
 need_cmd python3
 need_cmd curl
 voice_lower="${VOICE,,}"
+ASR_PROVIDER="${ASR_PROVIDER,,}"
+case "$ASR_PROVIDER" in
+  auto|whisper|qwen3) ;;
+  *) fail "ASR_PROVIDER không hợp lệ: $ASR_PROVIDER (chọn auto|whisper|qwen3)." ;;
+esac
 if [[ "$voice_lower" == ai33:* ]]; then
   [[ -n "$AI33_API_KEY" ]] || fail "Thiếu AI33_API_KEY cho voice $VOICE."
 elif [[ "$voice_lower" == resona:* ]]; then
@@ -4198,8 +4331,10 @@ elif [[ "$voice_lower" == kokoro:* ]]; then
 else
   need_cmd edge-tts
 fi
-[[ -x "$WHISPER_BIN" ]] || fail "Không tìm thấy whisper-cli tại $WHISPER_BIN. Chạy: bash run.sh --doctor"
-[[ -f "$WHISPER_MODEL" ]] || fail "Không tìm thấy model Whisper tại $WHISPER_MODEL. Chạy: bash run.sh --doctor"
+if [[ "$ASR_PROVIDER" != "qwen3" || "$TTS_VOICE_QA_ENABLED" == "1" ]]; then
+  [[ -x "$WHISPER_BIN" ]] || fail "Không tìm thấy whisper-cli tại $WHISPER_BIN. Chạy: bash run.sh --doctor"
+  [[ -f "$WHISPER_MODEL" ]] || fail "Không tìm thấy model Whisper tại $WHISPER_MODEL. Chạy: bash run.sh --doctor"
+fi
 API_KEY="$(get_api_key)" || fail "Thiếu API key cho provider $OPENCLAW_AI_PROVIDER."
 [[ "$OPENCLAW_AI_PROVIDER" == "ollama" ]] || [[ -n "$API_KEY" ]] || fail "Thiếu API key cho provider $OPENCLAW_AI_PROVIDER."
 check_api_base "$API_KEY" || fail "Không connect được $OPENCLAW_AI_PROVIDER tại $API_BASE."
@@ -4226,6 +4361,7 @@ SPEECH_REGIONS_JSON="$OUT_DIR/speech_regions.json"
 SPEECH_PREPROCESS_REPORT_JSON="$OUT_DIR/speech_preprocess_report.json"
 ASR_POSTPROCESS_REPORT_JSON="$OUT_DIR/asr_postprocess_report.json"
 ASR_HALLUCINATION_REPORT_JSON="$OUT_DIR/asr_hallucination_report.json"
+ASR_PROVIDER_REPORT_JSON="$OUT_DIR/asr_provider_report.json"
 ORIGINAL_BASE="$OUT_DIR/original"
 ORIGINAL_SRT="$OUT_DIR/original.srt"
 ORIGINAL_ASR_RAW_SRT="$OUT_DIR/original_asr.raw.srt"
@@ -4368,16 +4504,48 @@ case "$(printf '%s' "${BGM_MODE:-auto}" | tr '[:upper:]' '[:lower:]')" in
 esac
 status_update "preprocess" "30" "Tiền xử lý audio xong" "0"
 
-if [[ -s "$ORIGINAL_ASR_SRT" && -s "$ORIGINAL_ASR_RAW_SRT" ]]; then
+if [[ -s "$ORIGINAL_ASR_SRT" && -s "$ORIGINAL_ASR_RAW_SRT" ]] && \
+  asr_cache_matches "$ASR_PROVIDER_REPORT_JSON" "$ORIGINAL_ASR_SRT" "$ORIGINAL_ASR_RAW_SRT" "$WHISPER_AUDIO" "$ASR_PROVIDER"; then
   echo "Dùng cache ASR transcript: $ORIGINAL_ASR_SRT"
   cp "$ORIGINAL_ASR_SRT" "$ORIGINAL_SRT"
 else
-echo "Đang chạy Whisper tạo original.srt..."
-status_update "asr" "32" "Đang chạy Whisper/ASR" "0"
-"$WHISPER_BIN" -m "$WHISPER_MODEL" -f "$WHISPER_AUDIO" -l zh -osrt -of "$ORIGINAL_BASE"
-[[ -s "$ORIGINAL_SRT" ]] || fail "Whisper không tạo được original.srt"
+echo "Đang chạy ASR tạo original.srt..."
+status_update "asr" "32" "Đang chạy ASR" "0"
+asr_selected="$ASR_PROVIDER"
+asr_fallback_reason=""
+if [[ "$ASR_PROVIDER" == "auto" ]]; then
+  if asr_hardware_is_weak; then
+    asr_selected="whisper"
+    asr_fallback_reason="weak_hardware"
+  else
+    asr_selected="qwen3"
+  fi
+fi
+if [[ "$asr_selected" == "qwen3" ]]; then
+  set +e
+  run_qwen_asr "$WHISPER_AUDIO" "$ORIGINAL_SRT"
+  qwen_asr_status=$?
+  set -e
+  if [[ "$qwen_asr_status" -ne 0 ]]; then
+    if [[ "$ASR_PROVIDER" != "auto" ]]; then
+      write_asr_provider_report "$ASR_PROVIDER_REPORT_JSON" "$ASR_PROVIDER" "qwen3" "$QWEN_ASR_MODEL" "$WHISPER_AUDIO" "service_unavailable"
+      status_update "needs_attention" "32" "Qwen3 ASR không khả dụng" "0" "QwenAsrUnavailable" "Không gọi được $QWEN_ASR_ENDPOINT/v1/transcribe; kiểm tra service rồi chạy lại."
+      fail "Qwen3 ASR không khả dụng tại $QWEN_ASR_ENDPOINT (exit=$qwen_asr_status)."
+    fi
+    asr_selected="whisper"
+    asr_fallback_reason="service_unavailable"
+  fi
+fi
+if [[ "$asr_selected" == "whisper" ]]; then
+  [[ -x "$WHISPER_BIN" && -f "$WHISPER_MODEL" ]] || fail "Whisper fallback chưa sẵn sàng; kiểm tra WHISPER_BIN/WHISPER_MODEL."
+  run_whisper_asr "$WHISPER_AUDIO" "$ORIGINAL_SRT" || fail "Whisper không tạo được original.srt"
+fi
+[[ -s "$ORIGINAL_SRT" ]] || fail "ASR không tạo được original.srt"
+asr_model="$WHISPER_MODEL"
+[[ "$asr_selected" == "qwen3" ]] && asr_model="$QWEN_ASR_MODEL"
+write_asr_provider_report "$ASR_PROVIDER_REPORT_JSON" "$ASR_PROVIDER" "$asr_selected" "$asr_model" "$WHISPER_AUDIO" "$asr_fallback_reason"
 cp "$ORIGINAL_SRT" "$ORIGINAL_ASR_RAW_SRT"
-status_update "asr" "42" "Whisper tạo original.srt xong" "0"
+status_update "asr" "42" "${asr_selected} tạo original.srt xong" "0"
 
 if [[ "${SPEECH_ONLY_PREPROCESS_ENABLED:-1}" != "0" && -s "$SPEECH_REGIONS_JSON" && -x "$ASR_POSTPROCESS_SCRIPT" ]]; then
   echo "Đang lọc hậu xử lý ASR theo speech regions/repetition/noise..."
