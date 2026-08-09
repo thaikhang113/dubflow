@@ -45,8 +45,8 @@
 
 ### Task 3: Delivery
 
-- [x] Rebuild Docker tool.
-- [x] Restart host helper.
-- [x] Run the real Ollama install action.
-- [x] Confirm model `qwen2.5:3b`, provider creation and Doctor readiness.
-- [x] Commit and push `origin/tool`.
+- [ ] NOT RUN: Rebuild Docker tool.
+- [ ] NOT RUN: Restart host helper.
+- [ ] NOT RUN: Run the real Ollama install action.
+- [ ] NOT RUN: Confirm model `qwen2.5:3b`, provider creation and Doctor readiness.
+- [ ] NOT RUN: Commit and push `origin/tool`.

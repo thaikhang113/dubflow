@@ -1,7 +1,9 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from web_tool.config import Settings
 from web_tool.pipeline import (
@@ -200,6 +202,15 @@ class PipelineTests(unittest.TestCase):
                 {},
                 self.settings,
             )
+
+    def test_inherits_hardware_profile_when_job_omits_profile(self):
+        with patch.dict(os.environ, {"OPENCLAW_HARDWARE_PROFILE": "hybrid"}):
+            environment = build_job_environment(
+                {"id": "job-inherited-profile", "request": {}},
+                {},
+                self.settings,
+            )
+        self.assertEqual("hybrid", environment["OPENCLAW_HARDWARE_PROFILE"])
 
     def test_managed_brand_logo_enables_required_bilibili_branding(self):
         logo = self.settings.data_dir / "branding-logo.png"

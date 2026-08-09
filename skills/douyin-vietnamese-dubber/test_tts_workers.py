@@ -298,5 +298,14 @@ print(json.dumps(synthesize_vieneu_http(
         self.assertIn('"provider": "vieneu"', source)
         self.assertIn('"backend": "http"', source)
 
+    def test_structured_pipeline_failure_is_not_replaced_by_generic_error(self):
+        source = RUN_SH.read_text(encoding="utf-8")
+        fail_body = source.split("\nfail() {", 1)[1].split(
+            "\nappend_tts_audio_stage_report", 1
+        )[0]
+        self.assertIn('status.get("error_code")', fail_body)
+        self.assertIn('"requested_voice"', source)
+        self.assertIn('"actual_voice"', source)
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

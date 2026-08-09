@@ -2,6 +2,7 @@ import importlib.util
 import http.client
 import io
 import json
+import os
 from pathlib import Path
 import tempfile
 import threading
@@ -33,6 +34,13 @@ class HostLoginHelperTests(unittest.TestCase):
         self.assertTrue(helper.origin_allowed("http://127.0.0.1:18793"))
         self.assertTrue(helper.origin_allowed("http://localhost:18793"))
         self.assertFalse(helper.origin_allowed("https://evil.example"))
+
+    def test_cors_origin_uses_tool_port(self):
+        with patch.dict(os.environ, {"TOOL_PORT": "18795"}):
+            helper = self.load_helper()
+        self.assertTrue(helper.origin_allowed("http://127.0.0.1:18795"))
+        self.assertTrue(helper.origin_allowed("http://localhost:18795"))
+        self.assertFalse(helper.origin_allowed("http://127.0.0.1:18793"))
 
     def test_chrome_command_uses_fixed_profile_extension_and_login_url(self):
         helper = self.load_helper()
@@ -628,7 +636,7 @@ class HostLoginHelperTests(unittest.TestCase):
                     "-f", "compose.yaml",
                     "-f", "compose.gpu.yaml",
                     "--profile", "ollama",
-                    "up", "-d", "--force-recreate", "ollama",
+                    "up", "-d", "ollama",
                 ],
                 run.call_args_list[-1].args[0],
             )
@@ -681,10 +689,17 @@ class HostLoginHelperTests(unittest.TestCase):
             self.assertEqual(
                 [
                     "docker", "compose", "--profile", "ollama",
-                    "up", "-d", "--force-recreate", "ollama",
+                    "up", "-d", "ollama",
                 ],
                 run.call_args_list[-1].args[0],
             )
+
+    def test_helper_startup_does_not_apply_hardware_mode(self):
+        source = self.helper_path.read_text(encoding="utf-8")
+        self.assertNotIn(
+            "apply_hardware_mode(read_hardware_state().get",
+            source,
+        )
 
 
 if __name__ == "__main__":

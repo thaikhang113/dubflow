@@ -246,6 +246,15 @@ class Worker:
             or status.get("label")
             or f"Pipeline exited with code {return_code}."
         )
+        context = []
+        if status.get("failed_cue") is not None:
+            context.append(f"cue {status['failed_cue']}")
+        if status.get("failed_stage"):
+            context.append(f"stage {status['failed_stage']}")
+        if status.get("resume_from_cue") is not None:
+            context.append(f"resume from cue {status['resume_from_cue']}")
+        if context:
+            message = f"{message} ({'; '.join(context)})"
         if return_code == 0:
             error_code = "FinalVideoInvalid"
             message = "Pipeline did not produce a decodable final_video_vi.mp4."

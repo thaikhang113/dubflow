@@ -341,7 +341,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual("auto", defaults["asr_engine"])
         self.assertEqual("medium", defaults["whisper_model"])
         self.assertEqual(
-            "ai33:vbee_hn_female_ngochuyen_full_48k-fhg",
+            "vieneu:hong-chau",
             defaults["default_voice"],
         )
         self.assertEqual("story", defaults["vieneu_style"])
@@ -502,7 +502,7 @@ class ApiTests(unittest.TestCase):
             runtime_health.call_args_list,
         )
 
-    def test_vieneu_voice_does_not_bind_ai33_default_provider(self):
+    def test_vieneu_job_gets_one_configured_ai33_fallback_without_exposing_key(self):
         ai33 = self.client.post(
             "/api/providers",
             json={
@@ -526,6 +526,34 @@ class ApiTests(unittest.TestCase):
             json={
                 "platform": "bilibili",
                 "source": "https://www.bilibili.com/video/BV1VIENEU",
+                "voice": "vieneu:hong-chau",
+            },
+        )
+        self.assertEqual(201, job.status_code, job.text)
+        payload = job.json()
+        self.assertEqual(ai33["id"], payload["request"]["tts_provider_id"])
+        self.assertEqual("vieneu:hong-chau", payload["request"]["voice"])
+        self.assertNotIn("secret", repr(payload))
+
+    def test_vieneu_job_does_not_guess_between_multiple_ai33_fallbacks(self):
+        for name in ("AI33 one", "AI33 two"):
+            response = self.client.post(
+                "/api/providers",
+                json={
+                    "name": name,
+                    "kind": "ai33",
+                    "endpoint": "https://api.ai33.pro",
+                    "api_key": f"{name}-secret",
+                },
+            )
+            self.assertEqual(201, response.status_code, response.text)
+
+        job = self.client.post(
+            "/api/jobs",
+            json={
+                "platform": "bilibili",
+                "source": "https://www.bilibili.com/video/BV1MULTIAI33",
+                "voice": "vieneu:hong-chau",
             },
         )
         self.assertEqual(201, job.status_code, job.text)

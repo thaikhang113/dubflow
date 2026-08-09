@@ -137,7 +137,7 @@ class RuntimeSettingsRequest(BaseModel):
     default_provider_id: str = ""
     default_model: str = Field(default="translategemma:4b", max_length=200)
     default_voice: str = Field(
-        default="ai33:vbee_hn_female_ngochuyen_full_48k-fhg",
+        default="vieneu:hong-chau",
         max_length=200,
     )
     queue_poll_seconds: int = Field(default=2, ge=1, le=60)
@@ -410,7 +410,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             {
                 "default_provider_id": "",
                 "default_model": "translategemma:4b",
-                "default_voice": "ai33:vbee_hn_female_ngochuyen_full_48k-fhg",
+                "default_voice": "vieneu:hong-chau",
                 "whisper_model": "medium",
                 "asr_engine": "auto",
                 "vieneu_style": "story",
@@ -569,7 +569,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             {
                 "default_provider_id": "",
                 "default_model": "translategemma:4b",
-                "default_voice": "ai33:vbee_hn_female_ngochuyen_full_48k-fhg",
+                "default_voice": "vieneu:hong-chau",
                 "whisper_model": "medium",
                 "asr_engine": "auto",
                 "vieneu_style": "story",
@@ -607,7 +607,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
                 values[role] = provider["id"]
         if (
-            values["voice"].lower().startswith("ai33:")
+            values["voice"].lower().startswith(("ai33:", "vieneu:"))
             and not values["tts_provider_id"].strip()
         ):
             ai33 = [
@@ -713,7 +713,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
                 request[role] = provider['id']
         if (
-            str(request.get('voice') or '').lower().startswith('ai33:')
+            str(request.get('voice') or '').lower().startswith(('ai33:', 'vieneu:'))
             and not str(request.get('tts_provider_id') or '').strip()
         ):
             ai33 = [
@@ -745,6 +745,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request.setdefault("asr_engine", "whisper")
         if str(request.get("voice") or "").lower().startswith("vieneu:"):
             request.setdefault("vieneu_style", "story")
+        if (
+            str(request.get("voice") or "").lower().startswith(("ai33:", "vieneu:"))
+            and not str(request.get("tts_provider_id") or "").strip()
+        ):
+            ai33 = [
+                provider
+                for provider in store.list_providers()
+                if provider["kind"] == "ai33" and provider["configured"]
+            ]
+            if len(ai33) == 1:
+                request["tts_provider_id"] = ai33[0]["id"]
         retried = store.enqueue_job(request)
         events.publish(retried)
         worker.notify()

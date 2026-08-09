@@ -884,7 +884,7 @@ async function loadSettings() {
     document.querySelector("#settings-provider").value = settings.default_provider_id || "";
     document.querySelector("#settings-model").value = settings.default_model || "";
     const defaultVoice =
-      settings.default_voice || "ai33:vbee_hn_female_ngochuyen_full_48k-fhg";
+    settings.default_voice || "vieneu:hong-chau";
     document.querySelector("#settings-voice").value = defaultVoice;
     document.querySelector("#settings-vieneu-style").value = settings.vieneu_style || "story";
     document.querySelector("#settings-asr-engine").value = settings.asr_engine || "auto";

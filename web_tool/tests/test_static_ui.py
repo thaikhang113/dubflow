@@ -131,6 +131,20 @@ class StaticUiTests(unittest.TestCase):
         self.assertNotIn("tts_engine", self.html)
         self.assertNotIn("tts_engine", self.javascript)
 
+    def test_web_defaults_use_local_vieneu_voice(self):
+        self.assertIn(
+            'value="vieneu:hong-chau"',
+            self.html,
+        )
+        self.assertNotIn(
+            'id="channel-voice" type="text" value="ai33:',
+            self.html,
+        )
+        self.assertIn(
+            'settings.default_voice || "vieneu:hong-chau"',
+            self.javascript,
+        )
+
     def test_hardware_doctor_action_stays_in_settings(self):
         start = self.javascript.index("function doctorAction")
         end = self.javascript.index("function renderDoctor", start)

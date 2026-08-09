@@ -57,8 +57,8 @@ INSTALL_STATES = {
 }
 INSTALL_LOCK = threading.Lock()
 ALLOWED_ORIGINS = {
-    "http://127.0.0.1:18793",
-    "http://localhost:18793",
+    f"http://127.0.0.1:{os.environ.get('TOOL_PORT', '18793')}",
+    f"http://localhost:{os.environ.get('TOOL_PORT', '18793')}",
 }
 
 
@@ -422,13 +422,13 @@ def apply_hardware_mode(
         return {**detection, "ok": False, "error_code": "DockerNotFound"}
     command = [
         docker, "compose", "--profile", "ollama",
-        "up", "-d", "--force-recreate", "ollama",
+        "up", "-d", "ollama",
     ] if selected == "cpu" else [
         docker, "compose",
         "-f", "compose.yaml",
         "-f", "compose.gpu.yaml",
         "--profile", "ollama",
-        "up", "-d", "--force-recreate", "ollama",
+        "up", "-d", "ollama",
     ]
     try:
         result = run(
@@ -600,7 +600,6 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> None:
     if not EXTENSION_DIR.is_dir():
         raise SystemExit("Bilibili extension directory is missing")
-    apply_hardware_mode(read_hardware_state().get("requested_mode", "auto"))
     server = ThreadingHTTPServer(SERVER_ADDRESS, Handler)
     print("Bilibili host helper: http://127.0.0.1:18794", flush=True)
     try:

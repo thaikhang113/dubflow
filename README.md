@@ -12,7 +12,7 @@ Tài liệu này mô tả pipeline lõi từ nhánh `khang` và ứng dụng web
 - ASR: `ASR_PROVIDER=auto|whisper|qwen3`; auto dùng Qwen3 trên runtime đủ mạnh, fallback Whisper khi hardware yếu hoặc Qwen service lỗi, ghi `asr_provider_report.json`.
 - OCR subtitle: 9Router vision, có đường fallback được cấu hình trong runtime.
 - Dịch: Ollama mặc định; 9Router là đường opt-in.
-- TTS: VieNeu (`vieneu:<voice>`), AI33, Kokoro, Resona hoặc Edge TTS tùy voice registry/preset. VieNeu preflight fail thì fallback AI33 cho toàn job nếu đã cấu hình; cue lỗi retry 1 lần rồi dừng, không tạo silence.
+- TTS: VieNeu (`vieneu:<voice>`), AI33, Kokoro, Resona hoặc Edge TTS tùy voice registry/preset. Web mặc định VieNeu local; khi VieNeu preflight fail, job tự gắn đúng một AI33 provider đã cấu hình nếu có đúng một provider phù hợp. API key chỉ nằm trong SecretStore. Reports giữ `requested_voice` và `actual_voice`; cue lỗi retry 1 lần rồi dừng, không tạo silence.
 - AI33 chạy tối đa 3 worker song song để tránh rate limit.
 - Audio TTS chuẩn: 48 kHz mono; audio final: 48 kHz stereo AAC.
 - Nhạc nền: ưu tiên stem `no_vocals.wav` từ Demucs, có ducking khi giọng Việt phát.
@@ -1199,8 +1199,8 @@ http://127.0.0.1:18793
 #### Thiết lập lần đầu
 
 1. Mở **Providers**, thêm provider dịch Ollama hoặc OpenAI-compatible.
-2. Nếu dùng AI33, thêm provider TTS riêng với endpoint, API key và voice.
-3. Mở **Settings**, chọn provider/model/voice mặc định.
+2. Mở **Settings**; mặc định web là `vieneu:hong-chau` và `story`. Nếu VieNeu chưa sẵn sàng, cấu hình đúng một AI33 provider để job tự fallback toàn job.
+3. Nếu chọn voice `ai33:*`, thêm provider TTS AI33 với endpoint và API key. Key không xuất hiện trong job/API response.
 4. Mở **Bilibili Login**, bấm bắt đầu Bilibili QR rồi quét bằng ứng dụng Bilibili.
 5. Nếu QR không dùng được, nhập file cookie Netscape trong cùng màn hình.
 6. Mở **Jobs**, dán URL hoặc upload video, sau đó thêm job vào queue.
@@ -1285,10 +1285,10 @@ docker compose \
   -f compose.yaml \
   -f compose.gpu.yaml \
   --profile ollama \
-  up -d --force-recreate ollama
+  up -d ollama
 ```
 
-Whisper, Demucs và render vẫn chạy CPU trong image hiện tại. Nếu GPU lỗi, thiếu NVIDIA Container Toolkit hoặc hết VRAM, helper recreate Ollama bằng CPU; job không chết chỉ vì tăng tốc GPU không dùng được.
+Whisper, Demucs và render vẫn chạy CPU trong image hiện tại. Helper không tự áp dụng hardware khi khởi động và không force-recreate Ollama đang chạy. Nếu GPU lỗi, thiếu NVIDIA Container Toolkit hoặc hết VRAM, lần áp dụng thủ công quay về CPU; job không chết chỉ vì tăng tốc GPU không dùng được.
 
 #### Trend Scout
 

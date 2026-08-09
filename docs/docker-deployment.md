@@ -47,6 +47,11 @@ When ASR/TTS services run beside the pipeline, use service DNS names and ports:
 Pipeline defaults are `vieneu:hong-chau` and `story`. No Compose changes are
 part of this integration fix.
 
+The web job path uses local VieNeu by default. If VieNeu health is unavailable,
+the job selects exactly one configured AI33 provider as whole-job fallback.
+Provider IDs may appear in job requests; API keys stay in the runtime secret
+store and never appear in HTTP responses.
+
 ## Secrets and shutdown
 
 Enter credentials only in the runtime Settings UI. When needed, the supported

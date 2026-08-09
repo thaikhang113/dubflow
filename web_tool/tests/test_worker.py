@@ -220,6 +220,46 @@ raise SystemExit(1)
 
         self.assertEqual(60, failed["progress"])
 
+    def test_failed_pipeline_keeps_actionable_http_error_context(self):
+        script = self.write_script(
+            "actionable-failure.py",
+            """
+import json
+import os
+from pathlib import Path
+
+root = Path(os.environ["DOUYIN_VIDEOS_DIR"])
+out = root / "fake-output"
+out.mkdir(parents=True)
+(root / "LATEST_OUTPUT_DIR.txt").write_text(str(out), encoding="utf-8")
+(out / "job_status.json").write_text(json.dumps({
+    "state": "needs_attention",
+    "phase": "tts",
+    "progress_percent": 66,
+    "error_code": "TTSGenerationFailed",
+    "error_message": "AI33 returned HTTP 429",
+    "failed_cue": 7,
+    "failed_stage": "tts_generation",
+    "resume_from_cue": 7,
+}), encoding="utf-8")
+raise SystemExit(1)
+""",
+        )
+        job = self.enqueue()
+        worker = Worker(self.store, self.settings, self.secrets)
+        with patch(
+            "web_tool.worker.build_job_command",
+            return_value=[sys.executable, str(script)],
+        ):
+            worker.start()
+            worker.notify()
+            failed = wait_for(self.store, job["id"], {"needs_attention", "failed"})
+            worker.stop()
+
+        self.assertEqual("needs_attention", failed["state"])
+        for detail in ("AI33 returned HTTP 429", "cue 7", "tts_generation", "resume from cue 7"):
+            self.assertIn(detail, failed["message"])
+
     def test_running_status_clears_stale_error_code(self):
         job = self.enqueue()
         self.store.update_job(job["id"], error_code="PipelineError")

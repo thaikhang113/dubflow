@@ -86,8 +86,8 @@
 - [ ] Add Docker contract tests for GPU override and CPU-safe base compose.
 - [ ] Document Auto/CPU/GPU and fallback.
 - [ ] Run all web and pipeline tests, Bash syntax, compileall, secret scan, and `git diff --check`.
-- [ ] Rebuild tool, start helper, apply Auto, verify RTX 3050 Ti resolves hybrid and Ollama reports GPU after model load.
-- [ ] Submit `https://www.bilibili.com/video/BV1ATDoYAENJ?vd_source=24f7e90f90cc65d5c1f427f207ee3730&spm_id_from=333.788.videopod.sections`.
-- [ ] Require completed state, decodable `final_video_vi.mp4`, AAC 48 kHz, translation/TTS/voice-sync/subtitle reports passing.
-- [ ] Commit docs/tests and push `origin/tool`.
+- [ ] NOT RUN: Rebuild tool, start helper, apply Auto, verify RTX 3050 Ti resolves hybrid and Ollama reports GPU after model load.
+- [ ] NOT RUN: Submit the approved Bilibili URL.
+- [ ] NOT RUN: Require completed state, decodable `final_video_vi.mp4`, AAC 48 kHz, translation/TTS/voice-sync/subtitle reports passing.
+- [ ] NOT RUN: Commit docs/tests and push `origin/tool`.
 

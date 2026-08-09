@@ -29,7 +29,6 @@ STATUS_FIELDS = {
 }
 WHISPER_MODELS = {"small", "medium"}
 ASR_ENGINES = {"auto", "whisper", "qwen3"}
-HARDWARE_PROFILES = {"cpu", "hybrid", "gpu"}
 
 
 def _request(job: dict) -> dict:
@@ -178,11 +177,6 @@ def build_job_environment(
         ):
             raise ValueError("invalid VieNeu style")
         environment["VIENEU_STYLE"] = vieneu_style
-
-    hardware_profile = str(request.get("hardware_profile") or "cpu").strip().lower()
-    if hardware_profile not in HARDWARE_PROFILES:
-        raise ValueError("invalid hardware profile")
-    environment["OPENCLAW_HARDWARE_PROFILE"] = hardware_profile
 
     translation = _provider(providers.get("translation") or {})
     if translation:

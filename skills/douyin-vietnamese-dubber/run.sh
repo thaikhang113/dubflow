@@ -705,7 +705,18 @@ run_with_status_heartbeat_guarded() {
 
 fail() {
   echo "ERROR: $*" >&2
-  status_update "error" "0" "Lỗi pipeline" "0" "PipelineError" "$*"
+  if [[ ! -s "$STATUS_FILE" ]] || ! python3 - "$STATUS_FILE" <<'PY'
+import json
+import sys
+try:
+    status = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    status = {}
+raise SystemExit(0 if status.get("error_code") else 1)
+PY
+  then
+    status_update "error" "0" "Lỗi pipeline" "0" "PipelineError" "$*"
+  fi
   if [[ -n "${OUT_DIR:-}" ]]; then
     echo "Output giữ lại tại: $OUT_DIR" >&2
   fi

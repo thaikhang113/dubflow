@@ -8,14 +8,14 @@
 - [x] Structured transcript and TTS error codes
 - [x] Ngoc Huyen alias wiring
 - [x] Python compile and Bash syntax checks on checkout
-- [ ] Revoke exposed AI33 key
-- [ ] Load replacement key through host-only `EnvironmentFile`
-- [ ] Real AI33 Ngoc Huyen synthesis
-- [ ] Real Ollama/9Router translation
-- [ ] Real Chrome CDP Bilibili download
-- [ ] Final `final_video_vi.mp4` with all quality gates
-- [ ] Series queue/plan/compile E2E
-- [ ] HyperFrames book-video E2E
+- [ ] NOT RUN: Revoke exposed AI33 key
+- [ ] NOT RUN: Load replacement key through host-only `EnvironmentFile`
+- [ ] NOT RUN: Real AI33 Ngoc Huyen synthesis
+- [ ] NOT RUN: Real Ollama/9Router translation
+- [ ] NOT RUN: Real Chrome CDP Bilibili download
+- [ ] NOT RUN: Final `final_video_vi.mp4` with all quality gates
+- [ ] NOT RUN: Series queue/plan/compile E2E
+- [ ] NOT RUN: HyperFrames book-video E2E
 
 ## Offline Verification
 
