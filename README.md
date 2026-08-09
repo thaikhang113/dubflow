@@ -1207,13 +1207,15 @@ QR và nhập `cookies.txt` vẫn dùng được khi không chạy host helper.
 
 #### Ollama
 
+Với host helper đang chạy, mở **Providers** và bấm **Cài Ollama local**. Tool chỉ bật service khi bấm nút, tải `qwen2.5:3b`, tạo provider `http://ollama:11434` và chọn làm mặc định. Ollama không cần API key.
+
 Nếu Ollama chạy trên máy host, endpoint dùng trong provider:
 
 ```text
 http://host.docker.internal:11434
 ```
 
-Khởi động Ollama bằng Compose:
+Fallback thủ công:
 
 ```bash
 docker compose --profile ollama up -d --build

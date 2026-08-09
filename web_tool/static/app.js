@@ -244,6 +244,66 @@ async function saveProvider(event) {
   }
 }
 
+async function installLocalOllama() {
+  const installButton = document.querySelector("#provider-install-ollama");
+  const originalLabel = installButton.textContent;
+  installButton.disabled = true;
+  installButton.textContent = "Đang cài Ollama và tải model...";
+  try {
+    const response = await fetch("http://127.0.0.1:18794/ollama/install", {
+      method: "POST",
+    });
+    const result = await response.json();
+    if (!response.ok || !result.ok) {
+      throw new Error(result.error_code || `HTTP ${response.status}`);
+    }
+    let provider = state.providers.find(
+      (item) => item.kind === "ollama"
+        && item.endpoint.replace(/\/+$/, "") === "http://ollama:11434",
+    );
+    if (!provider) {
+      provider = await api("/api/providers", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          name: "Ollama local",
+          kind: "ollama",
+          endpoint: "http://ollama:11434",
+          model: "qwen2.5:3b",
+          timeout_seconds: 180,
+          api_key: "",
+        }),
+      });
+    }
+    const settings = state.settings || await api("/api/settings");
+    await api("/api/settings", {
+      method: "PUT",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        default_provider_id: provider.id,
+        default_model: "qwen2.5:3b",
+        default_voice: settings.default_voice || "",
+        queue_poll_seconds: settings.queue_poll_seconds || 2,
+        telegram_chat_id: settings.telegram_chat_id || "",
+        telegram_thread_id: settings.telegram_thread_id || "",
+        telegram_bot_token: "",
+      }),
+    });
+    await loadProviders();
+    await loadSettings();
+    await loadDoctor();
+    notify("Ollama local và model qwen2.5:3b đã sẵn sàng.");
+  } catch (error) {
+    notify(
+      `Không cài được Ollama: ${error.message}. Hãy mở Docker Desktop và chạy host helper.`,
+      true,
+    );
+  } finally {
+    installButton.disabled = false;
+    installButton.textContent = originalLabel;
+  }
+}
+
 async function testProvider(id) {
   try {
     const result = await api(`/api/providers/${id}/test`, {method: "POST"});
@@ -997,6 +1057,7 @@ document.querySelectorAll(".nav-item[data-target]").forEach((item) => {
 });
 document.querySelector("#new-job-form").addEventListener("submit", createJob);
 document.querySelector("#provider-form").addEventListener("submit", saveProvider);
+document.querySelector("#provider-install-ollama").addEventListener("click", installLocalOllama);
 document.querySelector("#provider-reset").addEventListener("click", resetProviderForm);
 document.querySelector("#refresh-jobs").addEventListener("click", loadJobs);
 document.querySelector("#refresh-providers").addEventListener("click", loadProviders);

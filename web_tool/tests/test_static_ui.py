@@ -65,6 +65,18 @@ class StaticUiTests(unittest.TestCase):
         )
         self.assertIn("Đang kiểm tra cấu hình...", self.javascript)
 
+    def test_providers_can_install_local_ollama_on_demand(self):
+        self.assertIn('id="provider-install-ollama"', self.html)
+        for marker in (
+            "function installLocalOllama",
+            "http://127.0.0.1:18794/ollama/install",
+            "http://ollama:11434",
+            "qwen2.5:3b",
+            "Đang cài Ollama và tải model...",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, self.javascript)
+
 
 if __name__ == "__main__":
     unittest.main()

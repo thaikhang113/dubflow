@@ -41,6 +41,8 @@ class DockerContractTests(unittest.TestCase):
     def test_optional_profiles_and_secret_backed_trend_database_are_preserved(self):
         self.assertIn('profiles: ["ollama"]', self.compose)
         self.assertIn('profiles: ["trend"]', self.compose)
+        ollama = self.compose.split("\n  ollama:\n", 1)[1].split("\n  trend-db:\n", 1)[0]
+        self.assertIn('restart: "no"', ollama)
         self.assertIn("POSTGRES_PASSWORD_FILE", self.compose)
         self.assertIn("trend-db-password", self.compose)
 

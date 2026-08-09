@@ -1,6 +1,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
+from unittest.mock import Mock
 
 
 class HostLoginHelperTests(unittest.TestCase):
@@ -48,6 +49,49 @@ class HostLoginHelperTests(unittest.TestCase):
         background = (extension / "background.js").read_text(encoding="utf-8")
         self.assertNotIn('"alarms"', manifest)
         self.assertNotIn("chrome.alarms", background)
+
+    def test_ollama_install_uses_only_fixed_compose_commands(self):
+        helper = self.load_helper()
+        run = Mock(
+            side_effect=[
+                Mock(returncode=0),
+                Mock(returncode=0),
+            ]
+        )
+        result = helper.install_ollama(run=run, docker="docker")
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            [
+                [
+                    "docker",
+                    "compose",
+                    "--profile",
+                    "ollama",
+                    "up",
+                    "-d",
+                    "ollama",
+                ],
+                [
+                    "docker",
+                    "compose",
+                    "exec",
+                    "-T",
+                    "ollama",
+                    "ollama",
+                    "pull",
+                    "qwen2.5:3b",
+                ],
+            ],
+            [call.args[0] for call in run.call_args_list],
+        )
+
+    def test_ollama_install_failure_does_not_return_process_output(self):
+        helper = self.load_helper()
+        run = Mock(return_value=Mock(returncode=1, stdout="secret", stderr="secret"))
+        result = helper.install_ollama(run=run, docker="docker")
+        self.assertFalse(result["ok"])
+        self.assertEqual("OllamaServiceStartFailed", result["error_code"])
+        self.assertNotIn("secret", repr(result))
 
 
 if __name__ == "__main__":

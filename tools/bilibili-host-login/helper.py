@@ -11,8 +11,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 SERVER_ADDRESS = ("127.0.0.1", 18794)
 LOGIN_URL = "https://passport.bilibili.com/login"
 ROOT = Path(__file__).resolve().parent
+REPO_ROOT = ROOT.parents[1]
 EXTENSION_DIR = ROOT / "extension"
 PROFILE_DIR = Path.home() / ".auto-vietsub" / "bilibili-browser"
+OLLAMA_MODEL = "qwen2.5:3b"
 ALLOWED_ORIGINS = {
     "http://127.0.0.1:18793",
     "http://localhost:18793",
@@ -81,6 +83,44 @@ def open_login() -> dict:
     return {"ok": True, "state": "browser_opened", "pid": process.pid}
 
 
+def install_ollama(run=subprocess.run, docker=None) -> dict:
+    docker = docker or shutil.which("docker")
+    if not docker:
+        return {"ok": False, "error_code": "DockerNotFound"}
+    commands = (
+        [docker, "compose", "--profile", "ollama", "up", "-d", "ollama"],
+        [
+            docker,
+            "compose",
+            "exec",
+            "-T",
+            "ollama",
+            "ollama",
+            "pull",
+            OLLAMA_MODEL,
+        ],
+    )
+    errors = ("OllamaServiceStartFailed", "OllamaModelPullFailed")
+    for command, error_code in zip(commands, errors):
+        try:
+            result = run(
+                command,
+                cwd=REPO_ROOT,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=1800,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "error_code": "OllamaInstallTimeout"}
+        except OSError:
+            return {"ok": False, "error_code": "DockerUnavailable"}
+        if result.returncode != 0:
+            return {"ok": False, "error_code": error_code}
+    return {"ok": True, "state": "ollama_ready", "model": OLLAMA_MODEL}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "AutoVietsubHostLogin/1"
 
@@ -141,10 +181,13 @@ class Handler(BaseHTTPRequestHandler):
         except PermissionError:
             self._json(403, {"ok": False, "error_code": "OriginRejected"})
             return
-        if self.path != "/open":
+        if self.path == "/open":
+            result = open_login()
+        elif self.path == "/ollama/install":
+            result = install_ollama()
+        else:
             self._json(404, {"ok": False, "error_code": "NotFound"}, origin)
             return
-        result = open_login()
         self._json(200 if result["ok"] else 503, result, origin)
 
 

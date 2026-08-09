@@ -29,7 +29,7 @@ services:
   ollama:
     image: ollama/ollama:latest
     profiles: ["ollama"]
-    restart: unless-stopped
+    restart: "no"
     ports:
       - "127.0.0.1:11434:11434"
     volumes:
