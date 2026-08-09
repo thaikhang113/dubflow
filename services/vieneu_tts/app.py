@@ -12,6 +12,7 @@ from pydantic import BaseModel
 MODEL_ID = "pnnbao-ump/VieNeu-TTS-v3-Turbo"
 MODEL_REVISION = "75ff82a72f54d55ed389e1eeb12041d3c4bac7d4"
 SAMPLE_RATE = 48_000
+MAX_TEXT_LENGTH = 2_000
 DEFAULT_VOICE = "vieneu:hong-chau"
 DEFAULT_STYLE = "story"
 VOICES = {
@@ -170,7 +171,11 @@ async def service_error_handler(_request: Request, exc: ServiceError):
 
 @app.get("/health")
 def health():
-    return runtime.health()
+    status = runtime.health()
+    return JSONResponse(
+        status_code=503 if status["error_code"] and not status["ready"] else 200,
+        content=status,
+    )
 
 
 @app.get("/v1/voices")
@@ -193,6 +198,12 @@ def synthesize(request: SynthesizeRequest):
     text = request.text.strip()
     if not text:
         raise ServiceError(422, "VieNeuTextEmpty", "Text must not be empty")
+    if len(text) > MAX_TEXT_LENGTH:
+        raise ServiceError(
+            413,
+            "VieNeuTextTooLong",
+            f"Text must not exceed {MAX_TEXT_LENGTH} characters",
+        )
     voice = VOICES.get(request.voice)
     if voice is None:
         raise ServiceError(422, "VieNeuVoiceUnknown", "Unknown VieNeu voice")

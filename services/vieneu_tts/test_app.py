@@ -71,6 +71,25 @@ class ServiceTests(unittest.TestCase):
             response.json(),
         )
 
+    def test_health_returns_503_after_model_load_failure(self):
+        runtime = service.VieNeuRuntime()
+        service.runtime = runtime
+        client = TestClient(service.app)
+
+        with patch.object(
+            runtime,
+            "_load_model",
+            side_effect=RuntimeError("broken model"),
+        ):
+            failed = client.post("/v1/synthesize", json={"text": "Xin chao"})
+
+        response = client.get("/health")
+
+        self.assertEqual(503, failed.status_code)
+        self.assertEqual(503, response.status_code)
+        self.assertFalse(response.json()["ready"])
+        self.assertEqual("VieNeuModelLoadFailed", response.json()["error_code"])
+
     def test_voices_exposes_app_voice_and_story_style(self):
         response = TestClient(service.app).get("/v1/voices")
 
@@ -127,6 +146,20 @@ class ServiceTests(unittest.TestCase):
 
         self.assertEqual(422, response.status_code)
         self.assertEqual("VieNeuTextEmpty", response.json()["error_code"])
+        self.assertEqual([], model.calls)
+
+    def test_rejects_text_over_2000_characters_before_inference(self):
+        model = FakeModel([np.full(100, 0.25, dtype=np.float32)])
+        client, _runtime = self.client_with_model(model)
+
+        response = client.post("/v1/synthesize", json={"text": "x" * 2001})
+
+        self.assertEqual(413, response.status_code)
+        self.assertEqual("VieNeuTextTooLong", response.json()["error_code"])
+        self.assertEqual(
+            "Text must not exceed 2000 characters",
+            response.json()["message"],
+        )
         self.assertEqual([], model.calls)
 
     def test_rejects_unknown_voice_before_inference(self):
@@ -275,8 +308,17 @@ class ServiceTests(unittest.TestCase):
     def test_container_contract_pins_dependency_and_model_cache(self):
         service_dir = Path(__file__).parent
         requirements = (service_dir / "requirements.txt").read_text(encoding="utf-8")
+        constraints = (service_dir / "constraints.txt").read_text(encoding="utf-8")
         dockerfile = (service_dir / "Dockerfile").read_text(encoding="utf-8")
 
+        for package in (
+            "fastapi",
+            "uvicorn",
+            "vieneu",
+            "huggingface-hub",
+            "numpy",
+        ):
+            self.assertIn(package, requirements.splitlines())
         for pin in (
             "fastapi==0.141.1",
             "uvicorn==0.52.1",
@@ -284,7 +326,17 @@ class ServiceTests(unittest.TestCase):
             "huggingface-hub==1.27.0",
             "numpy==2.3.4",
         ):
-            self.assertIn(pin, requirements)
+            self.assertIn(pin, constraints)
+        self.assertIn(
+            "FROM python:3.11-slim@sha256:"
+            "90744cff8f32887f075c47d747a173ff333e9e98801667af93c357fa9f5e28ff",
+            dockerfile,
+        )
+        self.assertIn("COPY requirements.txt constraints.txt ./", dockerfile)
+        self.assertIn(
+            "pip install --no-cache-dir -r requirements.txt -c constraints.txt",
+            dockerfile,
+        )
         self.assertIn("HF_HOME=/models", dockerfile)
         self.assertIn("VIENEU_MODELS_DIR=/models", dockerfile)
         self.assertIn('CMD ["uvicorn", "app:app"', dockerfile)

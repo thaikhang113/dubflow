@@ -1,5 +1,5 @@
-fastapi==0.141.1
-uvicorn==0.52.1
-vieneu==3.2.4
-huggingface-hub==1.27.0
-numpy==2.3.4
+fastapi
+uvicorn
+vieneu
+huggingface-hub
+numpy
