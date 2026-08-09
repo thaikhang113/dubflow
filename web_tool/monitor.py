@@ -104,10 +104,10 @@ class MonitorScheduler:
             self.run_channel_once(channel["id"])
         return {"checked": len(channels)}
 
-    def run_channel_once(self, channel_id: str) -> dict:
+    def run_channel_once(self, channel_id: str) -> dict | None:
         channel = self.store.get_channel(channel_id)
         if channel is None:
-            raise KeyError(channel_id)
+            return None
         if not channel["enabled"]:
             return channel
         try:

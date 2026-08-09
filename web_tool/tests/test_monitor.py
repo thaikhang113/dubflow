@@ -149,6 +149,22 @@ class MonitorTests(unittest.TestCase):
         ).run_channel_once(channel["id"])
         self.assertIsNone(result)
 
+    def test_delete_after_due_query_does_not_stop_scheduler(self):
+        channel = self.add_channel()
+
+        def due_channels():
+            self.store.delete_channel(channel["id"])
+            return [channel]
+
+        self.store.due_channels = due_channels
+        result = MonitorScheduler(
+            self.store,
+            self.settings,
+            discovery=lambda *_args, **_kwargs: [],
+        ).run_due_once()
+
+        self.assertEqual(1, result["checked"])
+
     def test_channel_api_manages_and_schedules_channels(self):
         app = create_app(self.settings)
         app.state.monitor.discovery = lambda *_args, **_kwargs: []
