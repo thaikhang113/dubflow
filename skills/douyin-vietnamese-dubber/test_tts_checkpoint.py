@@ -82,6 +82,17 @@ class CheckpointTests(unittest.TestCase):
         with self.assertRaisesRegex(checkpoint.WavValidationError, "wav_silent"):
             checkpoint.complete_cue(self.manifest, self.config, self.identity, silent, 1)
 
+    def test_near_silent_wav_is_rejected(self):
+        near_silent = self.root / "near-silent.wav"; write_wav(near_silent, sample=100)
+        with self.assertRaisesRegex(checkpoint.WavValidationError, "wav_silent"):
+            checkpoint.complete_cue(
+                self.manifest,
+                self.config,
+                self.identity,
+                near_silent,
+                1,
+            )
+
     def test_rate_channel_and_duration_are_validated(self):
         wrong_rate = self.root / "rate.wav"; write_wav(wrong_rate, rate=16000)
         wrong_channels = self.root / "channels.wav"; write_wav(wrong_channels, channels=2)

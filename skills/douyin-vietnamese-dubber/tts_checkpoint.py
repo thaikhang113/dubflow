@@ -2,8 +2,10 @@
 
 import hashlib
 import json
+import math
 import os
 import shutil
+import struct
 import uuid
 import wave
 from contextlib import contextmanager
@@ -16,6 +18,7 @@ except ImportError:
 
 
 SCHEMA_VERSION = 1
+MIN_AUDIBLE_RMS = 128
 
 @contextmanager
 def _manifest_lock(path):
@@ -105,10 +108,18 @@ def validate_canonical_wav(path, config):
     duration_ms = frames * 1000.0 / rate
     if not config.min_duration_ms <= duration_ms <= config.max_duration_ms:
         raise WavValidationError("duration_invalid")
-    # Canonical PCM is signed 16-bit little endian. Inspect samples, no ffmpeg needed.
-    if not any(raw[offset:offset + 2] != b"\x00\x00" for offset in range(0, len(raw), 2)):
+    # Canonical PCM is signed 16-bit little endian. Reject provider noise floors
+    # that contain non-zero samples but no usable speech.
+    samples = struct.iter_unpack("<h", raw)
+    rms = math.sqrt(sum(sample * sample for sample, in samples) / max(1, frames * channels))
+    if rms < MIN_AUDIBLE_RMS:
         raise WavValidationError("wav_silent")
-    return {"sample_rate": rate, "channels": channels, "duration_ms": int(round(duration_ms)), "checksum": _sha256(path)}
+    return {
+        "sample_rate": rate,
+        "channels": channels,
+        "duration_ms": int(round(duration_ms)),
+        "checksum": _sha256(path),
+    }
 
 
 def _blank_manifest():

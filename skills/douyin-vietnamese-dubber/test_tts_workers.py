@@ -74,6 +74,8 @@ class TTSWorkerTests(unittest.TestCase):
     def test_ai33_low_source_sample_rate_retries_only_the_failed_cue_once(self):
         source = RUN_SH.read_text(encoding="utf-8")
         self.assertIn("AI33SourceSampleRateLow", source)
+        self.assertIn("AI33WavSilent", source)
+        self.assertIn("quality_error_codes", source)
         self.assertIn("AI33_SOURCE_QUALITY_RETRIES", source)
         self.assertIn("cmd.append('--force-regenerate')", source)
         wrapper = Path(__file__).with_name("ai33_tts_synthesize.py").read_text(encoding="utf-8")

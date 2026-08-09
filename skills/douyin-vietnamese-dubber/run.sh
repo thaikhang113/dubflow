@@ -2198,6 +2198,7 @@ def synthesize_ai33_tts(mp3_path: Path, wav_path: Path, text: str, voice_spec: s
         cmd.append('--force-regenerate')
     proc = None
     source_quality_retry_count = 0
+    quality_error_codes = ("AI33SourceSampleRateLow", "AI33WavSilent")
     for source_quality_attempt in range(ai33_source_quality_retries + 1):
         proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if proc.returncode == 0 and wav_path.exists() and wav_path.stat().st_size > 256:
@@ -2213,11 +2214,11 @@ def synthesize_ai33_tts(mp3_path: Path, wav_path: Path, text: str, voice_spec: s
                 "source_quality_retries": source_quality_retry_count,
             }
         stderr = (proc.stderr or '')[:500]
-        if 'AI33SourceSampleRateLow' not in stderr or source_quality_attempt >= ai33_source_quality_retries:
+        if not any(code in stderr for code in quality_error_codes) or source_quality_attempt >= ai33_source_quality_retries:
             break
         source_quality_retry_count += 1
         print(
-            f"WARN: AI33 source sample rate below {tts_master_sample_rate}Hz; "
+            f"WARN: AI33 source audio quality failed; "
             f"regenerating cue={cue_index} retry={source_quality_retry_count}/{ai33_source_quality_retries}",
             flush=True,
         )

@@ -281,7 +281,7 @@ class AI33ResilienceTests(unittest.TestCase):
             def convert(_src, wav, sample_rate, channels):
                 converted.append(wav)
                 self.assertEqual(".wav", wav.suffix)
-                ai33.write_test_wav(wav, sample_rate, [100] * 480, channels)
+                ai33.write_test_wav(wav, sample_rate, [700] * 480, channels)
                 return 10.0
 
             with patch.dict(os.environ, {"AI33_API_KEY": "test-token"}, clear=False), \
@@ -302,7 +302,7 @@ class AI33ResilienceTests(unittest.TestCase):
             root = Path(td); output = root / "out.wav"
 
             def convert(_src, wav, sample_rate, channels):
-                ai33.write_test_wav(wav, sample_rate, [100] * 480, channels)
+                ai33.write_test_wav(wav, sample_rate, [700] * 480, channels)
                 return 10.0
 
             with patch.dict(os.environ, {"AI33_API_KEY": "test-token"}, clear=False), \
@@ -407,7 +407,7 @@ class AI33ResilienceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             wav = root / "cue.wav"
-            ai33.write_test_wav(wav, sample_rate=48000, samples=[100] * 480)
+            ai33.write_test_wav(wav, sample_rate=48000, samples=[700] * 480)
             manifest = root / "tts_checkpoint.json"
             cue = ai33.complete_checkpoint_cue(manifest, 1, "source", "text-a", "voice", "settings", wav, 48000, 1, attempts=1, total_cues=122)
             self.assertEqual(122, json.loads(manifest.read_text(encoding="utf-8"))["total_cues"])
@@ -422,7 +422,7 @@ class AI33ResilienceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             saved = root / "saved.wav"; output = root / "segments" / "0001_speech.wav"
-            ai33.write_test_wav(saved, 48000, [100] * 480)
+            ai33.write_test_wav(saved, 48000, [700] * 480)
             manifest = root / "tts_checkpoint.json"
             ai33.complete_checkpoint_cue(manifest, 1, "source", ai33.hashlib.sha256(b"hello").hexdigest(), "voice", "settings", saved, 48000, 1, 1)
             argv = ["ai33", "--text", "hello", "--voice", "voice", "--output", str(output), "--checkpoint", str(manifest), "--cue-index", "1", "--source-fingerprint", "source", "--settings-fingerprint", "settings"]
@@ -455,7 +455,7 @@ class AI33ResilienceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             silent = root / "silent.wav"; ai33.write_test_wav(silent, 48000, [0] * 480)
-            bad_rate = root / "rate.wav"; ai33.write_test_wav(bad_rate, 16000, [100] * 480)
+            bad_rate = root / "rate.wav"; ai33.write_test_wav(bad_rate, 16000, [700] * 480)
             with self.assertRaises(ai33.AI33Error) as silent_error:
                 ai33.validate_wav(silent, 48000, 1)
             self.assertEqual("AI33WavSilent", silent_error.exception.code)
@@ -467,7 +467,7 @@ class AI33ResilienceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td); manifest = root / "tts_checkpoint.json"
             for cue_index in range(1, 87):
-                wav = root / f"{cue_index}.wav"; ai33.write_test_wav(wav, 48000, [100] * 480)
+                wav = root / f"{cue_index}.wav"; ai33.write_test_wav(wav, 48000, [700] * 480)
                 ai33.complete_checkpoint_cue(manifest, cue_index, "source", f"text-{cue_index}", "voice", "settings", wav, 48000, 1, 1)
             provider_calls = []
             for cue_index in range(1, 123):
