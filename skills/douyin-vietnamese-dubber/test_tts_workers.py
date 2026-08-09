@@ -79,6 +79,14 @@ class TTSWorkerTests(unittest.TestCase):
         wrapper = Path(__file__).with_name("ai33_tts_synthesize.py").read_text(encoding="utf-8")
         self.assertIn('if error.code != "AI33SourceSampleRateLow":', wrapper)
 
+    def test_each_spoken_cue_is_loudness_normalized_before_concat(self):
+        source = RUN_SH.read_text(encoding="utf-8")
+        self.assertIn("def normalize_speech_loudness", source)
+        self.assertIn("'loudnorm=I=-20:TP=-3:LRA=7,alimiter=limit=0.7079:level=false'", source)
+        self.assertIn("if not tts_result.get(\"fallback_silence\"):", source)
+        self.assertIn("normalize_speech_loudness(segment_out, segment_index)", source)
+        self.assertIn('"loudness_normalized_segments": 0', source)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -2637,6 +2637,25 @@ def normalize_wav_for_concat(src_path: Path, segment_index: int, label: str = 's
         )
     return dst, True
 
+def normalize_speech_loudness(src_path: Path, segment_index: int):
+    """Match spoken cue loudness before concat while preserving canonical WAV format."""
+    src = Path(src_path)
+    dst = unique_segment_wav(segment_index, 'speech_loudness', src)
+    cmd = [
+        'ffmpeg', '-y', '-i', str(src), '-vn',
+        '-af', 'loudnorm=I=-20:TP=-3:LRA=7,alimiter=limit=0.7079:level=false',
+        '-ac', str(tts_master_channels), '-ar', str(tts_master_sample_rate),
+        '-c:a', 'pcm_s16le', str(dst),
+    ]
+    proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    if proc.returncode != 0:
+        stderr = (proc.stderr or '').strip().replace('\n', ' ')[:500]
+        raise RuntimeError(
+            f"ffmpeg loudness normalize failed segment={segment_index} "
+            f"src={src} dst={dst} stderr={stderr}"
+        )
+    return dst
+
 def choose_ai33_native_speed(required_ratio: float) -> float:
     """Use AI33 native speed lightly before ffmpeg atempo; keep voice close to source."""
     try:
@@ -3346,6 +3365,7 @@ stats = {
     "adapt_native_speed_resolved_segments": 0,
     "low_fill_after_restore_segments": 0,
     "normalized_for_concat_segments": 0,
+    "loudness_normalized_segments": 0,
     "expected_final_voice_ms": 0,
     "concat_duration_extra_ms": 0,
     "final_tail_safe_trim_ms": 0,
@@ -3812,6 +3832,10 @@ with concat_list.open('w', encoding='utf-8') as manifest:
         segment_out, normalized_for_concat = normalize_wav_for_concat(segment_out, segment_index)
         if normalized_for_concat:
             stats["normalized_for_concat_segments"] += 1
+            duration_ms = measure_wav_ms(segment_out)
+        if not tts_result.get("fallback_silence"):
+            segment_out = normalize_speech_loudness(segment_out, segment_index)
+            stats["loudness_normalized_segments"] += 1
             duration_ms = measure_wav_ms(segment_out)
         record_audio_stage('tts_normalized', segment_out)
         # Luôn ghi stage này, kể cả không cần đổi tempo: dễ audit "natural 1.0".
