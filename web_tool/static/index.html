@@ -493,6 +493,18 @@
                 <button class="secondary" id="settings-whisper-install" type="button">Tải model Whisper</button>
               </div>
               <label class="field">
+                <span>Tăng tốc phần cứng</span>
+                <select id="settings-hardware-mode">
+                  <option value="auto">Tự động (khuyên dùng)</option>
+                  <option value="cpu">Chỉ CPU</option>
+                  <option value="gpu">Ưu tiên GPU</option>
+                </select>
+              </label>
+              <div class="hardware-control">
+                <button class="secondary" id="settings-hardware-detect" type="button">Tự động nhận diện lại</button>
+                <span id="settings-hardware-status" aria-live="polite">Đang kiểm tra phần cứng...</span>
+              </div>
+              <label class="field">
                 <span>Logo cá nhân</span>
                 <input id="settings-logo-file" type="file" accept="image/png,image/jpeg,image/webp">
               </label>

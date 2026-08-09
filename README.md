@@ -1207,7 +1207,7 @@ QR và nhập `cookies.txt` vẫn dùng được khi không chạy host helper.
 
 #### Ollama
 
-Với host helper đang chạy, mở **Providers** và bấm **Cài Ollama local**. Tool chỉ bật service khi bấm nút, tải `qwen2.5:3b`, tạo provider `http://ollama:11434` và chọn làm mặc định. Ollama không cần API key.
+Với host helper đang chạy, mở **Providers** và bấm **Cài Ollama local**. Tool chỉ bật service khi bấm nút, tải `translategemma:4b`, tạo provider `http://ollama:11434` và chọn làm mặc định. Ollama không cần API key.
 
 Nếu Ollama chạy trên máy host, endpoint dùng trong provider:
 
@@ -1219,7 +1219,7 @@ Fallback thủ công:
 
 ```bash
 docker compose --profile ollama up -d --build
-docker compose exec ollama ollama pull qwen2.5:3b
+docker compose exec ollama ollama pull translategemma:4b
 ```
 
 Khi dùng service Compose, endpoint provider là:
@@ -1228,7 +1228,27 @@ Khi dùng service Compose, endpoint provider là:
 http://ollama:11434
 ```
 
-Profile Ollama không tự bật GPU. Docker Desktop/NVIDIA Container Toolkit phải được cấu hình riêng nếu muốn Ollama dùng GPU.
+#### Tự động chọn CPU/GPU
+
+Chạy host helper, mở **Settings** và chọn:
+
+- **Tự động (khuyên dùng)**: kiểm tra NVIDIA, VRAM và Docker GPU rồi chọn cấu hình phù hợp;
+- **Chỉ CPU**: chạy Ollama bằng compose mặc định;
+- **Ưu tiên GPU**: dùng GPU khi smoke test Docker đạt, nếu không tự quay về CPU.
+
+Bấm **Tự động nhận diện lại** để áp dụng. Kết quả được lưu tại `~/.auto-vietsub/hardware.json` và Doctor hiển thị stage đang dùng CPU/GPU. Máy NVIDIA 4 GB VRAM thường chọn `hybrid`: Ollama chạy GPU, các stage còn lại chạy CPU. Máy từ 6 GB VRAM có thể chọn profile `gpu`, nhưng image hiện tại vẫn chỉ cấp GPU cho Ollama.
+
+Compose mặc định an toàn cho máy không GPU. Helper chỉ thêm `compose.gpu.yaml` khi Docker GPU smoke test thành công:
+
+```bash
+docker compose \
+  -f compose.yaml \
+  -f compose.gpu.yaml \
+  --profile ollama \
+  up -d --force-recreate ollama
+```
+
+Whisper, Demucs và render vẫn chạy CPU trong image hiện tại. Nếu GPU lỗi, thiếu NVIDIA Container Toolkit hoặc hết VRAM, helper recreate Ollama bằng CPU; job không chết chỉ vì tăng tốc GPU không dùng được.
 
 #### Trend Scout
 

@@ -360,6 +360,19 @@ h3 {
   flex-wrap: wrap;
 }
 
+.hardware-control {
+  display: grid;
+  min-width: 0;
+  align-content: end;
+  gap: 6px;
+}
+
+.hardware-control span {
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
 .field input[type="file"] {
   padding: 7px 9px;
   font-size: 12px;

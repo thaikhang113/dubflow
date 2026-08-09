@@ -874,6 +874,9 @@ async function loadSettings() {
     document.querySelector("#settings-model").value = settings.default_model || "";
     document.querySelector("#settings-voice").value = settings.default_voice || "";
     document.querySelector("#settings-whisper-model").value = settings.whisper_model || "medium";
+    document.querySelector("#settings-hardware-mode").value = settings.hardware_mode || "auto";
+    document.querySelector("#settings-hardware-status").textContent =
+      `Đang dùng ${hardwareProfileLabel(settings.hardware_profile || "cpu")}.`;
     document.querySelector("#settings-queue-poll").value = settings.queue_poll_seconds;
     document.querySelector("#settings-telegram-chat").value = settings.telegram_chat_id || "";
     document.querySelector("#settings-telegram-thread").value = settings.telegram_thread_id || "";
@@ -892,6 +895,66 @@ async function loadSettings() {
     }
   } catch (error) {
     notify(`Không tải được settings: ${error.message}`, true);
+  }
+}
+
+function hardwareProfileLabel(profile) {
+  return {
+    cpu: "CPU",
+    hybrid: "GPU cho Ollama, CPU cho phần còn lại",
+    gpu: "GPU cho Ollama, CPU cho phần còn lại",
+  }[profile] || profile;
+}
+
+function settingsPayload(hardwareProfile = state.settings?.hardware_profile || "cpu") {
+  return {
+    default_provider_id: document.querySelector("#settings-provider").value,
+    default_model: document.querySelector("#settings-model").value.trim(),
+    default_voice: document.querySelector("#settings-voice").value.trim(),
+    whisper_model: document.querySelector("#settings-whisper-model").value,
+    hardware_mode: document.querySelector("#settings-hardware-mode").value,
+    hardware_profile: hardwareProfile,
+    queue_poll_seconds: Number(document.querySelector("#settings-queue-poll").value),
+    telegram_chat_id: document.querySelector("#settings-telegram-chat").value.trim(),
+    telegram_thread_id: document.querySelector("#settings-telegram-thread").value.trim(),
+    telegram_bot_token: document.querySelector("#settings-telegram-token").value,
+  };
+}
+
+async function detectHardware() {
+  const detectButton = document.querySelector("#settings-hardware-detect");
+  const status = document.querySelector("#settings-hardware-status");
+  const mode = document.querySelector("#settings-hardware-mode").value;
+  detectButton.disabled = true;
+  status.textContent = "Đang nhận diện GPU và Docker...";
+  try {
+    const response = await fetch("http://127.0.0.1:18794/hardware/apply", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({mode}),
+    });
+    const result = await response.json();
+    if (!response.ok || !result.ok) {
+      throw new Error(result.error_code || `HTTP ${response.status}`);
+    }
+    await api("/api/settings", {
+      method: "PUT",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(settingsPayload(result.selected_profile)),
+    });
+    const gpu = result.gpu
+      ? `${result.gpu.name} (${Math.round(result.gpu.memory_mb / 1024)} GB VRAM)`
+      : "không có GPU phù hợp";
+    status.textContent =
+      `${gpu}. Đang dùng ${hardwareProfileLabel(result.selected_profile)}.`;
+    await loadSettings();
+    await loadDoctor();
+    notify("Đã áp dụng cấu hình phần cứng.");
+  } catch (error) {
+    status.textContent = "Không áp dụng được. Hệ thống tiếp tục dùng CPU.";
+    notify(`Nhận diện phần cứng lỗi: ${error.message}. Hãy mở Docker Desktop và host helper.`, true);
+  } finally {
+    detectButton.disabled = false;
   }
 }
 
@@ -1095,16 +1158,7 @@ async function saveSettings(event) {
     await api("/api/settings", {
       method: "PUT",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        default_provider_id: document.querySelector("#settings-provider").value,
-        default_model: document.querySelector("#settings-model").value.trim(),
-        default_voice: document.querySelector("#settings-voice").value.trim(),
-        whisper_model: document.querySelector("#settings-whisper-model").value,
-        queue_poll_seconds: Number(document.querySelector("#settings-queue-poll").value),
-        telegram_chat_id: document.querySelector("#settings-telegram-chat").value.trim(),
-        telegram_thread_id: document.querySelector("#settings-telegram-thread").value.trim(),
-        telegram_bot_token: document.querySelector("#settings-telegram-token").value,
-      }),
+      body: JSON.stringify(settingsPayload()),
     });
     document.querySelector("#settings-telegram-token").value = "";
     await loadSettings();
@@ -1179,6 +1233,7 @@ document.querySelector("#trend-mode").addEventListener("change", (event) => {
 });
 document.querySelector("#settings-form").addEventListener("submit", saveSettings);
 document.querySelector("#settings-whisper-install").addEventListener("click", installLocalWhisper);
+document.querySelector("#settings-hardware-detect").addEventListener("click", detectHardware);
 document.querySelector("#settings-logo-save").addEventListener("click", saveBrandLogo);
 document.querySelector("#settings-logo-remove").addEventListener("click", removeBrandLogo);
 document.querySelector("#settings-doctor").addEventListener("click", loadDoctor);

@@ -291,6 +291,17 @@ def read_hardware_state(path: Path = HARDWARE_STATE_PATH) -> dict:
     return value if isinstance(value, dict) else {}
 
 
+def hardware_status(detection: dict, saved: dict) -> dict:
+    return {
+        **detection,
+        "requested_mode": saved.get("requested_mode", "auto"),
+        "selected_profile": saved.get(
+            "selected_profile",
+            detection.get("recommended_profile", "cpu"),
+        ),
+    }
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "AutoVietsubHostLogin/1"
 
@@ -339,7 +350,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/hardware":
             self._json(
                 200,
-                {**detect_hardware(), **read_hardware_state()},
+                hardware_status(detect_hardware(), read_hardware_state()),
                 origin,
             )
             return

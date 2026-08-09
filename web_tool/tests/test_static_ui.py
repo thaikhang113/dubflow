@@ -91,6 +91,21 @@ class StaticUiTests(unittest.TestCase):
         ):
                 self.assertIn(marker, self.javascript)
 
+    def test_settings_can_detect_and_apply_hardware_profile(self):
+        for marker in (
+            'id="settings-hardware-mode"',
+            'id="settings-hardware-detect"',
+            'id="settings-hardware-status"',
+        ):
+            self.assertIn(marker, self.html)
+        for marker in (
+            "function detectHardware",
+            "http://127.0.0.1:18794/hardware/apply",
+            "hardware_mode",
+            "hardware_profile",
+        ):
+            self.assertIn(marker, self.javascript)
+
     def test_settings_can_upload_or_download_personal_logo(self):
         for marker in (
             'id="settings-logo-file"',

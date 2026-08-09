@@ -8,6 +8,9 @@ class DockerContractTests(unittest.TestCase):
     def setUpClass(cls):
         cls.root = Path(__file__).resolve().parents[2]
         cls.compose = (cls.root / "compose.yaml").read_text(encoding="utf-8")
+        cls.gpu_compose = (cls.root / "compose.gpu.yaml").read_text(
+            encoding="utf-8"
+        )
         cls.dockerfile = (cls.root / "Dockerfile").read_text(encoding="utf-8")
         cls.readme = (cls.root / "README.md").read_text(encoding="utf-8")
         cls.entrypoint = (cls.root / "docker" / "entrypoint.sh").read_text(
@@ -79,6 +82,13 @@ class DockerContractTests(unittest.TestCase):
         self.assertNotIn("tensorflow[and-cuda]", self.dockerfile)
         self.assertNotRegex(self.dockerfile, re.compile(r"onnxruntime-gpu"))
 
+    def test_gpu_override_accelerates_only_ollama(self):
+        self.assertNotIn("capabilities: [gpu]", self.compose)
+        self.assertIn("ollama:", self.gpu_compose)
+        self.assertIn("driver: nvidia", self.gpu_compose)
+        self.assertIn("capabilities: [gpu]", self.gpu_compose)
+        self.assertNotIn("tool:", self.gpu_compose)
+
     def test_readme_documents_end_user_docker_workflow(self):
         for text in (
             "docker compose up -d --build tool",
@@ -92,6 +102,9 @@ class DockerContractTests(unittest.TestCase):
             "tool-data",
             "HyperFrames",
             "captcha",
+            "Tự động (khuyên dùng)",
+            "compose.gpu.yaml",
+            "Whisper, Demucs và render vẫn chạy CPU",
         ):
             with self.subTest(text=text):
                 self.assertIn(text, self.readme)

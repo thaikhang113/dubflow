@@ -188,6 +188,31 @@ class HostLoginHelperTests(unittest.TestCase):
             self.assertNotIn("stdout", saved)
             self.assertNotIn("stderr", saved)
 
+    def test_hardware_status_keeps_fresh_detection_and_saved_selection(self):
+        helper = self.load_helper()
+        detection = {
+            "gpu": {"name": "Fresh GPU", "memory_mb": 8192},
+            "docker_gpu": True,
+            "recommended_profile": "gpu",
+            "fallback_reason": "",
+            "stages": {"ollama": "gpu"},
+        }
+        saved = {
+            "gpu": {"name": "Stale GPU", "memory_mb": 4096},
+            "docker_gpu": False,
+            "recommended_profile": "cpu",
+            "requested_mode": "auto",
+            "selected_profile": "hybrid",
+        }
+
+        result = helper.hardware_status(detection, saved)
+
+        self.assertEqual("Fresh GPU", result["gpu"]["name"])
+        self.assertTrue(result["docker_gpu"])
+        self.assertEqual("gpu", result["recommended_profile"])
+        self.assertEqual("auto", result["requested_mode"])
+        self.assertEqual("hybrid", result["selected_profile"])
+
     def test_apply_forced_gpu_falls_back_to_cpu(self):
         helper = self.load_helper()
         with tempfile.TemporaryDirectory() as tmp:
