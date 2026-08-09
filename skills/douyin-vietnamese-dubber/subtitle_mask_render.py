@@ -1537,14 +1537,11 @@ def bottom_safe_text_box(width: int, height: int, args) -> dict:
 
 
 def compute_cue_pos(box: dict, line_count: int, video_h: int, vertical_offset_ratio: float) -> tuple:
-    """Tính tâm (x,y) cho \\an5\\pos. Đặt giữa band, hơi cao hơn khi 2 dòng để cân."""
+    """Tính tâm cố định (x,y) cho \\an5\\pos trong subtitle band."""
     if not box:
         return None, None, False
     cx = int(box["x"] + box["w"] / 2)
-    band_cy = int(box["y"] + box["h"] / 2)
-    # Với 2 dòng, đẩy tâm lên trên một chút để cân chữ trong band.
-    offset = int(video_h * vertical_offset_ratio) if line_count > 1 else 0
-    cy = band_cy - offset
+    cy = int(box["y"] + box["h"] / 2)
     return cx, cy, True
 
 

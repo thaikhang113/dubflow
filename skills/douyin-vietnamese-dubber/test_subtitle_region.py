@@ -131,6 +131,26 @@ def test_localized_blur_uses_stable_band_for_vietnamese_text_layout():
     assert 'fit_vi_subtitle_text(event.get("text", ""), text_box,' in source
     assert 'VI_SUBTITLE_SAFE_HEIGHT_RATIO="${VI_SUBTITLE_SAFE_HEIGHT_RATIO:-1.0}"' in run_sh
 
+def test_vietnamese_subtitle_font_and_position_stay_stable_between_cues():
+    options = {
+        "min_size": 48,
+        "max_size": 56,
+        "safe_width_ratio": 0.88,
+        "safe_height_ratio": 1.0,
+        "max_lines": 2,
+    }
+    band = {"x": 0, "y": 880, "w": W, "h": 120}
+    short = renderer.fit_vi_subtitle_text("Được rồi", band, W, H, None, options)
+    medium = renderer.fit_vi_subtitle_text(
+        "Đây là một câu phụ đề tiếng Việt đủ dài để kiểm tra",
+        band, W, H, None, options,
+    )
+    assert short["font_size"] == medium["font_size"] == 56, (short, medium)
+    assert len(short["lines"]) <= 2 and len(medium["lines"]) <= 2
+    assert renderer.compute_cue_pos(band, 1, H, 0.02) == renderer.compute_cue_pos(band, 2, H, 0.02)
+    run_sh = (SKILL_DIR / "run.sh").read_text(encoding="utf-8")
+    assert 'VI_SUBTITLE_MAX_FONT_SIZE="${VI_SUBTITLE_MAX_FONT_SIZE:-56}"' in run_sh
+
 
 def test_localized_blur_filter_renders_with_ffmpeg():
     if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
