@@ -14,8 +14,10 @@ ROOT = Path(__file__).resolve().parent
 REPO_ROOT = ROOT.parents[1]
 EXTENSION_DIR = ROOT / "extension"
 PROFILE_DIR = Path.home() / ".auto-vietsub" / "bilibili-browser"
+HARDWARE_STATE_PATH = Path.home() / ".auto-vietsub" / "hardware.json"
 OLLAMA_MODEL = "translategemma:4b"
 WHISPER_MODELS = {"small", "medium"}
+HARDWARE_MODES = {"auto", "cpu", "gpu"}
 ALLOWED_ORIGINS = {
     "http://127.0.0.1:18793",
     "http://localhost:18793",
@@ -156,6 +158,138 @@ def install_whisper(model: str, run=subprocess.run, docker=None) -> dict:
         return {"ok": False, "error_code": "WhisperModelPullFailed"}
     return {"ok": True, "state": "whisper_ready", "model": model}
 
+def detect_hardware(run=subprocess.run, docker=None) -> dict:
+    docker = docker or shutil.which("docker")
+    try:
+        gpu = run(
+            [
+                "nvidia-smi",
+                "--query-gpu=name,memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            stdin=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        gpu = None
+    rows = []
+    if gpu and gpu.returncode == 0:
+        for line in str(gpu.stdout or "").splitlines():
+            try:
+                name, memory = line.rsplit(",", 1)
+                rows.append((name.strip(), int(memory.strip())))
+            except (TypeError, ValueError):
+                continue
+    stages = {"ollama": "cpu", "whisper": "cpu", "demucs": "cpu", "render": "cpu"}
+    if not rows:
+        return {
+            "ok": True,
+            "gpu": None,
+            "docker_gpu": False,
+            "recommended_profile": "cpu",
+            "fallback_reason": "GpuNotFound",
+            "stages": stages,
+        }
+    name, memory_mb = max(rows, key=lambda item: item[1])
+    docker_gpu = False
+    if docker:
+        try:
+            smoke = run(
+                [
+                    docker, "run", "--rm", "--gpus", "all",
+                    "--entrypoint", "nvidia-smi",
+                    "ollama/ollama:latest",
+                    "--query-gpu=name",
+                    "--format=csv,noheader",
+                ],
+                cwd=REPO_ROOT,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=120,
+                check=False,
+            )
+            docker_gpu = smoke.returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    if docker_gpu:
+        stages["ollama"] = "gpu"
+    return {
+        "ok": True,
+        "gpu": {"name": name, "memory_mb": memory_mb},
+        "docker_gpu": docker_gpu,
+        "recommended_profile": (
+            "gpu" if memory_mb >= 6144 else "hybrid"
+        ) if docker_gpu else "cpu",
+        "fallback_reason": "" if docker_gpu else "DockerGpuUnavailable",
+        "stages": stages,
+    }
+
+def apply_hardware_mode(
+    mode: str,
+    run=subprocess.run,
+    docker=None,
+    state_path: Path = HARDWARE_STATE_PATH,
+) -> dict:
+    mode = str(mode or "").strip().lower()
+    if mode not in HARDWARE_MODES:
+        return {"ok": False, "error_code": "HardwareModeInvalid"}
+    docker = docker or shutil.which("docker")
+    detection = detect_hardware(run=run, docker=docker)
+    selected = (
+        detection["recommended_profile"]
+        if mode != "cpu" and detection["docker_gpu"]
+        else "cpu"
+    )
+    if not docker:
+        return {**detection, "ok": False, "error_code": "DockerNotFound"}
+    command = [
+        docker, "compose", "--profile", "ollama",
+        "up", "-d", "--force-recreate", "ollama",
+    ] if selected == "cpu" else [
+        docker, "compose",
+        "-f", "compose.yaml",
+        "-f", "compose.gpu.yaml",
+        "--profile", "ollama",
+        "up", "-d", "--force-recreate", "ollama",
+    ]
+    try:
+        result = run(
+            command,
+            cwd=REPO_ROOT,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=300,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return {**detection, "ok": False, "error_code": "DockerUnavailable"}
+    if result.returncode != 0:
+        return {**detection, "ok": False, "error_code": "HardwareApplyFailed"}
+    payload = {
+        **detection,
+        "ok": True,
+        "requested_mode": mode,
+        "selected_profile": selected,
+    }
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return payload
+
+def read_hardware_state(path: Path = HARDWARE_STATE_PATH) -> dict:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "AutoVietsubHostLogin/1"
@@ -202,6 +336,13 @@ class Handler(BaseHTTPRequestHandler):
         except PermissionError:
             self._json(403, {"ok": False, "error_code": "OriginRejected"})
             return
+        if self.path == "/hardware":
+            self._json(
+                200,
+                {**detect_hardware(), **read_hardware_state()},
+                origin,
+            )
+            return
         if self.path != "/status":
             self._json(404, {"ok": False, "error_code": "NotFound"}, origin)
             return
@@ -233,6 +374,18 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(400, {"ok": False, "error_code": "InvalidJson"}, origin)
                 return
             result = install_whisper(payload.get("model"))
+        elif self.path == "/hardware/apply":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length < 1 or length > 1024:
+                    raise ValueError
+                payload = json.loads(self.rfile.read(length))
+                if not isinstance(payload, dict):
+                    raise ValueError
+            except (ValueError, UnicodeError, json.JSONDecodeError):
+                self._json(400, {"ok": False, "error_code": "InvalidJson"}, origin)
+                return
+            result = apply_hardware_mode(payload.get("mode"))
         else:
             self._json(404, {"ok": False, "error_code": "NotFound"}, origin)
             return
@@ -242,6 +395,7 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> None:
     if not EXTENSION_DIR.is_dir():
         raise SystemExit("Bilibili extension directory is missing")
+    apply_hardware_mode(read_hardware_state().get("requested_mode", "auto"))
     server = ThreadingHTTPServer(SERVER_ADDRESS, Handler)
     print("Bilibili host helper: http://127.0.0.1:18794", flush=True)
     try:

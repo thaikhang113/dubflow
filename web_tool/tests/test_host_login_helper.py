@@ -1,5 +1,6 @@
 import importlib.util
 from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import Mock
 
@@ -116,6 +117,101 @@ class HostLoginHelperTests(unittest.TestCase):
             "WhisperModelInvalid",
             helper.install_whisper("../../secret", run=run, docker="docker")["error_code"],
         )
+    def test_hardware_detection_selects_profiles_from_verified_vram(self):
+        helper = self.load_helper()
+        for memory_mb, expected in ((4096, "hybrid"), (8192, "gpu")):
+            with self.subTest(memory_mb=memory_mb):
+                run = Mock(
+                    side_effect=[
+                        Mock(returncode=0, stdout=f"NVIDIA Test GPU, {memory_mb}\n"),
+                        Mock(returncode=0),
+                    ]
+                )
+                result = helper.detect_hardware(run=run, docker="docker")
+                self.assertEqual(expected, result["recommended_profile"])
+                self.assertTrue(result["docker_gpu"])
+                self.assertEqual(
+                    {"ollama": "gpu", "whisper": "cpu", "demucs": "cpu", "render": "cpu"},
+                    result["stages"],
+                )
+
+    def test_hardware_detection_falls_back_when_gpu_or_docker_is_unavailable(self):
+        helper = self.load_helper()
+        no_gpu = helper.detect_hardware(
+            run=Mock(return_value=Mock(returncode=1, stdout="")),
+            docker="docker",
+        )
+        self.assertEqual("cpu", no_gpu["recommended_profile"])
+        self.assertEqual("GpuNotFound", no_gpu["fallback_reason"])
+
+        docker_fail = helper.detect_hardware(
+            run=Mock(
+                side_effect=[
+                    Mock(returncode=0, stdout="NVIDIA Test GPU, 4096\n"),
+                    Mock(returncode=1),
+                ]
+            ),
+            docker="docker",
+        )
+        self.assertEqual("cpu", docker_fail["recommended_profile"])
+        self.assertEqual("DockerGpuUnavailable", docker_fail["fallback_reason"])
+
+    def test_apply_hardware_uses_only_fixed_compose_commands(self):
+        helper = self.load_helper()
+        with tempfile.TemporaryDirectory() as tmp:
+            state_path = Path(tmp) / "hardware.json"
+            run = Mock(
+                side_effect=[
+                    Mock(returncode=0, stdout="NVIDIA Test GPU, 4096\n"),
+                    Mock(returncode=0),
+                    Mock(returncode=0),
+                ]
+            )
+            result = helper.apply_hardware_mode(
+                "auto",
+                run=run,
+                docker="docker",
+                state_path=state_path,
+            )
+            self.assertEqual("hybrid", result["selected_profile"])
+            self.assertEqual(
+                [
+                    "docker", "compose",
+                    "-f", "compose.yaml",
+                    "-f", "compose.gpu.yaml",
+                    "--profile", "ollama",
+                    "up", "-d", "--force-recreate", "ollama",
+                ],
+                run.call_args_list[-1].args[0],
+            )
+            saved = state_path.read_text(encoding="utf-8")
+            self.assertNotIn("stdout", saved)
+            self.assertNotIn("stderr", saved)
+
+    def test_apply_forced_gpu_falls_back_to_cpu(self):
+        helper = self.load_helper()
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Mock(
+                side_effect=[
+                    Mock(returncode=1, stdout=""),
+                    Mock(returncode=0),
+                ]
+            )
+            result = helper.apply_hardware_mode(
+                "gpu",
+                run=run,
+                docker="docker",
+                state_path=Path(tmp) / "hardware.json",
+            )
+            self.assertEqual("cpu", result["selected_profile"])
+            self.assertEqual("GpuNotFound", result["fallback_reason"])
+            self.assertEqual(
+                [
+                    "docker", "compose", "--profile", "ollama",
+                    "up", "-d", "--force-recreate", "ollama",
+                ],
+                run.call_args_list[-1].args[0],
+            )
 
 
 if __name__ == "__main__":
