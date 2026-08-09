@@ -16,23 +16,29 @@ class DockerContractTests(unittest.TestCase):
 
     def test_compose_keeps_web_local_and_runtime_persistent(self):
         self.assertIn("tool:", self.compose)
-        self.assertIn('127.0.0.1:18793:18793', self.compose)
+        self.assertIn('127.0.0.1:${TOOL_PORT:-18793}:18793', self.compose)
         self.assertIn("init: true", self.compose)
         self.assertIn("healthcheck:", self.compose)
-        for volume in (
-            "tool-data",
-            "tool-secrets",
-            "tool-jobs",
-            "tool-output",
-            "tool-models",
-            "tool-browser",
-        ):
-            with self.subTest(volume=volume):
-                self.assertIn(volume, self.compose)
+        self.assertIn(
+            "${TOOL_RUNTIME_DIR:-/home/haonguyen/.openclaw/tool-runtime}:/data",
+            self.compose,
+        )
+        self.assertIn("host.docker.internal:host-gateway", self.compose)
         self.assertNotRegex(self.compose, r"9222:")
         self.assertNotRegex(self.compose, r"(?i)(api[_-]?key|cookie|token):\s*\S+")
 
-    def test_optional_profiles_and_secret_backed_trend_database(self):
+    def test_compose_uses_only_supported_non_secret_endpoints(self):
+        for endpoint in (
+            "OLLAMA_API_BASE: http://host.docker.internal:11434",
+            "NINEROUTER_API_BASE: http://host.docker.internal:20128/v1",
+            "OCR_VISION_API_BASE: http://host.docker.internal:20128/v1",
+            "AI33_API_BASE: https://api.ai33.pro",
+        ):
+            with self.subTest(endpoint=endpoint):
+                self.assertIn(endpoint, self.compose)
+        self.assertNotIn("env_file:", self.compose)
+
+    def test_optional_profiles_and_secret_backed_trend_database_are_preserved(self):
         self.assertIn('profiles: ["ollama"]', self.compose)
         self.assertIn('profiles: ["trend"]', self.compose)
         self.assertIn("POSTGRES_PASSWORD_FILE", self.compose)

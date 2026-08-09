@@ -6,21 +6,19 @@ services:
     init: true
     restart: unless-stopped
     ports:
-      - "127.0.0.1:18793:18793"
+      - "127.0.0.1:${TOOL_PORT:-18793}:18793"
     environment:
       TOOL_ROOT: /data
       TOOL_BIND_HOST: 0.0.0.0
       TOOL_BIND_PORT: "18793"
-      OLLAMA_HOST_URL: http://host.docker.internal:11434
+      OLLAMA_API_BASE: http://host.docker.internal:11434
+      NINEROUTER_API_BASE: http://host.docker.internal:20128/v1
+      OCR_VISION_API_BASE: http://host.docker.internal:20128/v1
+      AI33_API_BASE: https://api.ai33.pro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - tool-data:/data/data
-      - tool-secrets:/data/secrets
-      - tool-jobs:/data/jobs
-      - tool-output:/data/output
-      - tool-models:/data/models
-      - tool-browser:/data/browser
+      - "${TOOL_RUNTIME_DIR:-/home/haonguyen/.openclaw/tool-runtime}:/data"
     healthcheck:
       test: ["CMD", "python", "/app/docker/healthcheck.py"]
       interval: 15s
@@ -55,11 +53,5 @@ secrets:
     file: ${TREND_DB_PASSWORD_FILE:-./.tool-secrets/trend-db-password.txt}
 
 volumes:
-  tool-data:
-  tool-secrets:
-  tool-jobs:
-  tool-output:
-  tool-models:
-  tool-browser:
   ollama-models:
   trend-db-data:
