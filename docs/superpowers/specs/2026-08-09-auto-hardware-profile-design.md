@@ -18,10 +18,10 @@ Mo rong helper nho hon tao them service.
 ## Profile
 
 - `cpu`: khong co GPU Docker hop le.
-- `hybrid`: GPU hop le, VRAM duoi 6 GiB. Whisper va Ollama uu tien GPU theo
-  tung giai doan; Demucs giu CPU; render dung NVENC neu smoke test dat.
-- `gpu`: GPU hop le, VRAM tu 6 GiB. Whisper, Ollama, Demucs va render co the
-  dung GPU.
+- `hybrid`: GPU hop le, VRAM duoi 6 GiB. Ollama uu tien GPU; cac stage trong
+  tool image CPU van chay CPU.
+- `gpu`: GPU hop le, VRAM tu 6 GiB. Moi stage dung GPU khi binary/backend cua
+  stage do va smoke test deu dat.
 - `auto`: host helper chon mot trong ba profile tren.
 
 Neu nguoi dung ep `GPU` nhung smoke test that bai, job chay CPU va Doctor ghi
@@ -36,10 +36,14 @@ ro ly do fallback. Khong de job fail chi vi GPU.
 5. Job moi nhan bien moi truong profile.
 6. Pipeline chon binary/backend GPU neu san sang; moi buoc tu fallback CPU.
 
+Image hien tai co Whisper.cpp va PyTorch CPU. Doctor phai hien dung Whisper va
+Demucs la CPU, khong duoc bao GPU gia. GPU image rieng chi them khi CUDA build
+duoc kiem thu tren may 6 GiB tro len.
+
 ## Docker
 
 - `compose.yaml` giu CPU-safe mac dinh.
-- `compose.gpu.yaml` chi them GPU reservation cho Ollama va tool.
+- `compose.gpu.yaml` chi them GPU reservation cho Ollama.
 - Host helper dung dung compose override GPU khi smoke test dat.
 - Khong them API key, cookie, output command, hoac shell command tuy y.
 
@@ -50,7 +54,7 @@ Doctor hien:
 
 - ten GPU va VRAM;
 - profile da chon;
-- Ollama, Whisper, Demucs, render dang dung CPU hay GPU;
+- Ollama, Whisper, Demucs va render dang dung CPU hay GPU;
 - ly do fallback va nut `Nhan dien lai`.
 
 ## Kiem thu
@@ -61,4 +65,3 @@ Doctor hien:
 - UI contract va browser test desktop/mobile.
 - Docker smoke test xac nhan Ollama processor GPU khi profile GPU dat.
 - E2E Bilibili bang URL `BV1ATDoYAENJ`, yeu cau `final_video_vi.mp4` hop le.
-
