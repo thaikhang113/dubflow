@@ -126,6 +126,7 @@ def main(argv=None):
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--assets", default=str(ASSETS))
+    parser.add_argument("--logo")
     parser.add_argument("--include-intro", default="0")
     parser.add_argument("--include-outro", default="0")
     args = parser.parse_args(argv)
@@ -133,7 +134,8 @@ def main(argv=None):
         assets = json.loads(Path(args.assets).read_text(encoding="utf-8"))
         root = Path(args.assets).resolve().parents[3]
         resolve = lambda value: Path(value) if Path(value).is_absolute() else root / value
-        result = execute(args.input, args.output, resolve(assets["logo"]), resolve(assets["approved_intro_mp4"]), resolve(assets["approved_outro_mp4"]), parse_bool(args.include_intro, "include_intro"), parse_bool(args.include_outro, "include_outro"))
+        logo = Path(args.logo) if args.logo else resolve(assets["logo"])
+        result = execute(args.input, args.output, logo, resolve(assets["approved_intro_mp4"]), resolve(assets["approved_outro_mp4"]), parse_bool(args.include_intro, "include_intro"), parse_bool(args.include_outro, "include_outro"))
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
         return 0
     except Exception as exc:

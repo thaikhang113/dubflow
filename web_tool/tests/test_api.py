@@ -1,10 +1,12 @@
 import asyncio
 import json
+import io
 import tempfile
 import unittest
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from web_tool.app import create_app
 from web_tool.config import Settings
@@ -150,6 +152,23 @@ class ApiTests(unittest.TestCase):
             files={"file": ("secret.txt", b"no", "text/plain")},
         )
         self.assertEqual(422, rejected.status_code)
+
+    def test_brand_logo_upload_persists_and_can_be_removed(self):
+        image = io.BytesIO()
+        Image.new("RGBA", (48, 48), (0, 255, 0, 255)).save(image, "PNG")
+        uploaded = self.client.post(
+            "/api/branding/logo",
+            files={"file": ("my-logo.png", image.getvalue(), "image/png")},
+        )
+        self.assertEqual(201, uploaded.status_code, uploaded.text)
+        self.assertTrue(uploaded.json()["configured"])
+        self.assertEqual(200, self.client.get("/api/branding/logo/image").status_code)
+        restarted = create_app(self.settings)
+        restarted.state.store.set_queue_paused(True)
+        with TestClient(restarted) as client:
+            self.assertTrue(client.get("/api/branding/logo").json()["configured"])
+        self.assertEqual(204, self.client.delete("/api/branding/logo").status_code)
+        self.assertFalse(self.client.get("/api/branding/logo").json()["configured"])
 
     def test_resume_reuses_checkpoint_and_retry_links_new_job(self):
         job = self.create_job()

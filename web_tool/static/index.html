@@ -493,6 +493,19 @@
                 <button class="secondary" id="settings-whisper-install" type="button">Tải model Whisper</button>
               </div>
               <label class="field">
+                <span>Logo cá nhân</span>
+                <input id="settings-logo-file" type="file" accept="image/png,image/jpeg,image/webp">
+              </label>
+              <label class="field field-wide">
+                <span>Hoặc URL logo HTTPS</span>
+                <input id="settings-logo-url" type="url" maxlength="2048" placeholder="https://example.com/logo.png">
+              </label>
+              <div class="command-field">
+                <button class="secondary" id="settings-logo-save" type="button">Lưu logo</button>
+                <button class="secondary danger-control" id="settings-logo-remove" type="button">Xóa logo</button>
+              </div>
+              <img id="settings-logo-preview" class="logo-preview" alt="Logo cá nhân đang dùng" hidden>
+              <label class="field">
                 <span>Queue poll (giây)</span>
                 <input id="settings-queue-poll" type="number" min="1" max="60">
               </label>

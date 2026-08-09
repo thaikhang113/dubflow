@@ -34,6 +34,7 @@ BILIBILI_BRAND_INCLUDE_OUTRO="${BILIBILI_BRAND_INCLUDE_OUTRO:-0}"
 BILIBILI_BRAND_REQUIRED="${BILIBILI_BRAND_REQUIRED:-0}"
 SINGLE_JOB_BRAND_SCRIPT="${SINGLE_JOB_BRAND_SCRIPT:-$SKILL_ROOT/series-compilation-orchestrator/scripts/single_job_brand.py}"
 BRAND_ASSETS_JSON="${BRAND_ASSETS_JSON:-$SKILL_ROOT/series-compilation-orchestrator/assets/brand-assets.json}"
+BILIBILI_BRAND_LOGO="${BILIBILI_BRAND_LOGO:-}"
 
 fail() { echo "ERROR: $*" >&2; exit 1; }
 need_cmd() { command -v "$1" >/dev/null 2>&1 || fail "Thiếu lệnh: $1"; }
@@ -354,7 +355,12 @@ cp "$META_JSON" "$OUT_DIR/bilibili_meta.json" 2>/dev/null || true
 rm -f "$OUT_DIR/bilibili_cookies.txt" 2>/dev/null || true
 [[ -s "$COVER_FILE" ]] && cp "$COVER_FILE" "$OUT_DIR/thumbnail_reference_bilibili.jpg" 2>/dev/null || true
 set +e
-python3 "$SINGLE_JOB_BRAND_SCRIPT" --input "$OUT_DIR/final_video_vi.mp4" --output "$OUT_DIR/final_video_vi.mp4" --assets "$BRAND_ASSETS_JSON" --include-intro "$BILIBILI_BRAND_INCLUDE_INTRO" --include-outro "$BILIBILI_BRAND_INCLUDE_OUTRO"
+brand_logo_args=()
+if [[ -n "$BILIBILI_BRAND_LOGO" ]]; then
+  [[ -s "$BILIBILI_BRAND_LOGO" ]] || fail "BILIBILI_BRAND_LOGO không tồn tại hoặc rỗng"
+  brand_logo_args=(--logo "$BILIBILI_BRAND_LOGO")
+fi
+python3 "$SINGLE_JOB_BRAND_SCRIPT" --input "$OUT_DIR/final_video_vi.mp4" --output "$OUT_DIR/final_video_vi.mp4" --assets "$BRAND_ASSETS_JSON" "${brand_logo_args[@]}" --include-intro "$BILIBILI_BRAND_INCLUDE_INTRO" --include-outro "$BILIBILI_BRAND_INCLUDE_OUTRO"
 brand_status=$?
 set -e
 if [[ "$brand_status" -ne 0 && "$BILIBILI_BRAND_REQUIRED" == "1" ]]; then

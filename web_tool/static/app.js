@@ -110,6 +110,7 @@ function showView(name) {
   if (name === "settings") {
     loadSettings();
     loadDoctor();
+    loadBrandLogo();
   }
 }
 
@@ -920,6 +921,58 @@ async function installLocalWhisper() {
   }
 }
 
+async function loadBrandLogo() {
+  try {
+    const logo = await api("/api/branding/logo");
+    const preview = document.querySelector("#settings-logo-preview");
+    preview.hidden = !logo.configured;
+    if (logo.configured) preview.src = `${logo.image_url}?t=${Date.now()}`;
+    else preview.removeAttribute("src");
+    document.querySelector("#settings-logo-remove").disabled = !logo.configured;
+  } catch (error) {
+    notify(`Không tải được trạng thái logo: ${error.message}`, true);
+  }
+}
+
+async function saveBrandLogo() {
+  const file = document.querySelector("#settings-logo-file").files[0];
+  const url = document.querySelector("#settings-logo-url").value.trim();
+  if (!file && !url) {
+    notify("Chọn file logo hoặc dán URL HTTPS.", true);
+    return;
+  }
+  try {
+    if (file) {
+      const body = new FormData();
+      body.append("file", file);
+      await api("/api/branding/logo", {method: "POST", body});
+    } else {
+      await api("/api/branding/logo-url", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({url}),
+      });
+    }
+    document.querySelector("#settings-logo-file").value = "";
+    document.querySelector("#settings-logo-url").value = "";
+    await loadBrandLogo();
+    notify("Đã lưu logo. Job Bilibili mới sẽ blur logo gốc và chèn logo này.");
+  } catch (error) {
+    notify(`Không lưu được logo: ${error.message}`, true);
+  }
+}
+
+async function removeBrandLogo() {
+  if (!window.confirm("Xóa logo cá nhân đang lưu?")) return;
+  try {
+    await api("/api/branding/logo", {method: "DELETE"});
+    await loadBrandLogo();
+    notify("Đã xóa logo.");
+  } catch (error) {
+    notify(`Không xóa được logo: ${error.message}`, true);
+  }
+}
+
 function doctorAdvice(value) {
   const advice = {
     "FFmpeg": "Thiếu bộ xử lý hình ảnh và âm thanh.",
@@ -1126,6 +1179,8 @@ document.querySelector("#trend-mode").addEventListener("change", (event) => {
 });
 document.querySelector("#settings-form").addEventListener("submit", saveSettings);
 document.querySelector("#settings-whisper-install").addEventListener("click", installLocalWhisper);
+document.querySelector("#settings-logo-save").addEventListener("click", saveBrandLogo);
+document.querySelector("#settings-logo-remove").addEventListener("click", removeBrandLogo);
 document.querySelector("#settings-doctor").addEventListener("click", loadDoctor);
 document.querySelector("#settings-telegram-test").addEventListener("click", () => showRuntime("/api/telegram/test"));
 document.querySelector("#settings-hyperframes").addEventListener("click", () => showRuntime("/api/hyperframes/status"));

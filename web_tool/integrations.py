@@ -346,8 +346,17 @@ def runtime_doctor(
 ) -> dict:
     runtime_settings = runtime_settings or {}
     login_status = login_status or {}
-    whisper = settings.models_dir / "whisper.cpp" / "build" / "bin" / (
+    whisper_binary = settings.models_dir / "whisper.cpp" / "build" / "bin" / (
         "whisper-cli.exe" if os.name == "nt" else "whisper-cli"
+    )
+    whisper_model = str(runtime_settings.get("whisper_model") or "medium").lower()
+    if whisper_model not in {"small", "medium"}:
+        whisper_model = "medium"
+    whisper_model_path = (
+        settings.models_dir
+        / "whisper.cpp"
+        / "models"
+        / f"ggml-{whisper_model}.bin"
     )
     writable = {}
     for name in ("data_dir", "secrets_dir", "jobs_dir", "output_dir", "models_dir", "browser_dir"):
@@ -357,7 +366,10 @@ def runtime_doctor(
         "ffmpeg": bool(shutil.which("ffmpeg")),
         "chromium": bool(shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("msedge")),
         "yt_dlp": bool(shutil.which("yt-dlp")),
-        "whisper": whisper.is_file(),
+        "whisper": whisper_binary.is_file() and whisper_model_path.is_file(),
+        "whisper_binary": whisper_binary.is_file(),
+        "whisper_model": whisper_model,
+        "whisper_model_installed": whisper_model_path.is_file(),
         "demucs": importlib.util.find_spec("demucs") is not None,
         "edge_tts": bool(shutil.which("edge-tts")),
         "host_login_helper": bool(host_helper_available),

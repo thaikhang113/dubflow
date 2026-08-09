@@ -1,5 +1,6 @@
 import json
 from io import BytesIO
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -149,6 +150,30 @@ class IntegrationTests(unittest.TestCase):
         self.assertIn("demucs", report["checks"])
         self.assertIn("volumes", report["checks"])
         self.assertNotIn("token", repr(report).lower())
+
+    def test_runtime_doctor_checks_selected_whisper_model(self):
+        root = self.settings.models_dir / "whisper.cpp"
+        binary = root / "build" / "bin" / (
+            "whisper-cli.exe" if os.name == "nt" else "whisper-cli"
+        )
+        binary.parent.mkdir(parents=True)
+        binary.write_bytes(b"binary")
+        small = root / "models" / "ggml-small.bin"
+        small.parent.mkdir(parents=True)
+        small.write_bytes(b"model")
+        report = runtime_doctor(
+            self.settings,
+            [],
+            runtime_settings={"whisper_model": "medium"},
+        )
+        self.assertFalse(report["checks"]["whisper"])
+        self.assertEqual("medium", report["checks"]["whisper_model"])
+        (root / "models" / "ggml-medium.bin").write_bytes(b"model")
+        self.assertTrue(runtime_doctor(
+            self.settings,
+            [],
+            runtime_settings={"whisper_model": "medium"},
+        )["checks"]["whisper"])
 
     @patch("web_tool.integrations.os.access", return_value=True)
     @patch("web_tool.integrations.importlib.util.find_spec", return_value=object())

@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
 from .bilibili_login import BilibiliLogin
+from .branding import MAX_LOGO_BYTES, download_logo, save_logo
 from .config import Settings
 from .integrations import (
     hyperframes_status,
@@ -106,6 +107,9 @@ class JobRequest(BaseModel):
 
 class CookieImportRequest(BaseModel):
     text: str
+
+class LogoUrlRequest(BaseModel):
+    url: str = Field(min_length=1, max_length=2048)
 
 class ChannelRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
@@ -269,6 +273,42 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.delete("/api/bilibili/login/cookies")
     def clear_bilibili_login():
         return bilibili_login.clear()
+
+    def brand_logo_path() -> Path:
+        return settings.data_dir / "branding-logo.png"
+
+    @app.get("/api/branding/logo")
+    def get_brand_logo():
+        path = brand_logo_path()
+        return {"configured": path.is_file(), "image_url": "/api/branding/logo/image" if path.is_file() else ""}
+
+    @app.get("/api/branding/logo/image")
+    def get_brand_logo_image():
+        path = brand_logo_path()
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="brand logo not found")
+        return FileResponse(path, media_type="image/png")
+
+    @app.post("/api/branding/logo", status_code=status.HTTP_201_CREATED)
+    def upload_brand_logo(file: UploadFile = File(...)):
+        data = file.file.read(MAX_LOGO_BYTES + 1)
+        try:
+            dimensions = save_logo(data, brand_logo_path())
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {"configured": True, "image_url": "/api/branding/logo/image", **dimensions}
+
+    @app.post("/api/branding/logo-url", status_code=status.HTTP_201_CREATED)
+    def download_brand_logo(request: LogoUrlRequest):
+        try:
+            dimensions = download_logo(request.url, brand_logo_path())
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {"configured": True, "image_url": "/api/branding/logo/image", **dimensions}
+
+    @app.delete("/api/branding/logo", status_code=status.HTTP_204_NO_CONTENT)
+    def delete_brand_logo():
+        brand_logo_path().unlink(missing_ok=True)
 
     def validate_channel(request: ChannelRequest) -> dict:
         values = request.model_dump()

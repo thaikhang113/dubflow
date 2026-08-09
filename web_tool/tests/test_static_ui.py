@@ -89,6 +89,23 @@ class StaticUiTests(unittest.TestCase):
             "http://127.0.0.1:18794/whisper/install",
             "whisper_model",
         ):
+                self.assertIn(marker, self.javascript)
+
+    def test_settings_can_upload_or_download_personal_logo(self):
+        for marker in (
+            'id="settings-logo-file"',
+            'id="settings-logo-url"',
+            'id="settings-logo-save"',
+            'id="settings-logo-remove"',
+            'id="settings-logo-preview"',
+        ):
+            self.assertIn(marker, self.html)
+        for marker in (
+            "function saveBrandLogo",
+            "function removeBrandLogo",
+            "/api/branding/logo-url",
+            "/api/branding/logo",
+        ):
             self.assertIn(marker, self.javascript)
 
 

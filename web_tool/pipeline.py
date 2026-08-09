@@ -197,6 +197,10 @@ def build_job_environment(
     cookie_path = settings.secrets_dir / "bilibili-cookies.txt"
     if cookie_path.is_file():
         environment["BILIBILI_COOKIES_FILE"] = str(cookie_path)
+    logo_path = settings.data_dir / "branding-logo.png"
+    if logo_path.is_file():
+        environment["BILIBILI_BRAND_LOGO"] = str(logo_path)
+        environment["BILIBILI_BRAND_REQUIRED"] = "1"
     return environment
 
 

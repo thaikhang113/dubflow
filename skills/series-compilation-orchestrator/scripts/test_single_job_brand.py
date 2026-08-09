@@ -47,6 +47,11 @@ class SingleJobBrandTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "include_intro"):
             single_job_brand.parse_bool("maybe", "include_intro")
 
+    def test_cli_accepts_managed_logo_override(self):
+        source = Path(single_job_brand.__file__).read_text(encoding="utf-8")
+        self.assertIn('parser.add_argument("--logo")', source)
+        self.assertIn('Path(args.logo) if args.logo else resolve(assets["logo"])', source)
+
     def test_decode_media_requires_video_and_audio_to_decode(self):
         with patch.object(single_job_brand.subprocess, "run") as run:
             single_job_brand.decode_media("branded.mp4")

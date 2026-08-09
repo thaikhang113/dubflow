@@ -365,6 +365,16 @@ h3 {
   font-size: 12px;
 }
 
+.logo-preview {
+  width: 72px;
+  height: 72px;
+  align-self: end;
+  border: 1px solid #3a443e;
+  border-radius: 50%;
+  background: #ffffff;
+  object-fit: contain;
+}
+
 .jobs-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.65fr) minmax(300px, 0.75fr);

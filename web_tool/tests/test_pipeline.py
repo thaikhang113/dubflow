@@ -149,6 +149,17 @@ class PipelineTests(unittest.TestCase):
                 self.settings,
             )
 
+    def test_managed_brand_logo_enables_required_bilibili_branding(self):
+        logo = self.settings.data_dir / "branding-logo.png"
+        logo.write_bytes(b"png")
+        environment = build_job_environment(
+            {"id": "job-brand-logo", "request": {}},
+            {},
+            self.settings,
+        )
+        self.assertEqual(str(logo), environment["BILIBILI_BRAND_LOGO"])
+        self.assertEqual("1", environment["BILIBILI_BRAND_REQUIRED"])
+
     def test_reads_only_sanitized_structured_status(self):
         job_dir = Path(self.tmp.name) / "job"
         job_dir.mkdir()
