@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -139,7 +140,11 @@ def build_job_environment(
         "OLLAMA_MODEL": "translategemma:4b",
         "ASR_PROVIDER": "auto",
         "QWEN_ASR_ENDPOINT": "http://qwen-asr:8000",
+        "ASR_LANGUAGE": "zh",
         "VIENEU_ENDPOINT": "http://vieneu:8000",
+        "VIENEU_DEFAULT_VOICE": "hong-chau",
+        "VIENEU_STYLE": "story",
+        "OPENCLAW_HARDWARE_PROFILE": "cpu",
         "AI33_TTS_WORKERS": "3",
         "BASE_ROOT": str(job_root),
         "DOUYIN_VIDEOS_DIR": str(job_root),
@@ -156,6 +161,15 @@ def build_job_environment(
     environment["ASR_PROVIDER"] = asr_engine
     environment["QWEN_ASR_ENDPOINT"] = "http://qwen-asr:8000"
     environment["VIENEU_ENDPOINT"] = "http://vieneu:8000"
+
+    hardware_profile = str(
+        request.get("hardware_profile")
+        or os.environ.get("OPENCLAW_HARDWARE_PROFILE")
+        or "cpu"
+    ).strip().lower()
+    if hardware_profile not in {"cpu", "hybrid", "gpu"}:
+        raise ValueError("invalid hardware profile")
+    environment["OPENCLAW_HARDWARE_PROFILE"] = hardware_profile
 
     vieneu_style = str(request.get("vieneu_style") or "").strip()
     if vieneu_style:

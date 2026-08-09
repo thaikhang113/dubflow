@@ -102,8 +102,12 @@ class TTSWorkerTests(unittest.TestCase):
         self.assertIn("def vieneu_health_check", source)
         self.assertIn("def synthesize_vieneu_http", source)
         self.assertIn("VIENEU_STYLE", source)
+        self.assertIn('VIENEU_STYLE="${VIENEU_STYLE:-story}"', source)
+        self.assertIn('VIENEU_DEFAULT_VOICE="${VIENEU_DEFAULT_VOICE:-hong-chau}"', source)
         self.assertIn("if (voice or '').lower().startswith('vieneu')", source)
         self.assertIn('if [[ "$voice_lower" == vieneu:* ]]; then', source)
+        self.assertIn('payload = json.dumps({"text": text, "voice": voice, "style": style})', source)
+        self.assertIn('payload.get("ready") is True', source)
         client = source.split("# VIENEU_HTTP_CLIENT_BEGIN\n", 1)[1].split(
             "# VIENEU_HTTP_CLIENT_END", 1
         )[0]
@@ -120,8 +124,9 @@ class TTSWorkerTests(unittest.TestCase):
             def do_GET(self):
                 self.assert_path("/health")
                 self.send_response(200)
+                self.send_header("Content-Type", "application/json")
                 self.end_headers()
-                self.wfile.write(b'{"status":"ok"}')
+                self.wfile.write(b'{"ready":true}')
 
             def do_POST(self):
                 self.assert_path("/v1/synthesize")
@@ -187,15 +192,101 @@ print(json.dumps({
 
         self.assertEqual(2, len(requests))
         self.assertEqual(
-            {"text": "Xin chao", "voice": "mai", "style": "documentary"},
+            {"text": "Xin chao", "voice": "vieneu:mai", "style": "documentary"},
             requests[-1],
         )
+
+    def test_vieneu_health_requires_ready_true(self):
+        source = RUN_SH.read_text(encoding="utf-8")
+        client = source.split("# VIENEU_HTTP_CLIENT_BEGIN\n", 1)[1].split(
+            "# VIENEU_HTTP_CLIENT_END", 1
+        )[0]
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"ready":false}')
+
+            def log_message(self, *_args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    client + "print(vieneu_health_check(sys.argv[1]))",
+                    f"http://127.0.0.1:{server.server_port}",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual("False\n", result.stdout)
+        finally:
+            server.shutdown()
+            thread.join()
+            server.server_close()
+
+    def test_vieneu_failure_preserves_provider_error(self):
+        source = RUN_SH.read_text(encoding="utf-8")
+        client = source.split("# VIENEU_HTTP_CLIENT_BEGIN\n", 1)[1].split(
+            "# VIENEU_HTTP_CLIENT_END", 1
+        )[0]
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.send_response(503)
+                self.end_headers()
+
+            def log_message(self, *_args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                output = Path(directory) / "vieneu.wav"
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        "-c",
+                        client
+                        + """
+print(json.dumps(synthesize_vieneu_http(
+    "Xin chao", "vieneu:hong-chau", "story", sys.argv[2], sys.argv[1]
+)))
+""",
+                        f"http://127.0.0.1:{server.server_port}",
+                        str(output),
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                payload = json.loads(result.stdout)
+                self.assertEqual("VieNeuSynthesisFailed", payload["error_code"])
+                self.assertIn("503", payload["error_message"])
+                self.assertTrue(payload["vieneu_failed"])
+        finally:
+            server.shutdown()
+            thread.join()
+            server.server_close()
 
     def test_vieneu_preflight_falls_back_as_one_provider_or_stops_without_silence(self):
         source = RUN_SH.read_text(encoding="utf-8")
         self.assertIn("prepare_tts_provider || exit 1", source)
         self.assertIn('VOICE="ai33:${AI33_DEFAULT_VOICE_ID}"', source)
         self.assertIn('"VieNeuUnavailable"', source)
+        self.assertIn("requested_voice", source)
+        self.assertIn("actual_voice", source)
+        self.assertIn("voice_fallback_reason", source)
         vieneu_client = source.split(
             "# VIENEU_HTTP_CLIENT_BEGIN\n", 1
         )[1].split("# VIENEU_HTTP_CLIENT_END", 1)[0]

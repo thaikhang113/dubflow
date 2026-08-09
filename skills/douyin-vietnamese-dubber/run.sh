@@ -11,11 +11,12 @@ WHISPER_DIR="${WHISPER_DIR:-$HOME/whisper.cpp}"
 WHISPER_BIN="${WHISPER_BIN:-$WHISPER_DIR/build/bin/whisper-cli}"
 WHISPER_MODEL="${WHISPER_MODEL:-$WHISPER_DIR/models/ggml-small.bin}"
 ASR_PROVIDER="${ASR_PROVIDER:-auto}"
+ASR_LANGUAGE="${ASR_LANGUAGE:-zh}"
 QWEN_ASR_ENDPOINT="${QWEN_ASR_ENDPOINT:-http://qwen-asr:8000}"
 QWEN_ASR_MODEL="${QWEN_ASR_MODEL:-qwen3-asr}"
 VIENEU_ENDPOINT="${VIENEU_ENDPOINT:-http://vieneu:8000}"
-VIENEU_STYLE="${VIENEU_STYLE:-default}"
-VIENEU_DEFAULT_VOICE="${VIENEU_DEFAULT_VOICE:-default}"
+VIENEU_STYLE="${VIENEU_STYLE:-story}"
+VIENEU_DEFAULT_VOICE="${VIENEU_DEFAULT_VOICE:-hong-chau}"
 OPENCLAW_RUNTIME_PROFILE="${OPENCLAW_RUNTIME_PROFILE:-standard}"
 if [[ "${OPENCLAW_RUNTIME_PROFILE,,}" == "free_low_gpu" ]]; then
   OPENCLAW_AI_PROVIDER="${OPENCLAW_AI_PROVIDER:-ollama}"
@@ -401,6 +402,8 @@ resolve_voice() {
 }
 
 VOICE="$(resolve_voice "$VOICE_PRESET")" || exit $?
+REQUESTED_VOICE="$VOICE"
+TTS_VOICE_FALLBACK_REASON=""
 DOUYIN_STEALTH_PATH="${DOUYIN_STEALTH_PATH:-$HOME/.openclaw/workspace/skills/douyin-stealth/scripts/fetch_douyin_v2.py}"
 DOUYIN_CLEAN_MEDIA_RESOLVER="${DOUYIN_CLEAN_MEDIA_RESOLVER:-1}"
 DOUYIN_CLEAN_ONLY_DEFAULT="${DOUYIN_CLEAN_ONLY_DEFAULT:-0}"
@@ -1370,22 +1373,27 @@ from pathlib import Path
 
 report_path, srt_path, raw_path, audio_path, requested, whisper_model, qwen_model = sys.argv[1:]
 try:
-    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
-    provider = report["provider"]
-    model = qwen_model if provider == "qwen3" else whisper_model
-    audio_sha256 = hashlib.sha256(Path(audio_path).read_bytes()).hexdigest()
-    fingerprint = hashlib.sha256(json.dumps(
-        {"provider": provider, "model": model, "audio_sha256": audio_sha256},
-        sort_keys=True, separators=(",", ":"),
-    ).encode()).hexdigest()
-    valid = (
-        report.get("requested_provider") == requested
-        and report.get("model") == model
-        and report.get("audio_sha256") == audio_sha256
-        and report.get("cache_fingerprint") == fingerprint
-        and Path(srt_path).stat().st_size > 0
-        and Path(raw_path).stat().st_size > 0
-    )
+    artifacts_exist = Path(srt_path).stat().st_size > 0 and Path(raw_path).stat().st_size > 0
+    legacy_cache = not Path(report_path).is_file()
+    if legacy_cache:
+        valid = artifacts_exist
+    else:
+        report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+        provider = report["provider"]
+        model = qwen_model if provider == "qwen3" else whisper_model
+        audio_sha256 = hashlib.sha256(Path(audio_path).read_bytes()).hexdigest()
+        fingerprint = hashlib.sha256(json.dumps(
+            {"provider": provider, "model": model, "audio_sha256": audio_sha256},
+            sort_keys=True, separators=(",", ":"),
+        ).encode()).hexdigest()
+        valid = (
+            report.get("status", "completed") == "completed"
+            and report.get("requested_provider") == requested
+            and report.get("model") == model
+            and report.get("audio_sha256") == audio_sha256
+            and report.get("cache_fingerprint") == fingerprint
+            and artifacts_exist
+        )
 except Exception:
     valid = False
 raise SystemExit(0 if valid else 1)
@@ -1393,11 +1401,11 @@ PY
 }
 
 write_asr_provider_report() {
-  python3 - "$1" "$2" "$3" "$4" "$5" "$6" <<'PY'
+  python3 - "$1" "$2" "$3" "$4" "$5" "$6" "${7:-completed}" "${8:-}" <<'PY'
 import hashlib, json, sys
 from pathlib import Path
 
-report_path, requested, provider, model, audio_path, fallback_reason = sys.argv[1:]
+report_path, requested, provider, model, audio_path, fallback_reason, status, error_code = sys.argv[1:]
 audio_sha256 = hashlib.sha256(Path(audio_path).read_bytes()).hexdigest()
 identity = {"provider": provider, "model": model, "audio_sha256": audio_sha256}
 identity["cache_fingerprint"] = hashlib.sha256(json.dumps(
@@ -1406,6 +1414,8 @@ identity["cache_fingerprint"] = hashlib.sha256(json.dumps(
 identity.update({
     "requested_provider": requested,
     "fallback_reason": fallback_reason or None,
+    "status": status,
+    "error_code": error_code or None,
 })
 Path(report_path).write_text(
     json.dumps(identity, ensure_ascii=False, indent=2) + "\n",
@@ -1423,37 +1433,21 @@ run_whisper_asr() {
 }
 
 run_qwen_asr() {
-  python3 - "$1" "$2" "$QWEN_ASR_ENDPOINT" "$QWEN_ASR_MODEL" <<'PY'
+  python3 - "$1" "$2" "$QWEN_ASR_ENDPOINT" "${ASR_LANGUAGE:-zh}" <<'PY'
 # QWEN_ASR_HTTP_CLIENT_BEGIN
 import json
 import sys
 import urllib.request
-import uuid
 from pathlib import Path
 
-audio_path, output_path, endpoint, model = sys.argv[1:]
-boundary = "----openclaw-" + uuid.uuid4().hex
-audio = Path(audio_path).read_bytes()
-parts = [
-    (
-        f"--{boundary}\r\n"
-        'Content-Disposition: form-data; name="model"\r\n\r\n'
-        f"{model}\r\n"
-    ).encode(),
-    (
-        f"--{boundary}\r\n"
-        'Content-Disposition: form-data; name="file"; filename="audio.wav"\r\n'
-        "Content-Type: audio/wav\r\n\r\n"
-    ).encode() + audio + b"\r\n",
-    f"--{boundary}--\r\n".encode(),
-]
+audio_path, output_path, endpoint, language = sys.argv[1:]
 url = endpoint.rstrip("/")
 if not url.endswith("/v1/transcribe"):
     url += "/v1/transcribe"
 request = urllib.request.Request(
     url,
-    data=b"".join(parts),
-    headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+    data=json.dumps({"audio_path": audio_path, "language": language}).encode("utf-8"),
+    headers={"Content-Type": "application/json"},
     method="POST",
 )
 with urllib.request.urlopen(request, timeout=180) as response:
@@ -1463,7 +1457,7 @@ if not isinstance(segments, list) or not segments:
     raise SystemExit("Qwen ASR response has no segments")
 
 def timestamp(value):
-    millis = max(0, int(round(float(value) * 1000)))
+    millis = max(0, int(value))
     hours, millis = divmod(millis, 3600000)
     minutes, millis = divmod(millis, 60000)
     seconds, millis = divmod(millis, 1000)
@@ -1472,8 +1466,8 @@ def timestamp(value):
 blocks = []
 for index, segment in enumerate(segments, 1):
     text = str(segment.get("text") or "").strip()
-    start = float(segment.get("start") or 0)
-    end = float(segment.get("end") or start)
+    start = int(segment.get("start_ms") or 0)
+    end = int(segment.get("end_ms") or start)
     if text and end > start:
         blocks.append(f"{index}\n{timestamp(start)} --> {timestamp(end)}\n{text}")
 if not blocks:
@@ -1700,6 +1694,8 @@ generate_vietnamese_voice() {
   KOKORO_TTS_REPO_ID="$KOKORO_TTS_REPO_ID" KOKORO_TTS_MODEL="$KOKORO_TTS_MODEL" \
   KOKORO_TTS_CONFIG="$KOKORO_TTS_CONFIG" KOKORO_TTS_VOICEPACK="$KOKORO_TTS_VOICEPACK" \
   TRANSCRIPT_DECISION_JSON="${TRANSCRIPT_DECISION_JSON:-}" VOICE_SYNC_REPORT_JSON="${VOICE_SYNC_REPORT_JSON:-}" \
+  TTS_REQUESTED_VOICE="${TTS_REQUESTED_VOICE:-$REQUESTED_VOICE}" \
+  TTS_VOICE_FALLBACK_REASON="${TTS_VOICE_FALLBACK_REASON:-}" \
   TTS_SYNC_POLICY="$TTS_SYNC_POLICY" \
   FRAME_STRICT_MAX_SEGMENT_DRIFT_MS="${FRAME_STRICT_MAX_SEGMENT_DRIFT_MS:-80}" \
   FRAME_STRICT_MAX_TOTAL_DRIFT_MS="${FRAME_STRICT_MAX_TOTAL_DRIFT_MS:-200}" \
@@ -1709,6 +1705,8 @@ import hashlib, importlib.util, json, os, re, shutil, subprocess, sys, time, url
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 source_srt, voice_wav, voice_name, tmp_dir, target_duration_raw, timeout_raw, breaker_raw, max_speed_raw, overhang_raw = sys.argv[1:]
+requested_voice = (os.environ.get('TTS_REQUESTED_VOICE') or voice_name).strip()
+voice_fallback_reason = (os.environ.get('TTS_VOICE_FALLBACK_REASON') or '').strip()
 root = Path(tmp_dir)
 skill_dir = Path(os.environ.get('DOUYIN_DUBBER_SKILL_DIR', Path.cwd()))
 sys.path.insert(0, str(skill_dir))
@@ -1873,7 +1871,8 @@ def _safe_error_text(exc):
 def _classify_tts_exception(exc):
     msg = _safe_error_text(exc)
     if 'VieNeu' in msg:
-        return 'VieNeuSynthesisFailed'
+        match = re.search(r'(VieNeu[A-Za-z0-9]+)', msg)
+        return match.group(1) if match else 'VieNeuSynthesisFailed'
     if 'VoiceInvalid' in msg:
         return 'VoiceInvalid'
     if 'AI33AuthMissing' in msg:
@@ -1898,6 +1897,9 @@ def _early_voice_report_fields():
     lower = raw_voice.lower()
     fields = {
         "voice_name": raw_voice,
+        "requested_voice": requested_voice,
+        "actual_voice": raw_voice,
+        "voice_fallback_reason": voice_fallback_reason or None,
         "tts_engine_requested": "ai33" if lower.startswith("ai33") else ("kokoro" if lower.startswith("kokoro") else ("vieneu" if lower.startswith("vieneu") else ("resona" if lower.startswith("resona") else ("capcut" if lower.startswith("capcut:") else "edge-tts")))),
     }
     if lower.startswith("ai33"):
@@ -2142,7 +2144,7 @@ resona_poll_interval = max(1.0, float(os.environ.get('RESONA_POLL_INTERVAL_SECON
 resona_timeout_seconds = max(30, int(os.environ.get('RESONA_TIMEOUT_SECONDS', '180')))
 resona_debug_dir = root / 'resona_tts_debug'
 vieneu_endpoint = os.environ.get('VIENEU_ENDPOINT', 'http://vieneu:8000')
-vieneu_style = os.environ.get('VIENEU_STYLE', 'default')
+vieneu_style = os.environ.get('VIENEU_STYLE', 'story')
 
 # --- AI33 TTS (ElevenLabs provider qua AI33 API) ---
 ai33_wrapper = Path(os.environ.get('AI33_TTS_WRAPPER') or (skill_dir / 'ai33_tts_synthesize.py'))
@@ -2410,10 +2412,11 @@ import sys
 from pathlib import Path
 
 def vieneu_health_check(endpoint: str) -> bool:
-    import urllib.request
+    import json, urllib.request
     try:
         with urllib.request.urlopen(endpoint.rstrip("/") + "/health", timeout=10) as response:
-            return 200 <= response.status < 300
+            payload = json.load(response)
+            return 200 <= response.status < 300 and payload.get("ready") is True
     except Exception:
         return False
 
@@ -2439,7 +2442,7 @@ def _vieneu_validate_wav(path: Path):
 def synthesize_vieneu_http(text: str, voice_spec: str, style: str, output_path: str, endpoint: str, cue_index: int = 0):
     import json, os, tempfile, urllib.error, urllib.request
     text = (text or "").strip()
-    voice = voice_spec.split(":", 1)[1].strip() if ":" in voice_spec else voice_spec.strip()
+    voice = (voice_spec or "").strip()
     settings = {"provider": "vieneu", "voice": voice, "style": style, "backend": "http"}
     checkpoint_config = None
     identity = None
@@ -2461,7 +2464,8 @@ def synthesize_vieneu_http(text: str, voice_spec: str, style: str, output_path: 
                 "vieneu_style": style,
             }
     payload = json.dumps({"text": text, "voice": voice, "style": style}).encode("utf-8")
-    last_error = "VieNeuSynthesisFailed"
+    last_error_code = "VieNeuSynthesisFailed"
+    last_error_message = "VieNeu synthesis failed"
     for attempt in range(1, 3):
         temporary = None
         try:
@@ -2489,20 +2493,23 @@ def synthesize_vieneu_http(text: str, voice_spec: str, style: str, output_path: 
                 "attempts": attempt, "vieneu_voice": voice, "vieneu_style": style,
             }
         except ValueError as exc:
-            last_error = str(exc)
+            last_error_code = str(exc)
+            last_error_message = str(exc)
         except Exception as exc:
-            last_error = f"VieNeuSynthesisFailed: {str(exc)[:160]}"
+            last_error_code = "VieNeuSynthesisFailed"
+            last_error_message = str(exc)[:160]
         finally:
             if temporary:
                 Path(temporary).unlink(missing_ok=True)
     if checkpoint_config is not None:
         tts_checkpoint.record_failure(
             vieneu_checkpoint_path, checkpoint_config, identity,
-            "provider", last_error, 2,
+            "provider", last_error_code, 2,
         )
     return {
         "ok": False, "fallback_silence": False, "engine": "vieneu",
-        "vieneu_failed": True, "error_code": last_error, "attempts": 2,
+        "vieneu_failed": True, "error_code": last_error_code,
+        "error_message": last_error_message, "attempts": 2,
     }
 # VIENEU_HTTP_CLIENT_END
 
@@ -3587,8 +3594,12 @@ stats = {
     "tts_failed_cue": 0,
     "tts_failed_stage": "",
     "tts_failed_code": "",
+    "tts_failed_error_message": "",
     "tts_failed_attempts": 0,
     "ai33_voice_used": resolve_ai33_voice_id(voice_name) if voice_name.lower().startswith("ai33") else "",
+    "requested_voice": requested_voice,
+    "actual_voice": voice_name,
+    "voice_fallback_reason": voice_fallback_reason or None,
     "voice_source": ai33_voice_meta.get("voice_source", "") if voice_name.lower().startswith("ai33") else "",
     "voice_label": ai33_voice_meta.get("label", "") if voice_name.lower().startswith("ai33") else "",
     "voice_id": ai33_voice_meta.get("voice_id", "") if voice_name.lower().startswith("ai33") else "",
@@ -3823,6 +3834,7 @@ with concat_list.open('w', encoding='utf-8') as manifest:
             stats["tts_failed_cue"] = entry_index
             stats["tts_resume_from_cue"] = entry_index
             stats["tts_failed_code"] = tts_result.get("error_code") or "VieNeuSynthesisFailed"
+            stats["tts_failed_error_message"] = tts_result.get("error_message") or ""
             stats["tts_failed_stage"] = "provider"
             stats["tts_failed_attempts"] = tts_result.get("attempts", 2)
             stats_path.write_text(json.dumps(stats, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -4347,14 +4359,30 @@ prepare_tts_provider() {
   local voice_lower="${VOICE,,}"
   [[ "$voice_lower" == vieneu:* ]] || return 0
   if curl -fsS --max-time "${VIENEU_HEALTH_TIMEOUT_SECONDS:-10}" \
-    "${VIENEU_ENDPOINT%/}/health" >/dev/null 2>&1; then
+    "${VIENEU_ENDPOINT%/}/health" |
+    python3 -c 'import json,sys; raise SystemExit(0 if json.load(sys.stdin).get("ready") is True else 1)' >/dev/null 2>&1; then
     return 0
   fi
   if [[ -n "$AI33_API_KEY" && -f "$AI33_TTS_WRAPPER" ]]; then
     VOICE="ai33:${AI33_DEFAULT_VOICE_ID}"
+    TTS_VOICE_FALLBACK_REASON="vieneu_health_not_ready"
     echo "VieNeu health fail; dùng AI33 cho toàn job: $VOICE"
     return 0
   fi
+  python3 - "$OUT_DIR/voice_sync_quality_report.json" "$REQUESTED_VOICE" "$VOICE" <<'PY'
+import json, sys
+from pathlib import Path
+path, requested, actual = sys.argv[1:]
+Path(path).write_text(json.dumps({
+    "status": "fail",
+    "phase": "tts_preflight",
+    "error_code": "VieNeuUnavailable",
+    "error_message": "VieNeu health ready was not true",
+    "requested_voice": requested,
+    "actual_voice": actual,
+    "voice_fallback_reason": None,
+}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+PY
   status_update "needs_attention" "66" "VieNeu không khả dụng" "0" "VieNeuUnavailable" \
     "Health ${VIENEU_ENDPOINT%/}/health fail; AI33 chưa cấu hình để fallback toàn job."
   return 1
@@ -4693,28 +4721,34 @@ if [[ "$ASR_PROVIDER" == "auto" ]]; then
     asr_selected="qwen3"
   fi
 fi
+asr_model="$WHISPER_MODEL"
+[[ "$asr_selected" == "qwen3" ]] && asr_model="$QWEN_ASR_MODEL"
+write_asr_provider_report "$ASR_PROVIDER_REPORT_JSON" "$ASR_PROVIDER" "$asr_selected" "$asr_model" "$WHISPER_AUDIO" "$asr_fallback_reason" "started" ""
 if [[ "$asr_selected" == "qwen3" ]]; then
-  set +e
-  run_qwen_asr "$WHISPER_AUDIO" "$ORIGINAL_SRT"
-  qwen_asr_status=$?
-  set -e
-  if [[ "$qwen_asr_status" -ne 0 ]]; then
+  if ! run_qwen_asr "$WHISPER_AUDIO" "$ORIGINAL_SRT"; then
+    write_asr_provider_report "$ASR_PROVIDER_REPORT_JSON" "$ASR_PROVIDER" "qwen3" "$QWEN_ASR_MODEL" "$WHISPER_AUDIO" "service_unavailable" "failed" "QwenAsrUnavailable"
     if [[ "$ASR_PROVIDER" != "auto" ]]; then
-      write_asr_provider_report "$ASR_PROVIDER_REPORT_JSON" "$ASR_PROVIDER" "qwen3" "$QWEN_ASR_MODEL" "$WHISPER_AUDIO" "service_unavailable"
       status_update "needs_attention" "32" "Qwen3 ASR không khả dụng" "0" "QwenAsrUnavailable" "Không gọi được $QWEN_ASR_ENDPOINT/v1/transcribe; kiểm tra service rồi chạy lại."
-      fail "Qwen3 ASR không khả dụng tại $QWEN_ASR_ENDPOINT (exit=$qwen_asr_status)."
+      fail "Qwen3 ASR không khả dụng tại $QWEN_ASR_ENDPOINT."
     fi
     asr_selected="whisper"
     asr_fallback_reason="service_unavailable"
+    asr_model="$WHISPER_MODEL"
+    write_asr_provider_report "$ASR_PROVIDER_REPORT_JSON" "$ASR_PROVIDER" "$asr_selected" "$asr_model" "$WHISPER_AUDIO" "$asr_fallback_reason" "started" ""
   fi
 fi
 if [[ "$asr_selected" == "whisper" ]]; then
   [[ -x "$WHISPER_BIN" && -f "$WHISPER_MODEL" ]] || fail "Whisper fallback chưa sẵn sàng; kiểm tra WHISPER_BIN/WHISPER_MODEL."
-  run_whisper_asr "$WHISPER_AUDIO" "$ORIGINAL_SRT" || fail "Whisper không tạo được original.srt"
+  if ! run_whisper_asr "$WHISPER_AUDIO" "$ORIGINAL_SRT"; then
+    write_asr_provider_report "$ASR_PROVIDER_REPORT_JSON" "$ASR_PROVIDER" "whisper" "$WHISPER_MODEL" "$WHISPER_AUDIO" "$asr_fallback_reason" "failed" "WhisperAsrFailed"
+    status_update "needs_attention" "32" "Whisper ASR lỗi" "0" "WhisperAsrFailed" "Whisper không tạo được original.srt; artifact ASR report được giữ lại."
+    fail "Whisper không tạo được original.srt"
+  fi
 fi
-[[ -s "$ORIGINAL_SRT" ]] || fail "ASR không tạo được original.srt"
-asr_model="$WHISPER_MODEL"
-[[ "$asr_selected" == "qwen3" ]] && asr_model="$QWEN_ASR_MODEL"
+if [[ ! -s "$ORIGINAL_SRT" ]]; then
+  write_asr_provider_report "$ASR_PROVIDER_REPORT_JSON" "$ASR_PROVIDER" "$asr_selected" "$asr_model" "$WHISPER_AUDIO" "$asr_fallback_reason" "failed" "AsrTranscriptMissing"
+  fail "ASR không tạo được original.srt"
+fi
 write_asr_provider_report "$ASR_PROVIDER_REPORT_JSON" "$ASR_PROVIDER" "$asr_selected" "$asr_model" "$WHISPER_AUDIO" "$asr_fallback_reason"
 cp "$ORIGINAL_SRT" "$ORIGINAL_ASR_RAW_SRT"
 status_update "asr" "42" "${asr_selected} tạo original.srt xong" "0"
@@ -6033,8 +6067,12 @@ voice_sync_report = {
     "failed_cue": stats.get('tts_failed_cue', 0) or 0,
     "failed_stage": stats.get('tts_failed_stage', '') or '',
     "failed_code": stats.get('tts_failed_code', '') or '',
+    "failed_message": stats.get('tts_failed_error_message', '') or '',
     "failed_attempts": stats.get('tts_failed_attempts', 0) or 0,
     "resume_from_cue": stats.get('tts_resume_from_cue', 1) or 1,
+    "requested_voice": stats.get('requested_voice', requested_voice) or requested_voice,
+    "actual_voice": stats.get('actual_voice', voice_name) or voice_name,
+    "voice_fallback_reason": stats.get('voice_fallback_reason', voice_fallback_reason) or None,
     "voice_source": stats.get('voice_source', '') or '',
     "voice_label": stats.get('voice_label', '') or '',
     "voice_id": stats.get('voice_id', '') or stats.get('ai33_voice_used', '') or '',

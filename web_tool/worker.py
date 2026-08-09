@@ -140,10 +140,18 @@ class Worker:
         job_root.mkdir(parents=True, exist_ok=True)
         log_path = job_root / "log.txt"
         try:
-            command = build_job_command(job, self.settings)
+            pipeline_job = dict(job)
+            pipeline_request = dict(job.get("request") or {})
+            runtime_settings = self.store.get_settings({"hardware_profile": "cpu"})
+            pipeline_request.setdefault(
+                "hardware_profile",
+                runtime_settings.get("hardware_profile") or "cpu",
+            )
+            pipeline_job["request"] = pipeline_request
+            command = build_job_command(pipeline_job, self.settings)
             environment = build_job_environment(
-                job,
-                self._providers(job),
+                pipeline_job,
+                self._providers(pipeline_job),
                 self.settings,
             )
         except ValueError as exc:

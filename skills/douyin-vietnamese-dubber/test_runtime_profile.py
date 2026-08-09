@@ -120,8 +120,11 @@ class RuntimeProfileTests(unittest.TestCase):
         self.assertIn('ASR_PROVIDER_REPORT_JSON="$OUT_DIR/asr_provider_report.json"', RUN_SH)
         self.assertIn('"provider": provider, "model": model, "audio_sha256": audio_sha256', RUN_SH)
         self.assertIn('if asr_hardware_is_weak; then', RUN_SH)
+        self.assertIn('write_asr_provider_report "$ASR_PROVIDER_REPORT_JSON"', RUN_SH)
         self.assertIn('run_qwen_asr "$WHISPER_AUDIO" "$ORIGINAL_SRT"', RUN_SH)
         self.assertIn('run_whisper_asr "$WHISPER_AUDIO" "$ORIGINAL_SRT"', RUN_SH)
+        self.assertIn('OPENCLAW_HARDWARE_PROFILE', RUN_SH)
+        self.assertIn('legacy_cache = not Path(report_path).is_file()', RUN_SH)
 
     def test_qwen_http_client_posts_audio_and_writes_segments_as_srt(self):
         client = RUN_SH.split("# QWEN_ASR_HTTP_CLIENT_BEGIN\n", 1)[1].split(
@@ -137,8 +140,8 @@ class RuntimeProfileTests(unittest.TestCase):
                 payload = json.dumps(
                     {
                         "segments": [
-                            {"start": 0.0, "end": 1.25, "text": "Ni hao"},
-                            {"start": 1.25, "end": 2.5, "text": "Zai jian"},
+                            {"start_ms": 0, "end_ms": 1250, "text": "Ni hao"},
+                            {"start_ms": 1250, "end_ms": 2500, "text": "Zai jian"},
                         ]
                     }
                 ).encode()
@@ -167,7 +170,7 @@ class RuntimeProfileTests(unittest.TestCase):
                         str(audio),
                         str(output),
                         f"http://127.0.0.1:{server.server_port}",
-                        "qwen3-asr",
+                        "zh",
                     ],
                     capture_output=True,
                     text=True,
@@ -186,9 +189,11 @@ class RuntimeProfileTests(unittest.TestCase):
             server.server_close()
 
         self.assertEqual("/v1/transcribe", requests[0][0])
-        self.assertIn("multipart/form-data", requests[0][1])
-        self.assertIn(b"qwen3-asr", requests[0][2])
-        self.assertIn(b"RIFFfake-wav", requests[0][2])
+        self.assertEqual("application/json", requests[0][1])
+        self.assertEqual(
+            {"audio_path": str(audio), "language": "zh"},
+            json.loads(requests[0][2]),
+        )
 
 if __name__ == "__main__":
     unittest.main()

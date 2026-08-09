@@ -165,6 +165,7 @@ class PipelineTests(unittest.TestCase):
         )
         self.assertEqual("qwen3", environment["ASR_PROVIDER"])
         self.assertEqual("http://qwen-asr:8000", environment["QWEN_ASR_ENDPOINT"])
+        self.assertEqual("http://vieneu:8000", environment["VIENEU_ENDPOINT"])
         self.assertEqual("story", environment["VIENEU_STYLE"])
         self.assertEqual(
             "vieneu:hong-chau",
@@ -172,6 +173,15 @@ class PipelineTests(unittest.TestCase):
         )
         self.assertEqual("vieneu:hong-chau", environment["VOICE"])
         self.assertEqual("hybrid", environment["OPENCLAW_HARDWARE_PROFILE"])
+        self.assertEqual("vieneu:hong-chau", environment["EDGE_TTS_VOICE_PRESET"])
+
+        defaults = build_job_environment(
+            {"id": "job-vieneu-defaults", "request": {}},
+            {},
+            self.settings,
+        )
+        self.assertEqual("story", defaults["VIENEU_STYLE"])
+        self.assertEqual("hong-chau", defaults["VIENEU_DEFAULT_VOICE"])
 
         legacy = build_job_environment(
             {"id": "job-legacy-voice", "request": {"voice": "nu"}},

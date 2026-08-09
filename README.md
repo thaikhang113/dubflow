@@ -1061,11 +1061,47 @@ google_flow_debug/
 | `WHISPER_MODEL` | `$WHISPER_DIR/models/ggml-small.bin` |
 | `ASR_PROVIDER` | `auto`, `whisper` hoặc `qwen3` |
 | `QWEN_ASR_ENDPOINT` | `http://qwen-asr:8000` |
+| `ASR_LANGUAGE` | `zh` |
 | `VIENEU_ENDPOINT` | `http://vieneu:8000` |
+| `VIENEU_DEFAULT_VOICE` | `hong-chau` |
 | `VIENEU_STYLE` | Style gửi tới VieNeu |
+| `OPENCLAW_HARDWARE_PROFILE` | `cpu`, `hybrid` hoặc `gpu`; auto ASR dùng Whisper khi `cpu` |
 | `BILIBILI_CDP_URL` | `http://127.0.0.1:9222` |
 | `OLLAMA_API_BASE` | `http://127.0.0.1:11434` |
 | `NINEROUTER_API_BASE` | host `127.0.0.1:20128/v1`, container `172.19.0.1:20128/v1` |
+
+### ASR/TTS service contracts
+
+Pipeline uses service DNS names `qwen-asr:8000` and `vieneu:8000`.
+
+Qwen ASR:
+
+```text
+POST /v1/transcribe
+Content-Type: application/json
+{"audio_path": "/path/to/audio.wav", "language": "zh"}
+```
+
+Response segments use integer milliseconds:
+
+```json
+{"segments": [{"start_ms": 0, "end_ms": 1250, "text": "..."}]}
+```
+
+VieNeu:
+
+```text
+GET /health
+{"ready": true}
+
+POST /v1/synthesize
+Content-Type: application/json
+{"text": "...", "voice": "vieneu:hong-chau", "style": "story"}
+```
+
+VieNeu response body is WAV bytes. Health is ready only when JSON `ready` is
+exactly `true`; pipeline does not send multipart data, second-based timings,
+or rewritten voice IDs.
 
 ### Secret
 
