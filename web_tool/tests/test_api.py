@@ -315,6 +315,25 @@ class ApiTests(unittest.TestCase):
 
         asyncio.run(receive())
 
+    def test_settings_persist_allowlisted_hardware_profile(self):
+        response = self.client.put(
+            "/api/settings",
+            json={
+                "hardware_mode": "auto",
+                "hardware_profile": "hybrid",
+            },
+        )
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual("auto", response.json()["hardware_mode"])
+        self.assertEqual("hybrid", response.json()["hardware_profile"])
+        self.assertEqual(
+            422,
+            self.client.put(
+                "/api/settings",
+                json={"hardware_mode": "fastest"},
+            ).status_code,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

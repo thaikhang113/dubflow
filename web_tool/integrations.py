@@ -323,6 +323,18 @@ def host_login_helper_available() -> bool:
     except Exception:
         return False
 
+def host_hardware_status() -> dict:
+    endpoint = os.environ.get(
+        "BILIBILI_HOST_HELPER_URL",
+        "http://host.docker.internal:18794",
+    ).rstrip("/")
+    try:
+        with urllib.request.urlopen(f"{endpoint}/hardware", timeout=1) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            return payload if response.status == 200 and isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
 def _ollama_available(provider) -> bool:
     if not provider:
         return False
@@ -343,6 +355,7 @@ def runtime_doctor(
     telegram_configured=False,
     host_helper_available=False,
     ollama_available=None,
+    hardware_status=None,
 ) -> dict:
     runtime_settings = runtime_settings or {}
     login_status = login_status or {}
@@ -378,6 +391,34 @@ def runtime_doctor(
             {"id": provider["id"], "kind": provider["kind"], "configured": provider["configured"]}
             for provider in providers
         ],
+    }
+    hardware_status = hardware_status or {}
+    gpu = hardware_status.get("gpu")
+    if not isinstance(gpu, dict):
+        gpu = None
+    stages = hardware_status.get("stages")
+    if not isinstance(stages, dict):
+        stages = {}
+    selected_profile = str(
+        hardware_status.get("selected_profile")
+        or runtime_settings.get("hardware_profile")
+        or "cpu"
+    ).lower()
+    if selected_profile not in {"cpu", "hybrid", "gpu"}:
+        selected_profile = "cpu"
+    checks["hardware"] = {
+        "available": bool(hardware_status),
+        "gpu": {
+            "name": str(gpu.get("name") or "")[:200],
+            "memory_mb": int(gpu.get("memory_mb") or 0),
+        } if gpu else None,
+        "docker_gpu": bool(hardware_status.get("docker_gpu")),
+        "selected_profile": selected_profile,
+        "fallback_reason": str(hardware_status.get("fallback_reason") or "")[:200],
+        "stages": {
+            name: "gpu" if stages.get(name) == "gpu" else "cpu"
+            for name in ("ollama", "whisper", "demucs", "render")
+        },
     }
     core_required = ("FFmpeg", "Whisper", "Demucs", "Runtime volumes")
     core_missing = []
@@ -491,6 +532,20 @@ def runtime_doctor(
         trend["status"] = "optional"
 
     workflows = [
+        _workflow(
+            "hardware",
+            "Pháº§n cá»©ng",
+            (),
+            (),
+            tuple(
+                f"{name.capitalize()}: {backend.upper()}"
+                for name, backend in checks["hardware"]["stages"].items()
+            ) + (
+                (f"Fallback: {checks['hardware']['fallback_reason']}",)
+                if checks["hardware"]["fallback_reason"]
+                else ()
+            ),
+        ),
         _workflow(
             "local_video",
             "Video local",

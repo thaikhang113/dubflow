@@ -151,6 +151,38 @@ class IntegrationTests(unittest.TestCase):
         self.assertIn("volumes", report["checks"])
         self.assertNotIn("token", repr(report).lower())
 
+    def test_runtime_doctor_reports_hardware_profile_and_stage_assignments(self):
+        report = runtime_doctor(
+            self.settings,
+            [],
+            runtime_settings={
+                "hardware_mode": "auto",
+                "hardware_profile": "hybrid",
+            },
+            hardware_status={
+                "ok": True,
+                "gpu": {"name": "NVIDIA Test GPU", "memory_mb": 4096},
+                "docker_gpu": True,
+                "selected_profile": "hybrid",
+                "fallback_reason": "",
+                "stages": {
+                    "ollama": "gpu",
+                    "whisper": "cpu",
+                    "demucs": "cpu",
+                    "render": "cpu",
+                },
+            },
+        )
+        hardware = report["checks"]["hardware"]
+        self.assertEqual("NVIDIA Test GPU", hardware["gpu"]["name"])
+        self.assertEqual("hybrid", hardware["selected_profile"])
+        workflow = next(
+            item for item in report["workflows"] if item["id"] == "hardware"
+        )
+        self.assertEqual("ready", workflow["status"])
+        self.assertIn("Ollama: GPU", workflow["optional"])
+        self.assertIn("Whisper: CPU", workflow["optional"])
+
     def test_runtime_doctor_checks_selected_whisper_model(self):
         root = self.settings.models_dir / "whisper.cpp"
         binary = root / "build" / "bin" / (

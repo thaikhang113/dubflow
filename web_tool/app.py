@@ -21,6 +21,7 @@ from .integrations import (
     hyperframes_status,
     run_series_action,
     run_trend_action,
+    host_hardware_status,
     host_login_helper_available,
     runtime_doctor,
     test_telegram,
@@ -138,6 +139,11 @@ class RuntimeSettingsRequest(BaseModel):
     telegram_thread_id: str = Field(default="", max_length=100)
     telegram_bot_token: str = Field(default="", max_length=500)
     whisper_model: str = Field(default="medium", pattern=r"^(small|medium)$")
+    hardware_mode: str = Field(default="auto", pattern=r"^(auto|cpu|gpu)$")
+    hardware_profile: str = Field(
+        default="cpu",
+        pattern=r"^(cpu|hybrid|gpu)$",
+    )
 
 
 def _public_value(value):
@@ -398,6 +404,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "default_model": "translategemma:4b",
                 "default_voice": "ai33:vbee_hn_female_ngochuyen_full_48k-fhg",
                 "whisper_model": "medium",
+                "hardware_mode": "auto",
+                "hardware_profile": "cpu",
                 "queue_poll_seconds": "2",
                 "telegram_chat_id": "",
                 "telegram_thread_id": "",
@@ -447,6 +455,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             login_status=bilibili_login.status(),
             telegram_configured=values["telegram_configured"],
             host_helper_available=host_login_helper_available(),
+            hardware_status=host_hardware_status(),
         )
 
     @app.post("/api/telegram/test")
