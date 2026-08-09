@@ -68,4 +68,4 @@
 
 - [x] Document Windows/Linux helper startup and security boundary.
 - [x] Run full web/pipeline/Docker/security verification.
-- [ ] Commit and push `origin/tool`.
+- [x] Commit and push `origin/tool`.
