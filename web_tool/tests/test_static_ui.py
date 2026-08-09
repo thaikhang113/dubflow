@@ -39,6 +39,7 @@ class StaticUiTests(unittest.TestCase):
         self.assertIn('new EventSource("/api/events")', self.javascript)
         self.assertIn("http://127.0.0.1:18794/open", self.javascript)
         self.assertIn("function renderDoctor", self.javascript)
+        self.assertIn("function selectFirstProvider", self.javascript)
         self.assertIn('if (name === "settings")', self.javascript)
         self.assertIn("loadDoctor()", self.javascript)
 

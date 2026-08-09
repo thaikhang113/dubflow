@@ -2,8 +2,10 @@
 set -Eeuo pipefail
 
 INPUT="${1:-}"
+SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SKILL_ROOT="$(dirname "$SKILL_DIR")"
 KOKORO_DEFAULT_VOICE="${KOKORO_DEFAULT_VOICE:-mai_linh}"
-VOICE_REGISTRY_PY="${VOICE_REGISTRY_PY:-/home/haonguyen/.openclaw/workspace/skills/douyin-vietnamese-dubber/voice_registry.py}"
+VOICE_REGISTRY_PY="${VOICE_REGISTRY_PY:-$SKILL_ROOT/douyin-vietnamese-dubber/voice_registry.py}"
 AI33_MAI_PHUONG_VOICE_ID="${AI33_MAI_PHUONG_VOICE_ID:-vbee_hn_female_maiphuong_vdts_48k-fhg}"
 AI33_PHANH_VOICE_ID="${AI33_PHANH_VOICE_ID:-elevenlabs_UuMSQK8FdLwaY2M8ZAnh}"
 AI33_DEFAULT_VOICE_ID="${AI33_DEFAULT_VOICE_ID:-$AI33_MAI_PHUONG_VOICE_ID}"
@@ -22,16 +24,15 @@ BASE_ROOT="${BILIBILI_OUTPUT_ROOT:-/mnt/hdd500/video douyin vietsub}"
 BILI_BASE="$BASE_ROOT/Bilibili"
 CACHE_DIR="$BILI_BASE/source-cache"
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
-SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CDP_HELPER="$SKILL_DIR/scripts/bilibili_cdp.py"
-DOUYIN_PIPELINE="${DOUYIN_PIPELINE:-/home/haonguyen/.openclaw/workspace/skills/douyin-vietnamese-dubber/run.sh}"
+DOUYIN_PIPELINE="${DOUYIN_PIPELINE:-$SKILL_ROOT/douyin-vietnamese-dubber/run.sh}"
 CDP_URL="${BILIBILI_CDP_URL:-http://127.0.0.1:9222}"
 LATEST_OUTPUT="$BILI_BASE/LATEST_OUTPUT_DIR.txt"
 LATEST_SOURCE="$BILI_BASE/LATEST_SOURCE_URL.txt"
 BILIBILI_BRAND_INCLUDE_INTRO="${BILIBILI_BRAND_INCLUDE_INTRO:-0}"
 BILIBILI_BRAND_INCLUDE_OUTRO="${BILIBILI_BRAND_INCLUDE_OUTRO:-0}"
-SINGLE_JOB_BRAND_SCRIPT="${SINGLE_JOB_BRAND_SCRIPT:-/home/haonguyen/.openclaw/workspace/skills/series-compilation-orchestrator/scripts/single_job_brand.py}"
-BRAND_ASSETS_JSON="${BRAND_ASSETS_JSON:-/home/haonguyen/.openclaw/workspace/skills/series-compilation-orchestrator/assets/brand-assets.json}"
+SINGLE_JOB_BRAND_SCRIPT="${SINGLE_JOB_BRAND_SCRIPT:-$SKILL_ROOT/series-compilation-orchestrator/scripts/single_job_brand.py}"
+BRAND_ASSETS_JSON="${BRAND_ASSETS_JSON:-$SKILL_ROOT/series-compilation-orchestrator/assets/brand-assets.json}"
 
 fail() { echo "ERROR: $*" >&2; exit 1; }
 need_cmd() { command -v "$1" >/dev/null 2>&1 || fail "Thiếu lệnh: $1"; }
@@ -84,7 +85,7 @@ fi
 export EDGE_TTS_BIN
 
 ensure_hdd() {
-  if ! findmnt -rn /mnt/hdd500 >/dev/null 2>&1; then
+  if [[ "$BASE_ROOT" == /mnt/hdd500/* ]] && ! findmnt -rn /mnt/hdd500 >/dev/null 2>&1; then
     fail "/mnt/hdd500 chưa mount HDD thật. Chạy: sudo /home/haonguyen/mount-hdd500.sh"
   fi
   [[ -d "$BASE_ROOT" ]] || fail "Thiếu thư mục output HDD: $BASE_ROOT"
@@ -320,7 +321,7 @@ fi
 if [[ -n "$TITLE" ]]; then export FINAL_VIDEO_TITLE="$TITLE"; fi
 if [[ -s "$COVER_FILE" ]]; then export THUMBNAIL_REFERENCE_IMAGE="$COVER_FILE"; fi
 export AUTO_THUMBNAIL="${AUTO_THUMBNAIL:-1}"
-export GOOGLE_FLOW_THUMBNAIL_SCRIPT="${GOOGLE_FLOW_THUMBNAIL_SCRIPT:-/home/haonguyen/.openclaw/workspace/skills/google-flow-thumbnail/google-flow-thumbnail.sh}"
+export GOOGLE_FLOW_THUMBNAIL_SCRIPT="${GOOGLE_FLOW_THUMBNAIL_SCRIPT:-$SKILL_ROOT/google-flow-thumbnail/google-flow-thumbnail.sh}"
 
 echo "Đã tải Bilibili xong, chuyển sang pipeline vietsub/lồng tiếng hiện có..."
 # Đảm bảo pipeline con thấy ~/.local/bin (edge-tts pip --user) và EDGE_TTS_BIN.

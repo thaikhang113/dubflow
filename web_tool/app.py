@@ -498,6 +498,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "default_voice": "ai33:vbee_hn_female_ngochuyen_full_48k-fhg",
             }
         )
+        if not values["model"].strip():
+            values["model"] = defaults["default_model"]
+        if not values["voice"].strip():
+            values["voice"] = defaults["default_voice"]
         if not any(
             values[key].strip()
             for key in ("translation_provider_id", "tts_provider_id", "provider_id")
@@ -511,10 +515,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     else "translation_provider_id"
                 )
                 values[role] = provider["id"]
-        if not values["model"].strip():
-            values["model"] = defaults["default_model"]
-        if not values["voice"].strip():
-            values["voice"] = defaults["default_voice"]
+        if (
+            values["voice"].lower().startswith("ai33:")
+            and not values["tts_provider_id"].strip()
+        ):
+            ai33 = [
+                provider
+                for provider in store.list_providers()
+                if provider["kind"] == "ai33" and provider["configured"]
+            ]
+            if len(ai33) == 1:
+                values["tts_provider_id"] = ai33[0]["id"]
         try:
             build_job_command(values, settings)
             providers = {}
@@ -577,6 +588,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=409, detail="job has no checkpoint directory")
         request = dict(job["request"])
         request["resume_job_dir"] = str(Path(job["job_dir"]).resolve())
+        if not any(
+            str(request.get(key) or '').strip()
+            for key in ('translation_provider_id', 'tts_provider_id', 'provider_id')
+        ):
+            default_id = store.get_settings(
+                {'default_provider_id': ''}
+            )['default_provider_id'].strip()
+            provider = store.get_provider(default_id) if default_id else None
+            if provider:
+                role = (
+                    'tts_provider_id'
+                    if provider['kind'] == 'ai33'
+                    else 'translation_provider_id'
+                )
+                request[role] = provider['id']
+        if (
+            str(request.get('voice') or '').lower().startswith('ai33:')
+            and not str(request.get('tts_provider_id') or '').strip()
+        ):
+            ai33 = [
+                provider
+                for provider in store.list_providers()
+                if provider['kind'] == 'ai33' and provider['configured']
+            ]
+            if len(ai33) == 1:
+                request['tts_provider_id'] = ai33[0]['id']
         candidate = dict(job)
         candidate["request"] = request
         try:

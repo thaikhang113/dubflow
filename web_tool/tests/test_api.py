@@ -94,6 +94,19 @@ class ApiTests(unittest.TestCase):
                     self.client.post("/api/jobs", json=payload).status_code,
                 )
 
+    def test_job_uses_only_available_ai33_provider(self):
+        ai33 = self.client.post(
+            "/api/providers",
+            json={
+                "name": "AI33",
+                "kind": "ai33",
+                "endpoint": "https://api.ai33.pro",
+                "api_key": "secret",
+            },
+        ).json()
+        job = self.create_job()
+        self.assertEqual(ai33["id"], job["request"]["tts_provider_id"])
+
     def test_updates_provider_without_echoing_or_clearing_existing_key(self):
         created = self.client.post(
             "/api/providers",
@@ -165,6 +178,37 @@ class ApiTests(unittest.TestCase):
         self.assertNotEqual(job["id"], retried.json()["id"])
         self.assertEqual(job["id"], retried.json()["request"]["retry_of"])
         self.assertNotIn("resume_job_dir", retried.json()["request"])
+
+    def test_resume_fills_missing_default_and_ai33_providers(self):
+        job = self.create_job()
+        ollama = self.app.state.store.create_provider(
+            {
+                'name': 'Ollama', 'kind': 'ollama',
+                'endpoint': 'http://host.docker.internal:11434',
+                'model': 'qwen2.5:3b', 'timeout_seconds': 90,
+            },
+            has_secret=False,
+        )
+        ai33 = self.app.state.store.create_provider(
+            {
+                'name': 'AI33', 'kind': 'ai33',
+                'endpoint': 'https://api.ai33.pro',
+                'model': '', 'timeout_seconds': 90,
+            },
+            has_secret=True,
+        )
+        self.app.state.store.set_settings({'default_provider_id': ollama['id']})
+        job_dir = self.settings.jobs_dir / job['id'] / 'output'
+        job_dir.mkdir(parents=True)
+        self.app.state.store.update_job(
+            job['id'], state='failed', job_dir=str(job_dir)
+        )
+
+        path = '/api/jobs/{}/resume'.format(job['id'])
+        resumed = self.client.post(path).json()
+
+        self.assertEqual(ollama['id'], resumed['request']['translation_provider_id'])
+        self.assertEqual(ai33['id'], resumed['request']['tts_provider_id'])
 
     def test_cancel_queued_job(self):
         job = self.create_job()

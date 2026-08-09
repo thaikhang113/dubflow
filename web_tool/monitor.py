@@ -134,6 +134,13 @@ class MonitorScheduler:
                     if channel["provider_id"]
                     else None
                 )
+                if provider is None:
+                    default_id = self.store.get_settings(
+                        {'default_provider_id': ''}
+                    )['default_provider_id']
+                    provider = self.store.get_provider(default_id) if default_id else None
+                    if provider:
+                        request['provider_id'] = provider['id']
                 if provider:
                     role = (
                         "tts_provider_id"
@@ -141,6 +148,13 @@ class MonitorScheduler:
                         else "translation_provider_id"
                     )
                     request[role] = provider["id"]
+                ai33 = [
+                    candidate
+                    for candidate in self.store.list_providers()
+                    if candidate['kind'] == 'ai33' and candidate['configured']
+                ]
+                if 'tts_provider_id' not in request and len(ai33) == 1:
+                    request['tts_provider_id'] = ai33[0]['id']
                 build_job_command(request, self.settings)
                 job = self.store.enqueue_seen_video(
                     channel["platform"],

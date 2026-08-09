@@ -18,7 +18,12 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - "${TOOL_RUNTIME_DIR:-/home/haonguyen/.openclaw/tool-runtime}:/data"
+      - tool-data:/data/data
+      - tool-secrets:/data/secrets
+      - tool-jobs:/data/jobs
+      - tool-output:/data/output
+      - tool-models:/data/models
+      - tool-browser:/data/browser
     healthcheck:
       test: ["CMD", "python", "/app/docker/healthcheck.py"]
       interval: 15s
@@ -53,5 +58,11 @@ secrets:
     file: ${TREND_DB_PASSWORD_FILE:-./.tool-secrets/trend-db-password.txt}
 
 volumes:
+  tool-data:
+  tool-secrets:
+  tool-jobs:
+  tool-output:
+  tool-models:
+  tool-browser:
   ollama-models:
   trend-db-data:

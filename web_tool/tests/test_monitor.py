@@ -46,6 +46,16 @@ class MonitorTests(unittest.TestCase):
             },
             has_secret=False,
         )
+        ai33 = self.store.create_provider(
+            {
+                'name': 'AI33',
+                'kind': 'ai33',
+                'endpoint': 'https://api.ai33.pro',
+                'model': '',
+                'timeout_seconds': 90,
+            },
+            has_secret=True,
+        )
         channel = self.add_channel(provider_id=provider["id"])
         calls = []
 
@@ -74,6 +84,8 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual("series-one", request["series_id"])
         self.assertEqual({"mode": "exact_sync"}, request["preset"])
         self.assertEqual("Tập mới", request["source_title"])
+
+        self.assertEqual(ai33['id'], request['tts_provider_id'])
 
     def test_duplicate_video_is_enqueued_once_across_scheduler_restart(self):
         channel = self.add_channel()

@@ -27,6 +27,7 @@ class RuntimeProfileTests(unittest.TestCase):
             with self.subTest(setting=setting):
                 self.assertIn(setting, RUN_SH)
         self.assertRegex(RUN_SH, re.compile(r"^export OPENCLAW_AI_PROVIDER$", re.M))
+        self.assertIn('NINEROUTER_MODEL="${NINEROUTER_MODEL:-}"', RUN_SH)
         self.assertIn(
             'if [[ -z "${OPENCLAW_DEFAULT_TTS_VOICE:-}" && -f "$VOICE_REGISTRY_PY" ]]; then',
             RUN_SH,

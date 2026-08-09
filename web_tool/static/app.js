@@ -133,16 +133,22 @@ function providerOptions(select, providers, emptyLabel) {
   }
 }
 
+function selectFirstProvider(select) {
+  if (!select.value && select.options.length > 1) select.selectedIndex = 1;
+}
+
 function renderProviders() {
   const list = document.querySelector("#provider-list");
   clear(list);
   document.querySelector("#provider-summary").textContent =
     `${state.providers.length} provider đã cấu hình.`;
+  const translationSelect = document.querySelector("#job-translation-provider");
   providerOptions(
-    document.querySelector("#job-translation-provider"),
+    translationSelect,
     state.providers.filter((provider) => provider.kind !== "ai33"),
     "Ollama mặc định",
   );
+  selectFirstProvider(translationSelect);
   providerOptions(
     document.querySelector("#channel-provider"),
     state.providers,
@@ -157,11 +163,13 @@ function renderProviders() {
     document.querySelector("#settings-provider").value =
       state.settings.default_provider_id;
   }
+  const ttsSelect = document.querySelector("#job-tts-provider");
   providerOptions(
-    document.querySelector("#job-tts-provider"),
+    ttsSelect,
     state.providers.filter((provider) => provider.kind === "ai33"),
     "Theo cấu hình pipeline",
   );
+  selectFirstProvider(ttsSelect);
 
   if (!state.providers.length) {
     list.append(element("p", "empty-inline", "Chưa có provider. Ollama mặc định vẫn dùng được."));

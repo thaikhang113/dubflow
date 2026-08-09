@@ -19,10 +19,9 @@ class DockerContractTests(unittest.TestCase):
         self.assertIn('127.0.0.1:${TOOL_PORT:-18793}:18793', self.compose)
         self.assertIn("init: true", self.compose)
         self.assertIn("healthcheck:", self.compose)
-        self.assertIn(
-            "${TOOL_RUNTIME_DIR:-/home/haonguyen/.openclaw/tool-runtime}:/data",
-            self.compose,
-        )
+        for volume in ("data", "secrets", "jobs", "output", "models", "browser"):
+            self.assertIn(f"tool-{volume}:/data/{volume}", self.compose)
+            self.assertRegex(self.compose, rf"(?m)^  tool-{volume}:$")
         self.assertIn("host.docker.internal:host-gateway", self.compose)
         self.assertNotRegex(self.compose, r"9222:")
         self.assertNotRegex(self.compose, r"(?i)(api[_-]?key|cookie|token):\s*\S+")

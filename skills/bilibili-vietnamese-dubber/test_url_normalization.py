@@ -59,6 +59,23 @@ class BilibiliUrlNormalizationTests(unittest.TestCase):
         self.assertIn("OPENCLAW_JOB_STATUS_JSON=", source)
         self.assertIn('if [[ "$child_status" -ne 0 ]]', source)
 
+    def test_wrapper_only_requires_hdd_for_hdd_output(self):
+        run_sh = SCRIPT.parent.parent / "run.sh"
+        source = run_sh.read_text(encoding="utf-8")
+        self.assertIn('if [[ "$BASE_ROOT" == /mnt/hdd500/* ]]', source)
+
+    def test_wrapper_defaults_to_repo_local_dependencies(self):
+        run_sh = SCRIPT.parent.parent / "run.sh"
+        source = run_sh.read_text(encoding="utf-8")
+        self.assertIn(
+            'DOUYIN_PIPELINE="${DOUYIN_PIPELINE:-$SKILL_ROOT/douyin-vietnamese-dubber/run.sh}"',
+            source,
+        )
+        self.assertIn(
+            'SINGLE_JOB_BRAND_SCRIPT="${SINGLE_JOB_BRAND_SCRIPT:-$SKILL_ROOT/series-compilation-orchestrator/scripts/single_job_brand.py}"',
+            source,
+        )
+
     def test_child_pipeline_publishes_current_job_before_first_status(self):
         run_sh = SCRIPT.parents[2] / "douyin-vietnamese-dubber" / "run.sh"
         source = run_sh.read_text(encoding="utf-8")

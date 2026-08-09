@@ -48,6 +48,7 @@ export EDGE_TTS_BIN
 # settings.  See translation_route.sh for validation and the Ollama fallback.
 source "$SKILL_DIR/translation_route.sh"
 export OPENCLAW_AI_PROVIDER
+NINEROUTER_MODEL="${NINEROUTER_MODEL:-}"
 KOKORO_DEFAULT_VOICE="${KOKORO_DEFAULT_VOICE:-mai_linh}"
 AI33_MAI_PHUONG_VOICE_ID="${AI33_MAI_PHUONG_VOICE_ID:-vbee_hn_female_maiphuong_vdts_48k-fhg}"
 AI33_PHANH_VOICE_ID="${AI33_PHANH_VOICE_ID:-elevenlabs_UuMSQK8FdLwaY2M8ZAnh}"
