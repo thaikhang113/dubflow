@@ -131,6 +131,10 @@ class HostLoginHelperTests(unittest.TestCase):
                 self.assertEqual(expected, result["recommended_profile"])
                 self.assertTrue(result["docker_gpu"])
                 self.assertEqual(
+                    helper.subprocess.PIPE,
+                    run.call_args_list[0].kwargs["stdout"],
+                )
+                self.assertEqual(
                     {"ollama": "gpu", "whisper": "cpu", "demucs": "cpu", "render": "cpu"},
                     result["stages"],
                 )

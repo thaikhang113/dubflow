@@ -168,6 +168,7 @@ def detect_hardware(run=subprocess.run, docker=None) -> dict:
                 "--format=csv,noheader,nounits",
             ],
             stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             text=True,
             timeout=10,

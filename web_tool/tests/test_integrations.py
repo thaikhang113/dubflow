@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from web_tool.app import create_app
 from web_tool.config import Settings
 from web_tool.integrations import (
+    host_hardware_status,
     run_series_action,
     run_trend_action,
     runtime_doctor,
@@ -33,6 +34,20 @@ class IntegrationTests(unittest.TestCase):
             stdout=json.dumps(payload or {"ok": True}),
             stderr="",
         )
+
+    def test_hardware_status_allows_docker_smoke_test_time(self):
+        response = unittest.mock.MagicMock()
+        response.__enter__.return_value = response
+        response.status = 200
+        response.read.return_value = b'{"ok": true, "selected_profile": "hybrid"}'
+        with patch(
+            "web_tool.integrations.urllib.request.urlopen",
+            return_value=response,
+        ) as urlopen:
+            result = host_hardware_status()
+
+        self.assertEqual("hybrid", result["selected_profile"])
+        self.assertGreaterEqual(urlopen.call_args.kwargs["timeout"], 10)
 
     def test_series_actions_use_fixed_state_and_reject_unsafe_selector(self):
         with patch(
@@ -179,6 +194,7 @@ class IntegrationTests(unittest.TestCase):
         workflow = next(
             item for item in report["workflows"] if item["id"] == "hardware"
         )
+        self.assertEqual("Phần cứng", workflow["label"])
         self.assertEqual("ready", workflow["status"])
         self.assertIn("Ollama: GPU", workflow["optional"])
         self.assertIn("Whisper: CPU", workflow["optional"])

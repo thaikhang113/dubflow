@@ -329,7 +329,7 @@ def host_hardware_status() -> dict:
         "http://host.docker.internal:18794",
     ).rstrip("/")
     try:
-        with urllib.request.urlopen(f"{endpoint}/hardware", timeout=1) as response:
+        with urllib.request.urlopen(f"{endpoint}/hardware", timeout=15) as response:
             payload = json.loads(response.read().decode("utf-8"))
             return payload if response.status == 200 and isinstance(payload, dict) else {}
     except Exception:
@@ -534,7 +534,7 @@ def runtime_doctor(
     workflows = [
         _workflow(
             "hardware",
-            "Pháº§n cá»©ng",
+            "Ph\u1ea7n c\u1ee9ng",
             (),
             (),
             tuple(
