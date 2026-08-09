@@ -27,6 +27,8 @@ STATUS_FIELDS = {
     "artifacts",
 }
 WHISPER_MODELS = {"small", "medium"}
+ASR_ENGINES = {"auto", "whisper", "qwen3"}
+HARDWARE_PROFILES = {"cpu", "hybrid", "gpu"}
 
 
 def _request(job: dict) -> dict:
@@ -145,6 +147,27 @@ def build_job_environment(
         "CHROME_CDP_URL": "http://127.0.0.1:9222",
         "BILIBILI_CDP_URL": "http://127.0.0.1:9222",
     }
+    asr_engine = str(request.get("asr_engine") or "auto").strip().lower()
+    if asr_engine not in ASR_ENGINES:
+        raise ValueError("invalid ASR engine")
+    environment["ASR_PROVIDER"] = asr_engine
+    environment["QWEN_ASR_ENDPOINT"] = "http://qwen-asr:8000"
+    environment["VIENEU_ENDPOINT"] = "http://vieneu:8000"
+
+    vieneu_style = str(request.get("vieneu_style") or "").strip()
+    if vieneu_style:
+        if len(vieneu_style) > 200 or any(
+            character in vieneu_style for character in "\r\n\0"
+        ):
+            raise ValueError("invalid VieNeu style")
+        environment["VIENEU_STYLE"] = vieneu_style
+
+    hardware_profile = str(
+        request.get("hardware_profile") or "cpu"
+    ).strip().lower()
+    if hardware_profile not in HARDWARE_PROFILES:
+        raise ValueError("invalid hardware profile")
+    environment["OPENCLAW_HARDWARE_PROFILE"] = hardware_profile
 
     translation = _provider(providers.get("translation") or {})
     if translation:
@@ -181,7 +204,15 @@ def build_job_environment(
         elif environment["OPENCLAW_AI_PROVIDER"] == "ninerouter":
             environment["NINEROUTER_MODEL"] = model
 
-    voice = str(request.get("voice") or "").strip()
+    default_voice = str(request.get("default_voice") or "").strip()
+    if default_voice:
+        if len(default_voice) > 200 or any(
+            character in default_voice for character in "\r\n\0"
+        ):
+            raise ValueError("invalid default voice")
+        environment["OPENCLAW_DEFAULT_TTS_VOICE"] = default_voice
+
+    voice = str(request.get("voice") or default_voice).strip()
     if voice:
         if len(voice) > 200 or any(character in voice for character in "\r\n\0"):
             raise ValueError("invalid voice")

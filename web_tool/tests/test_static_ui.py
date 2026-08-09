@@ -92,7 +92,7 @@ class StaticUiTests(unittest.TestCase):
             "function installRuntime",
             "http://127.0.0.1:18794/whisper/install",
             "http://127.0.0.1:18794/qwen-asr/install",
-            "http://127.0.0.1:18794/install/status",
+            "/install/status?component=${encodeURIComponent(component)}",
             "asr_engine",
             "whisper_model",
         ):
@@ -102,13 +102,20 @@ class StaticUiTests(unittest.TestCase):
         for marker in (
             'id="job-asr-engine"',
             'id="job-whisper-model"',
-            'id="job-voice"',
+            'id="job-voice" name="voice" type="text"',
             'id="job-vieneu-style"',
-            'id="settings-voice"',
+            'id="settings-voice" type="text"',
             'id="settings-vieneu-style"',
             'id="settings-vieneu-install"',
             'id="settings-vieneu-status"',
+            'id="voice-options"',
             'value="vieneu:hong-chau"',
+            'value="ai33:vbee_hn_female_ngochuyen_full_48k-fhg"',
+            'value="kokoro:mai_linh"',
+            'value="resona:ZJEpWoOyElCKuEljNTkm"',
+            'value="nam"',
+            'value="nu"',
+            'value="vi-VN-HoaiMyNeural"',
             'value="story"',
             "Đọc truyện",
         ):
@@ -118,12 +125,20 @@ class StaticUiTests(unittest.TestCase):
             "http://127.0.0.1:18794/vieneu/install",
             "asr_engine",
             "vieneu_style",
-            "vieneu:hong-chau",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, self.javascript)
         self.assertNotIn("tts_engine", self.html)
         self.assertNotIn("tts_engine", self.javascript)
+
+    def test_hardware_doctor_action_stays_in_settings(self):
+        start = self.javascript.index("function doctorAction")
+        end = self.javascript.index("function renderDoctor", start)
+        action = self.javascript[start:end]
+        self.assertIn('workflow.id === "hardware"', action)
+        self.assertIn('#settings-hardware-detect', action)
+        hardware = action[action.index('workflow.id === "hardware"'):]
+        self.assertLess(hardware.index("return;"), hardware.index('showView("providers")'))
 
     def test_settings_can_detect_and_apply_hardware_profile(self):
         for marker in (

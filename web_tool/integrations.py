@@ -335,13 +335,43 @@ def host_hardware_status() -> dict:
     except Exception:
         return {}
 
-def host_install_status() -> dict:
+def host_install_status(component: str) -> dict:
+    if component not in {"qwen-asr", "vieneu"}:
+        return {}
     endpoint = os.environ.get(
         "BILIBILI_HOST_HELPER_URL",
         "http://host.docker.internal:18794",
     ).rstrip("/")
     try:
-        with urllib.request.urlopen(f"{endpoint}/install/status", timeout=3) as response:
+        query = urllib.parse.urlencode({"component": component})
+        with urllib.request.urlopen(
+            f"{endpoint}/install/status?{query}",
+            timeout=3,
+        ) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            return payload if response.status == 200 and isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
+def local_ai_health(component: str) -> dict:
+    endpoints = {
+        "qwen-asr": os.environ.get(
+            "QWEN_ASR_ENDPOINT",
+            "http://qwen-asr:8000",
+        ),
+        "vieneu": os.environ.get(
+            "VIENEU_ENDPOINT",
+            "http://vieneu:8000",
+        ),
+    }
+    endpoint = endpoints.get(component)
+    if not endpoint:
+        return {}
+    try:
+        with urllib.request.urlopen(
+            f"{endpoint.rstrip('/')}/health",
+            timeout=3,
+        ) as response:
             payload = json.loads(response.read().decode("utf-8"))
             return payload if response.status == 200 and isinstance(payload, dict) else {}
     except Exception:
@@ -369,10 +399,12 @@ def runtime_doctor(
     ollama_available=None,
     hardware_status=None,
     install_status=None,
+    runtime_health=None,
 ) -> dict:
     runtime_settings = runtime_settings or {}
     login_status = login_status or {}
     install_status = install_status or {}
+    runtime_health = runtime_health or {}
     whisper_binary = settings.models_dir / "whisper.cpp" / "build" / "bin" / (
         "whisper-cli.exe" if os.name == "nt" else "whisper-cli"
     )
@@ -406,37 +438,6 @@ def runtime_doctor(
             for provider in providers
         ],
     }
-    qwen = install_status.get("qwen_asr")
-    if not isinstance(qwen, dict):
-        qwen = {}
-    qwen_checks = {
-        key: qwen.get(key) is True
-        for key in ("service", "model", "aligner")
-    }
-    qwen_checks["ready"] = all(qwen_checks.values())
-    requested_asr = str(runtime_settings.get("asr_engine") or "auto").lower()
-    if requested_asr not in {"auto", "whisper", "qwen3"}:
-        requested_asr = "auto"
-    selected_asr = (
-        "qwen3"
-        if requested_asr == "qwen3"
-        or (requested_asr == "auto" and qwen_checks["ready"])
-        else "whisper"
-    )
-    checks["asr"] = {
-        "requested": requested_asr,
-        "selected": selected_asr,
-        "ready": qwen_checks["ready"] if selected_asr == "qwen3" else checks["whisper"],
-        "engines": {
-            "whisper": {
-                "ready": checks["whisper"],
-                "binary": checks["whisper_binary"],
-                "model": checks["whisper_model"],
-                "model_installed": checks["whisper_model_installed"],
-            },
-            "qwen3": qwen_checks,
-        },
-    }
     hardware_status = hardware_status or {}
     gpu = hardware_status.get("gpu")
     if not isinstance(gpu, dict):
@@ -463,6 +464,48 @@ def runtime_doctor(
         "stages": {
             name: "gpu" if stages.get(name) == "gpu" else "cpu"
             for name in ("ollama", "whisper", "demucs", "render")
+        },
+    }
+    qwen_install = install_status.get("qwen_asr")
+    if not isinstance(qwen_install, dict):
+        qwen_install = {}
+    qwen = runtime_health.get("qwen_asr")
+    if not isinstance(qwen, dict):
+        qwen = {}
+    qwen_checks = {
+        "service": bool(qwen),
+        "model": qwen.get("model_ready") is True,
+        "aligner": qwen.get("aligner_ready") is True,
+        "install_state": str(qwen_install.get("state") or "unknown"),
+    }
+    qwen_checks["ready"] = all(
+        qwen_checks[key] for key in ("service", "model", "aligner")
+    )
+    requested_asr = str(runtime_settings.get("asr_engine") or "auto").lower()
+    if requested_asr not in {"auto", "whisper", "qwen3"}:
+        requested_asr = "auto"
+    selected_asr = (
+        "qwen3"
+        if requested_asr == "qwen3"
+        or (
+            requested_asr == "auto"
+            and selected_profile in {"hybrid", "gpu"}
+            and qwen_checks["ready"]
+        )
+        else "whisper"
+    )
+    checks["asr"] = {
+        "requested": requested_asr,
+        "selected": selected_asr,
+        "ready": qwen_checks["ready"] if selected_asr == "qwen3" else checks["whisper"],
+        "engines": {
+            "whisper": {
+                "ready": checks["whisper"],
+                "binary": checks["whisper_binary"],
+                "model": checks["whisper_model"],
+                "model_installed": checks["whisper_model_installed"],
+            },
+            "qwen3": qwen_checks,
         },
     }
     core_required = ("FFmpeg", "Demucs", "Runtime volumes")
@@ -539,7 +582,10 @@ def runtime_doctor(
         ai33_missing.append("AI33_API_KEY")
 
     voice = str(runtime_settings.get("default_voice") or "")
-    vieneu = install_status.get("vieneu")
+    vieneu_install = install_status.get("vieneu")
+    if not isinstance(vieneu_install, dict):
+        vieneu_install = {}
+    vieneu = runtime_health.get("vieneu")
     if not isinstance(vieneu, dict):
         vieneu = {}
     try:
@@ -547,8 +593,9 @@ def runtime_doctor(
     except (TypeError, ValueError):
         vieneu_sample_rate = 0
     vieneu_checks = {
-        "health": vieneu.get("health") is True,
+        "health": vieneu.get("ready") is True,
         "sample_rate": vieneu_sample_rate,
+        "install_state": str(vieneu_install.get("state") or "unknown"),
     }
     vieneu_checks["ready"] = (
         vieneu_checks["health"] and vieneu_checks["sample_rate"] == 48000

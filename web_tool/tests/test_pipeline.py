@@ -149,6 +149,30 @@ class PipelineTests(unittest.TestCase):
                 self.settings,
             )
 
+    def test_maps_job_runtime_selection_and_hardware_profile(self):
+        environment = build_job_environment(
+            {
+                "id": "job-local-runtime",
+                "request": {
+                    "asr_engine": "qwen3",
+                    "vieneu_style": "story",
+                    "default_voice": "vieneu:hong-chau",
+                    "hardware_profile": "hybrid",
+                },
+            },
+            {},
+            self.settings,
+        )
+
+        self.assertEqual("qwen3", environment["ASR_PROVIDER"])
+        self.assertEqual("story", environment["VIENEU_STYLE"])
+        self.assertEqual(
+            "vieneu:hong-chau",
+            environment["OPENCLAW_DEFAULT_TTS_VOICE"],
+        )
+        self.assertEqual("vieneu:hong-chau", environment["VOICE"])
+        self.assertEqual("hybrid", environment["OPENCLAW_HARDWARE_PROFILE"])
+
     def test_managed_brand_logo_enables_required_bilibili_branding(self):
         logo = self.settings.data_dir / "branding-logo.png"
         logo.write_bytes(b"png")

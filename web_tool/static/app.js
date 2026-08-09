@@ -111,7 +111,7 @@ function showView(name) {
     loadSettings();
     loadDoctor();
     loadBrandLogo();
-    loadInstallStatus();
+    loadInstallStatuses();
   }
 }
 
@@ -137,15 +137,6 @@ function providerOptions(select, providers, emptyLabel) {
 
 function selectFirstProvider(select) {
   if (!select.value && select.options.length > 1) select.selectedIndex = 1;
-}
-
-function setSelectValue(select, value) {
-  if (value && ![...select.options].some((option) => option.value === value)) {
-    const option = element("option", "", value);
-    option.value = value;
-    select.append(option);
-  }
-  select.value = value || "";
 }
 
 function renderProviders() {
@@ -892,8 +883,9 @@ async function loadSettings() {
     state.settings = settings;
     document.querySelector("#settings-provider").value = settings.default_provider_id || "";
     document.querySelector("#settings-model").value = settings.default_model || "";
-    const defaultVoice = settings.default_voice || "vieneu:hong-chau";
-    setSelectValue(document.querySelector("#settings-voice"), defaultVoice);
+    const defaultVoice =
+      settings.default_voice || "ai33:vbee_hn_female_ngochuyen_full_48k-fhg";
+    document.querySelector("#settings-voice").value = defaultVoice;
     document.querySelector("#settings-vieneu-style").value = settings.vieneu_style || "story";
     document.querySelector("#settings-asr-engine").value = settings.asr_engine || "auto";
     document.querySelector("#settings-whisper-model").value = settings.whisper_model || "medium";
@@ -904,7 +896,7 @@ async function loadSettings() {
     document.querySelector("#settings-telegram-chat").value = settings.telegram_chat_id || "";
     document.querySelector("#settings-telegram-thread").value = settings.telegram_thread_id || "";
     document.querySelector("#settings-telegram-token").value = "";
-    setSelectValue(document.querySelector("#job-voice"), defaultVoice);
+    document.querySelector("#job-voice").value = defaultVoice;
     document.querySelector("#channel-provider").value = settings.default_provider_id || "";
     document.querySelector("#channel-model").value = settings.default_model || "";
     document.querySelector("#channel-voice").value = settings.default_voice || "";
@@ -984,74 +976,60 @@ async function detectHardware() {
   }
 }
 
-function installComponent(payload, key) {
-  return payload[key] || payload.installs?.[key] || payload.components?.[key] || {};
+function installReady(component) {
+  return component.state === "ready";
 }
 
-function installReady(key, component) {
-  if (component.ready === true || component.state === "ready" || component.status === "ready") {
-    return true;
-  }
-  if (key === "qwen_asr") {
-    return component.service === true && component.model === true && component.aligner === true;
-  }
-  return component.health === true && Number(component.sample_rate) === 48000;
-}
-
-function installStatusText(key, component) {
-  const label = key === "qwen_asr" ? "Qwen3 ASR" : "VieNeu";
-  if (installReady(key, component)) {
-    return key === "qwen_asr"
-      ? "Qwen3 ASR đã sẵn sàng: service, model và aligner."
-      : "VieNeu đã sẵn sàng: health tốt, âm thanh 48 kHz.";
-  }
-  const stateName = component.state || component.status;
+function installStatusText(component, payload) {
+  const label = component === "qwen-asr" ? "Qwen3 ASR" : "VieNeu";
+  if (installReady(payload)) return `${label} đã cài đặt.`;
+  const stateName = payload.state;
   if (["queued", "installing", "downloading", "starting"].includes(stateName)) {
-    return `${label} đang cài đặt${component.detail ? `: ${component.detail}` : "..."}`;
+    return `${label} đang cài đặt...`;
   }
-  if (component.error_code || ["failed", "error"].includes(stateName)) {
-    return `${label} cài đặt lỗi: ${component.error_code || component.detail || stateName}.`;
+  if (payload.error_code || ["failed", "error"].includes(stateName)) {
+    return `${label} cài đặt lỗi: ${payload.error_code || stateName}.`;
   }
-  if (key === "qwen_asr") {
-    const missing = [
-      component.service === true ? "" : "service",
-      component.model === true ? "" : "model",
-      component.aligner === true ? "" : "aligner",
-    ].filter(Boolean);
-    return `Qwen3 ASR chưa sẵn sàng${missing.length ? `: thiếu ${missing.join(", ")}` : "."}`;
-  }
-  return `VieNeu chưa sẵn sàng: health=${component.health === true ? "tốt" : "chưa đạt"}, sample rate=${Number(component.sample_rate) || 0} Hz.`;
+  return `${label} chưa cài đặt.`;
 }
 
-function renderInstallStatus(payload) {
-  for (const [key, selector] of [
-    ["qwen_asr", "#settings-qwen-status"],
-    ["vieneu", "#settings-vieneu-status"],
-  ]) {
-    document.querySelector(selector).textContent =
-      installStatusText(key, installComponent(payload, key));
-  }
+function renderInstallStatus(component, payload) {
+  const selector = component === "qwen-asr"
+    ? "#settings-qwen-status"
+    : "#settings-vieneu-status";
+  document.querySelector(selector).textContent =
+    installStatusText(component, payload);
 }
 
-async function loadInstallStatus() {
+async function loadInstallStatus(component) {
   try {
-    const response = await fetch("http://127.0.0.1:18794/install/status");
+    const response = await fetch(
+      `http://127.0.0.1:18794/install/status?component=${encodeURIComponent(component)}`,
+    );
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error_code || `HTTP ${response.status}`);
-    renderInstallStatus(payload);
+    renderInstallStatus(component, payload);
     return payload;
   } catch {
-    document.querySelector("#settings-qwen-status").textContent =
-      "Không đọc được trạng thái Qwen3 ASR. Hãy chạy host helper.";
-    document.querySelector("#settings-vieneu-status").textContent =
-      "Không đọc được trạng thái VieNeu. Hãy chạy host helper.";
+    const selector = component === "qwen-asr"
+      ? "#settings-qwen-status"
+      : "#settings-vieneu-status";
+    document.querySelector(selector).textContent =
+      "Không đọc được trạng thái cài đặt. Hãy chạy host helper.";
     return null;
   }
 }
 
-async function installRuntime(key) {
+function loadInstallStatuses() {
+  return Promise.all([
+    loadInstallStatus("qwen-asr"),
+    loadInstallStatus("vieneu"),
+  ]);
+}
+
+async function installRuntime(component) {
   const config = {
-    qwen_asr: {
+    "qwen-asr": {
       endpoint: "http://127.0.0.1:18794/qwen-asr/install",
       button: "#settings-qwen-install",
       status: "#settings-qwen-status",
@@ -1063,7 +1041,7 @@ async function installRuntime(key) {
       status: "#settings-vieneu-status",
       label: "VieNeu",
     },
-  }[key];
+  }[component];
   const installButton = document.querySelector(config.button);
   const status = document.querySelector(config.status);
   installButton.disabled = true;
@@ -1075,16 +1053,15 @@ async function installRuntime(key) {
       throw new Error(payload.error_code || `HTTP ${response.status}`);
     }
     for (let attempt = 0; attempt < 900; attempt += 1) {
-      const current = await loadInstallStatus();
+      const current = await loadInstallStatus(component);
       if (!current) throw new Error("HostHelperUnavailable");
-      const component = installComponent(current, key);
-      if (installReady(key, component)) {
+      if (installReady(current)) {
         await loadDoctor();
         notify(`${config.label} đã sẵn sàng.`);
         return;
       }
-      if (component.error_code || ["failed", "error"].includes(component.state || component.status)) {
-        throw new Error(component.error_code || component.detail || "InstallFailed");
+      if (current.error_code || current.state === "failed") {
+        throw new Error(current.error_code || "InstallFailed");
       }
       await new Promise((resolve) => window.setTimeout(resolve, 2000));
     }
@@ -1232,6 +1209,10 @@ function doctorAction(workflow) {
   }
   if (workflow.id === "tts") {
     document.querySelector("#settings-voice").focus();
+    return;
+  }
+  if (workflow.id === "hardware") {
+    document.querySelector("#settings-hardware-detect").focus();
     return;
   }
   showView("providers");
@@ -1385,7 +1366,7 @@ document.querySelector("#trend-mode").addEventListener("change", (event) => {
 });
 document.querySelector("#settings-form").addEventListener("submit", saveSettings);
 document.querySelector("#settings-whisper-install").addEventListener("click", installLocalWhisper);
-document.querySelector("#settings-qwen-install").addEventListener("click", () => installRuntime("qwen_asr"));
+document.querySelector("#settings-qwen-install").addEventListener("click", () => installRuntime("qwen-asr"));
 document.querySelector("#settings-vieneu-install").addEventListener("click", () => installRuntime("vieneu"));
 document.querySelector("#settings-hardware-detect").addEventListener("click", detectHardware);
 document.querySelector("#settings-logo-save").addEventListener("click", saveBrandLogo);

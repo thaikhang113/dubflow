@@ -4,6 +4,7 @@ import io
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import call, patch
 
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -339,7 +340,10 @@ class ApiTests(unittest.TestCase):
         defaults = self.client.get("/api/settings").json()
         self.assertEqual("auto", defaults["asr_engine"])
         self.assertEqual("medium", defaults["whisper_model"])
-        self.assertEqual("vieneu:hong-chau", defaults["default_voice"])
+        self.assertEqual(
+            "ai33:vbee_hn_female_ngochuyen_full_48k-fhg",
+            defaults["default_voice"],
+        )
         self.assertEqual("story", defaults["vieneu_style"])
 
         response = self.client.put(
@@ -366,6 +370,48 @@ class ApiTests(unittest.TestCase):
                     422,
                     self.client.put("/api/settings", json=payload).status_code,
                 )
+
+    def test_partial_settings_update_preserves_legacy_values_and_secret(self):
+        provider = self.client.post(
+            "/api/providers",
+            json={
+                "name": "Legacy",
+                "kind": "openai_compatible",
+                "endpoint": "https://api.example.com/v1",
+                "model": "legacy-model",
+            },
+        ).json()
+        saved = self.client.put(
+            "/api/settings",
+            json={
+                "default_provider_id": provider["id"],
+                "default_model": "legacy-model",
+                "default_voice": "ngoc huyen",
+                "queue_poll_seconds": 9,
+                "telegram_chat_id": "123",
+                "telegram_thread_id": "45",
+                "telegram_bot_token": "secret-token",
+                "hardware_mode": "cpu",
+                "hardware_profile": "cpu",
+            },
+        )
+        self.assertEqual(200, saved.status_code, saved.text)
+
+        updated = self.client.put(
+            "/api/settings",
+            json={"asr_engine": "qwen3"},
+        )
+
+        self.assertEqual(200, updated.status_code, updated.text)
+        values = updated.json()
+        self.assertEqual(provider["id"], values["default_provider_id"])
+        self.assertEqual("legacy-model", values["default_model"])
+        self.assertEqual("ngoc huyen", values["default_voice"])
+        self.assertEqual(9, values["queue_poll_seconds"])
+        self.assertEqual("123", values["telegram_chat_id"])
+        self.assertEqual("45", values["telegram_thread_id"])
+        self.assertTrue(values["telegram_configured"])
+        self.assertEqual("qwen3", values["asr_engine"])
 
     def test_job_can_inherit_or_override_asr_and_vieneu_style(self):
         saved = self.client.put(
@@ -402,6 +448,60 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(201, overridden.status_code, overridden.text)
         self.assertEqual("whisper", overridden.json()["request"]["asr_engine"])
 
+    def test_job_accepts_default_voice_and_inherits_hardware_profile(self):
+        saved = self.client.put(
+            "/api/settings",
+            json={"hardware_profile": "hybrid"},
+        )
+        self.assertEqual(200, saved.status_code, saved.text)
+
+        response = self.client.post(
+            "/api/jobs",
+            json={
+                "platform": "bilibili",
+                "source": "https://www.bilibili.com/video/BV1DEFAULTVOICE",
+                "asr_engine": "qwen3",
+                "vieneu_style": "story",
+                "default_voice": "vieneu:hong-chau",
+            },
+        )
+
+        self.assertEqual(201, response.status_code, response.text)
+        request = response.json()["request"]
+        self.assertEqual("qwen3", request["asr_engine"])
+        self.assertEqual("story", request["vieneu_style"])
+        self.assertEqual("vieneu:hong-chau", request["default_voice"])
+        self.assertEqual("vieneu:hong-chau", request["voice"])
+        self.assertEqual("hybrid", request["hardware_profile"])
+
+    @patch("web_tool.app.local_ai_health")
+    @patch("web_tool.app.host_install_status")
+    def test_doctor_uses_per_component_install_status_protocol(
+        self,
+        install_status,
+        runtime_health,
+    ):
+        install_status.side_effect = (
+            {"ok": True, "component": "qwen-asr", "state": "ready"},
+            {"ok": True, "component": "vieneu", "state": "ready"},
+        )
+        runtime_health.side_effect = (
+            {"model_ready": True, "aligner_ready": True, "device": "cpu"},
+            {"ready": True, "sample_rate": 48000},
+        )
+
+        response = self.client.get("/api/runtime/doctor")
+
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual(
+            [call("qwen-asr"), call("vieneu")],
+            install_status.call_args_list,
+        )
+        self.assertEqual(
+            [call("qwen-asr"), call("vieneu")],
+            runtime_health.call_args_list,
+        )
+
     def test_vieneu_voice_does_not_bind_ai33_default_provider(self):
         ai33 = self.client.post(
             "/api/providers",
@@ -430,6 +530,45 @@ class ApiTests(unittest.TestCase):
         )
         self.assertEqual(201, job.status_code, job.text)
         self.assertEqual("", job.json()["request"]["tts_provider_id"])
+
+    def test_legacy_resume_and_retry_keep_whisper_and_old_voice(self):
+        for action in ("resume", "retry"):
+            with self.subTest(action=action):
+                legacy = self.app.state.store.enqueue_job(
+                    {
+                        "platform": "bilibili",
+                        "source": f"https://www.bilibili.com/video/BV1LEGACY{action}",
+                        "voice": "nu",
+                        "whisper_model": "medium",
+                    }
+                )
+                self.app.state.store.set_settings(
+                    {
+                        "asr_engine": "qwen3",
+                        "default_voice": "vieneu:hong-chau",
+                        "vieneu_style": "story",
+                    }
+                )
+                if action == "resume":
+                    job_dir = self.settings.jobs_dir / legacy["id"] / "output"
+                    job_dir.mkdir(parents=True)
+                    self.app.state.store.update_job(
+                        legacy["id"],
+                        state="failed",
+                        job_dir=str(job_dir),
+                    )
+                else:
+                    self.app.state.store.update_job(legacy["id"], state="failed")
+
+                response = self.client.post(
+                    f"/api/jobs/{legacy['id']}/{action}"
+                )
+
+                self.assertIn(response.status_code, (200, 201), response.text)
+                request = response.json()["request"]
+                self.assertEqual("whisper", request["asr_engine"])
+                self.assertEqual("nu", request["voice"])
+                self.assertNotIn("vieneu_style", request)
 
 if __name__ == "__main__":
     unittest.main()

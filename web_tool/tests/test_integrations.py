@@ -15,6 +15,7 @@ from web_tool.config import Settings
 from web_tool.integrations import (
     host_hardware_status,
     host_install_status,
+    local_ai_health,
     run_series_action,
     run_trend_action,
     runtime_doctor,
@@ -50,32 +51,57 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual("hybrid", result["selected_profile"])
         self.assertGreaterEqual(urlopen.call_args.kwargs["timeout"], 10)
 
-    def test_install_status_returns_only_structured_runtime_state(self):
+    def test_install_status_queries_one_allowlisted_component(self):
         response = unittest.mock.MagicMock()
         response.__enter__.return_value = response
         response.status = 200
         response.read.return_value = json.dumps(
             {
-                "qwen_asr": {
-                    "service": True,
-                    "model": True,
-                    "aligner": True,
-                },
-                "vieneu": {
-                    "health": True,
-                    "sample_rate": 48000,
-                },
+                "ok": True,
+                "component": "qwen-asr",
+                "state": "ready",
             }
         ).encode()
         with patch(
             "web_tool.integrations.urllib.request.urlopen",
             return_value=response,
         ) as urlopen:
-            result = host_install_status()
+            result = host_install_status("qwen-asr")
 
-        self.assertTrue(result["qwen_asr"]["aligner"])
-        self.assertEqual(48000, result["vieneu"]["sample_rate"])
-        self.assertTrue(urlopen.call_args.args[0].endswith("/install/status"))
+        self.assertEqual("qwen-asr", result["component"])
+        self.assertEqual("ready", result["state"])
+        self.assertTrue(
+            urlopen.call_args.args[0].endswith(
+                "/install/status?component=qwen-asr"
+            )
+        )
+
+    def test_local_ai_health_uses_service_health_contracts(self):
+        response = unittest.mock.MagicMock()
+        response.__enter__.return_value = response
+        response.status = 200
+        response.read.side_effect = (
+            b'{"model_ready": true, "aligner_ready": true, "device": "cpu"}',
+            b'{"ready": true, "sample_rate": 48000}',
+        )
+        with patch(
+            "web_tool.integrations.urllib.request.urlopen",
+            return_value=response,
+        ) as urlopen:
+            qwen = local_ai_health("qwen-asr")
+            vieneu = local_ai_health("vieneu")
+
+        self.assertTrue(qwen["model_ready"])
+        self.assertTrue(qwen["aligner_ready"])
+        self.assertTrue(vieneu["ready"])
+        self.assertEqual(48000, vieneu["sample_rate"])
+        self.assertEqual(
+            [
+                "http://qwen-asr:8000/health",
+                "http://vieneu:8000/health",
+            ],
+            [call.args[0] for call in urlopen.call_args_list],
+        )
 
     def test_series_actions_use_fixed_state_and_reject_unsafe_selector(self):
         with patch(
@@ -371,13 +397,17 @@ class IntegrationTests(unittest.TestCase):
             },
         ]
         install_status = {
+            "qwen_asr": {"ok": True, "component": "qwen-asr", "state": "ready"},
+            "vieneu": {"ok": True, "component": "vieneu", "state": "ready"},
+        }
+        runtime_health = {
             "qwen_asr": {
-                "service": True,
-                "model": True,
-                "aligner": True,
+                "model_ready": True,
+                "aligner_ready": True,
+                "device": "cpu",
             },
             "vieneu": {
-                "health": True,
+                "ready": True,
                 "sample_rate": 48000,
             },
         }
@@ -389,9 +419,11 @@ class IntegrationTests(unittest.TestCase):
                 "asr_engine": "qwen3",
                 "whisper_model": "medium",
                 "default_voice": "vieneu:hong-chau",
+                "hardware_profile": "hybrid",
             },
             ollama_available=True,
             install_status=install_status,
+            runtime_health=runtime_health,
         )
 
         self.assertTrue(report["ready"])
@@ -402,7 +434,7 @@ class IntegrationTests(unittest.TestCase):
         self.assertTrue(report["checks"]["tts"]["engines"]["vieneu"]["ready"])
         self.assertNotIn("api.ai33.pro", repr(report))
 
-        install_status["qwen_asr"]["aligner"] = False
+        runtime_health["qwen_asr"]["aligner_ready"] = False
         missing_aligner = runtime_doctor(
             self.settings,
             providers,
@@ -410,9 +442,11 @@ class IntegrationTests(unittest.TestCase):
                 "default_provider_id": "provider-ollama",
                 "asr_engine": "qwen3",
                 "default_voice": "vieneu:hong-chau",
+                "hardware_profile": "hybrid",
             },
             ollama_available=True,
             install_status=install_status,
+            runtime_health=runtime_health,
         )
         self.assertFalse(missing_aligner["ready"])
         self.assertIn(
@@ -460,13 +494,16 @@ class IntegrationTests(unittest.TestCase):
             },
             ollama_available=True,
             install_status={
+                "qwen_asr": {"ok": True, "component": "qwen-asr", "state": "idle"},
+                "vieneu": {"ok": True, "component": "vieneu", "state": "ready"},
+            },
+            runtime_health={
                 "qwen_asr": {
-                    "service": False,
-                    "model": False,
-                    "aligner": False,
+                    "model_ready": False,
+                    "aligner_ready": False,
                 },
                 "vieneu": {
-                    "health": True,
+                    "ready": True,
                     "sample_rate": 44100,
                 },
             },
@@ -484,6 +521,48 @@ class IntegrationTests(unittest.TestCase):
                 if item["id"] == "tts"
             )["missing"],
         )
+
+    @patch("web_tool.integrations.os.access", return_value=True)
+    @patch("web_tool.integrations.importlib.util.find_spec", return_value=object())
+    @patch("web_tool.integrations.shutil.which", side_effect=lambda name: f"/bin/{name}")
+    def test_runtime_doctor_auto_uses_qwen_only_for_fitting_hardware(
+        self,
+        _which,
+        _find_spec,
+        _access,
+    ):
+        root = self.settings.models_dir / "whisper.cpp"
+        binary = root / "build" / "bin" / (
+            "whisper-cli.exe" if os.name == "nt" else "whisper-cli"
+        )
+        binary.parent.mkdir(parents=True)
+        binary.write_bytes(b"binary")
+        model = root / "models" / "ggml-medium.bin"
+        model.parent.mkdir(parents=True)
+        model.write_bytes(b"model")
+        health = {
+            "qwen_asr": {
+                "model_ready": True,
+                "aligner_ready": True,
+                "device": "cuda:0",
+            }
+        }
+
+        cpu = runtime_doctor(
+            self.settings,
+            [],
+            runtime_settings={"asr_engine": "auto", "hardware_profile": "cpu"},
+            runtime_health=health,
+        )
+        hybrid = runtime_doctor(
+            self.settings,
+            [],
+            runtime_settings={"asr_engine": "auto", "hardware_profile": "hybrid"},
+            runtime_health=health,
+        )
+
+        self.assertEqual("whisper", cpu["checks"]["asr"]["selected"])
+        self.assertEqual("qwen3", hybrid["checks"]["asr"]["selected"])
 
     def test_output_export_contains_only_managed_output(self):
         output = self.settings.output_dir / "job-one"

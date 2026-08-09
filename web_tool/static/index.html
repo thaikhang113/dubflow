@@ -101,11 +101,7 @@
             </label>
             <label class="field">
               <span>Giọng</span>
-              <select id="job-voice" name="voice">
-                <option value="">Theo cài đặt</option>
-                <option value="vieneu:hong-chau">VieNeu · Hồng Châu</option>
-                <option value="ai33:vbee_hn_female_ngochuyen_full_48k-fhg">AI33 · Ngọc Huyền</option>
-              </select>
+              <input id="job-voice" name="voice" type="text" list="voice-options" maxlength="200" autocomplete="off">
             </label>
             <label class="field">
               <span>Phong cách VieNeu</span>
@@ -508,10 +504,7 @@
               </label>
               <label class="field">
                 <span>Giọng mặc định</span>
-                <select id="settings-voice">
-                  <option value="vieneu:hong-chau">VieNeu · Hồng Châu</option>
-                  <option value="ai33:vbee_hn_female_ngochuyen_full_48k-fhg">AI33 · Ngọc Huyền</option>
-                </select>
+                <input id="settings-voice" type="text" list="voice-options" maxlength="200" autocomplete="off">
               </label>
               <label class="field">
                 <span>Phong cách VieNeu</span>
@@ -592,6 +585,16 @@
       </section>
     </main>
   </div>
+  <datalist id="voice-options">
+    <option value="vieneu:hong-chau">VieNeu · Hồng Châu</option>
+    <option value="ai33:vbee_hn_female_ngochuyen_full_48k-fhg">AI33 · Ngọc Huyền</option>
+    <option value="kokoro:mai_linh">Kokoro · Mai Linh</option>
+    <option value="resona:ZJEpWoOyElCKuEljNTkm">Resona</option>
+    <option value="nam">Edge TTS · Nam</option>
+    <option value="nu">Edge TTS · Nữ</option>
+    <option value="vi-VN-HoaiMyNeural">Edge TTS · Hoài My</option>
+    <option value="vi-VN-NamMinhNeural">Edge TTS · Nam Minh</option>
+  </datalist>
   <script src="/static/app.js" defer></script>
 </body>
 </html>
