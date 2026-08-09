@@ -1,5 +1,6 @@
 import math
 import os
+from collections.abc import Mapping
 from pathlib import Path
 from threading import RLock
 
@@ -179,6 +180,10 @@ def validate_segments(segments):
     validated = []
     previous_end = 0
     for cue in segments:
+        if not isinstance(cue, Mapping):
+            raise ServiceError(
+                502, "INVALID_MODEL_OUTPUT", "Model returned an invalid cue"
+            )
         start_ms = cue.get("start_ms")
         end_ms = cue.get("end_ms")
         text = cue.get("text")
@@ -188,7 +193,7 @@ def validate_segments(segments):
             or not math.isfinite(start_ms)
             or not math.isfinite(end_ms)
             or start_ms < 0
-            or end_ms < start_ms
+            or end_ms <= start_ms
             or start_ms < previous_end
             or not isinstance(text, str)
             or not text.strip()

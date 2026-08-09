@@ -16,9 +16,11 @@ from fastapi.testclient import TestClient
 
 class FakeRuntime:
     def __init__(self, segments=None, error=None):
-        self.segments = segments or [
-            {"start_ms": 0, "end_ms": 1200, "text": "xin chao"}
-        ]
+        self.segments = (
+            [{"start_ms": 0, "end_ms": 1200, "text": "xin chao"}]
+            if segments is None
+            else segments
+        )
         self.error = error
 
     def health(self):
@@ -55,9 +57,11 @@ class ServiceTests(unittest.TestCase):
         self.service.runtime = self.original_runtime
         self.temp.cleanup()
 
-    def client(self, runtime=None):
+    def client(self, runtime=None, *, raise_server_exceptions=True):
         self.service.runtime = runtime or FakeRuntime()
-        return TestClient(self.service.app)
+        return TestClient(
+            self.service.app, raise_server_exceptions=raise_server_exceptions
+        )
 
     def test_import_does_not_load_qwen_dependency(self):
         self.assertNotIn("qwen_asr", sys.modules)
@@ -80,9 +84,12 @@ class ServiceTests(unittest.TestCase):
         )
 
     def test_transcribe_returns_fixed_contract(self):
-        response = self.client().post(
+        runtime = FakeRuntime(
+            segments=[{"start_ms": 0, "end_ms": 1200, "text": "你好"}]
+        )
+        response = self.client(runtime).post(
             "/v1/transcribe",
-            json={"audio_path": str(self.audio_path), "language": "Vietnamese"},
+            json={"audio_path": str(self.audio_path), "language": "Chinese"},
         )
 
         self.assertEqual(200, response.status_code)
@@ -91,9 +98,9 @@ class ServiceTests(unittest.TestCase):
                 "provider": "qwen3-asr-local",
                 "model": "Qwen/Qwen3-ASR-0.6B",
                 "device": "cpu",
-                "language": "Vietnamese",
+                "language": "Chinese",
                 "segments": [
-                    {"start_ms": 0, "end_ms": 1200, "text": "xin chao"}
+                    {"start_ms": 0, "end_ms": 1200, "text": "你好"}
                 ],
             },
             response.json(),
@@ -154,6 +161,9 @@ class ServiceTests(unittest.TestCase):
             "end before start": [
                 {"start_ms": 2, "end_ms": 1, "text": "bad"}
             ],
+            "zero duration": [
+                {"start_ms": 1, "end_ms": 1, "text": "bad"}
+            ],
             "non monotonic": [
                 {"start_ms": 0, "end_ms": 10, "text": "one"},
                 {"start_ms": 9, "end_ms": 20, "text": "two"},
@@ -173,6 +183,26 @@ class ServiceTests(unittest.TestCase):
                 self.assertEqual(
                     "INVALID_MODEL_OUTPUT", response.json()["error_code"]
                 )
+
+    def test_rejects_non_mapping_model_cue_with_controlled_error(self):
+        response = self.client(
+            FakeRuntime(segments=[None]), raise_server_exceptions=False
+        ).post(
+            "/v1/transcribe",
+            json={"audio_path": str(self.audio_path), "language": "Chinese"},
+        )
+
+        self.assertEqual(502, response.status_code)
+        self.assertEqual("INVALID_MODEL_OUTPUT", response.json()["error_code"])
+
+    def test_rejects_empty_model_segments(self):
+        response = self.client(FakeRuntime(segments=[])).post(
+            "/v1/transcribe",
+            json={"audio_path": str(self.audio_path), "language": "Chinese"},
+        )
+
+        self.assertEqual(502, response.status_code)
+        self.assertEqual("INVALID_MODEL_OUTPUT", response.json()["error_code"])
 
     def test_runtime_chunks_audio_at_240_seconds_and_offsets_timestamps(self):
         sample_rate = 10
@@ -292,12 +322,26 @@ class ServiceTests(unittest.TestCase):
     def test_container_contract_pins_models_and_cache(self):
         service_dir = Path(__file__).parent
         requirements = (service_dir / "requirements.txt").read_text()
+        constraints = (service_dir / "constraints.txt").read_text()
         dockerfile = (service_dir / "Dockerfile").read_text()
 
         self.assertIn("fastapi==0.141.1", requirements)
         self.assertIn("uvicorn[standard]==0.52.1", requirements)
         self.assertIn("qwen-asr==0.0.6", requirements)
         self.assertIn("transformers==4.57.6", requirements)
+        self.assertRegex(constraints, r"(?m)^starlette==\S+$")
+        self.assertRegex(constraints, r"(?m)^pydantic==\S+$")
+        pins = [
+            line
+            for line in constraints.splitlines()
+            if line and not line.startswith(("#", " "))
+        ]
+        self.assertTrue(all("==" in pin for pin in pins))
+        self.assertIn("COPY requirements.txt constraints.txt ./", dockerfile)
+        self.assertIn(
+            "pip install --no-cache-dir -r requirements.txt -c constraints.txt",
+            dockerfile,
+        )
         self.assertIn("HF_HOME=/models", dockerfile)
         self.assertIn('CMD ["uvicorn", "app:app"', dockerfile)
 
