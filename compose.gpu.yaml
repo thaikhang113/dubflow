@@ -9,6 +9,8 @@ services:
               capabilities: [gpu]
 
   qwen-asr:
+    environment:
+      QWEN_ASR_DEVICE: cuda:0
     deploy:
       resources:
         reservations:
@@ -18,6 +20,8 @@ services:
               capabilities: [gpu]
 
   vieneu:
+    environment:
+      VIENEU_DEVICE: cuda
     deploy:
       resources:
         reservations:

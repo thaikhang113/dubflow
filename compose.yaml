@@ -58,7 +58,7 @@ services:
       - qwen-asr-models:/models
       - tool-jobs:/data/jobs:ro
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      test: ["CMD", "python", "-c", "import json, urllib.request; body=json.load(urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)); raise SystemExit(0 if body.get('model_ready') is True and body.get('aligner_ready') is True else 1)"]
       interval: 15s
       timeout: 10s
       retries: 120
@@ -80,7 +80,7 @@ services:
     volumes:
       - vieneu-models:/models
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      test: ["CMD", "python", "-c", "import json, urllib.request; body=json.load(urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)); raise SystemExit(0 if body.get('ready') is True and body.get('backend') in ('onnx', 'pytorch') and body.get('device') not in ('auto', 'uninitialized') else 1)"]
       interval: 15s
       timeout: 10s
       retries: 120

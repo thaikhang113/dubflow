@@ -146,7 +146,11 @@ class HostLoginHelperTests(unittest.TestCase):
         }
         health_payloads = {
             "qwen-asr": {"model_ready": True, "aligner_ready": True},
-            "vieneu": {"ready": True},
+            "vieneu": {
+                "ready": True,
+                "backend": "onnx",
+                "device": "cpu",
+            },
         }
         health_urls = {
             "qwen-asr": "http://127.0.0.1:18795/health",
@@ -239,6 +243,34 @@ class HostLoginHelperTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual("QwenAsrNotReady", result["error_code"])
 
+    def test_local_ai_install_rejects_ready_without_verified_vieneu_engine(self):
+        helper = self.load_helper()
+        with tempfile.TemporaryDirectory() as tmp:
+            helper.REPO_ROOT = Path(tmp)
+            (helper.REPO_ROOT / "services" / "vieneu_tts").mkdir(parents=True)
+            run = Mock(return_value=Mock(returncode=0))
+            urlopen = Mock(
+                return_value=io.BytesIO(
+                    json.dumps(
+                        {
+                            "ready": True,
+                            "backend": "uninitialized",
+                            "device": "uninitialized",
+                        }
+                    ).encode()
+                )
+            )
+            with patch.object(helper, "read_hardware_state", return_value={}):
+                result = helper.install_component(
+                    "vieneu",
+                    run=run,
+                    docker="docker",
+                    urlopen=urlopen,
+                )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual("VieNeuNotReady", result["error_code"])
+
     def test_local_ai_install_uses_gpu_override_only_for_selected_gpu(self):
         helper = self.load_helper()
         with tempfile.TemporaryDirectory() as tmp:
@@ -246,7 +278,9 @@ class HostLoginHelperTests(unittest.TestCase):
             (helper.REPO_ROOT / "services" / "vieneu_tts").mkdir(parents=True)
             urlopen = Mock(
                 side_effect=lambda *_args, **_kwargs: io.BytesIO(
-                    json.dumps({"ready": True}).encode()
+                    json.dumps(
+                        {"ready": True, "backend": "onnx", "device": "cpu"}
+                    ).encode()
                 )
             )
             for hardware, compose_files in (
@@ -503,6 +537,14 @@ class HostLoginHelperTests(unittest.TestCase):
 
         qwen = compose.split("\n  qwen-asr:\n", 1)[1].split("\n  vieneu:\n", 1)[0]
         self.assertIn("tool-jobs:/data/jobs:ro", qwen)
+        self.assertIn("body.get('model_ready') is True", qwen)
+        self.assertIn("body.get('aligner_ready') is True", qwen)
+        vieneu = compose.split("\n  vieneu:\n", 1)[1].split("\n  trend-db:\n", 1)[0]
+        self.assertIn("body.get('ready') is True", vieneu)
+        self.assertIn("body.get('backend') in ('onnx', 'pytorch')", vieneu)
+        self.assertIn("body.get('device') not in ('auto', 'uninitialized')", vieneu)
+        self.assertIn("QWEN_ASR_DEVICE: cuda:0", gpu_compose)
+        self.assertIn("VIENEU_DEVICE: cuda", gpu_compose)
 
     def test_local_ai_build_contexts_exist_after_service_branches_merge(self):
         contexts = (

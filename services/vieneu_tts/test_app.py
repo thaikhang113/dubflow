@@ -22,6 +22,7 @@ import app as service
 
 class FakeModel:
     backend = "onnx"
+    engine = type("Engine", (), {"device": type("Device", (), {"type": "cpu"})()})()
 
     def __init__(self, outputs):
         self.outputs = iter(outputs)
@@ -46,30 +47,41 @@ class ServiceTests(unittest.TestCase):
         runtime = service.VieNeuRuntime()
         runtime._model = model
         runtime._backend = model.backend
+        runtime._device = "cpu"
         service.runtime = runtime
         return TestClient(service.app), runtime
 
     def test_import_does_not_import_or_load_vieneu(self):
         self.assertNotIn("vieneu", sys.modules)
 
-    def test_health_reports_static_contract_without_loading_model(self):
-        service.runtime = service.VieNeuRuntime()
+    def test_health_warm_loads_model_after_installer_download(self):
+        runtime = service.VieNeuRuntime()
+        service.runtime = runtime
 
-        response = TestClient(service.app).get("/health")
+        with patch.object(runtime, "_load_model", return_value=FakeModel([])):
+            response = TestClient(service.app).get("/health")
 
         self.assertEqual(200, response.status_code)
-        self.assertEqual(
-            {
-                "model": "pnnbao-ump/VieNeu-TTS-v3-Turbo",
-                "revision": "75ff82a72f54d55ed389e1eeb12041d3c4bac7d4",
-                "backend": "auto",
-                "sample_rate": 48000,
-                "voices": ["vieneu:hong-chau"],
-                "ready": False,
-                "error_code": None,
-            },
-            response.json(),
+        self.assertEqual("onnx", response.json()["backend"])
+        self.assertEqual("cpu", response.json()["device"])
+        self.assertTrue(response.json()["ready"])
+
+    def test_health_does_not_claim_gpu_until_loaded_engine_reports_gpu(self):
+        runtime = service.VieNeuRuntime()
+        service.runtime = runtime
+        loaded_model = types.SimpleNamespace(
+            backend="pytorch",
+            engine=types.SimpleNamespace(
+                device=types.SimpleNamespace(type="cuda")
+            ),
         )
+
+        with patch.object(runtime, "_load_model", return_value=loaded_model):
+            response = TestClient(service.app).get("/health")
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("pytorch", response.json()["backend"])
+        self.assertEqual("cuda", response.json()["device"])
 
     def test_health_returns_503_after_model_load_failure(self):
         runtime = service.VieNeuRuntime()
@@ -268,7 +280,12 @@ class ServiceTests(unittest.TestCase):
 
         def vieneu(**kwargs):
             calls["vieneu"] = kwargs
-            return types.SimpleNamespace(backend="onnx")
+            return types.SimpleNamespace(
+                backend="onnx",
+                engine=types.SimpleNamespace(
+                    device=types.SimpleNamespace(type="cpu")
+                ),
+            )
 
         fake_hub = types.SimpleNamespace(snapshot_download=snapshot_download)
         fake_sdk = types.SimpleNamespace(Vieneu=vieneu)
@@ -299,6 +316,7 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(
             {
                 "backbone_repo": tmp,
+                "device": "auto",
                 "backend": "auto",
                 "onnx_dir": str(Path(tmp) / "onnx_int8"),
             },

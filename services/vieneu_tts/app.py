@@ -84,7 +84,8 @@ class VieNeuRuntime:
         self.models_dir = Path(
             models_dir or os.environ.get("VIENEU_MODELS_DIR", "/models")
         )
-        self._backend = "auto"
+        self._backend = "uninitialized"
+        self._device = "uninitialized"
         self._model = None
         self._error_code = None
         # ponytail: serialize model load/inference; add queueing if throughput matters.
@@ -95,6 +96,7 @@ class VieNeuRuntime:
             "model": MODEL_ID,
             "revision": MODEL_REVISION,
             "backend": self._backend,
+            "device": self._device,
             "sample_rate": SAMPLE_RATE,
             "voices": list(VOICES),
             "ready": self._model is not None,
@@ -105,6 +107,12 @@ class VieNeuRuntime:
         from huggingface_hub import snapshot_download
         from vieneu import Vieneu
 
+        device = os.environ.get("VIENEU_DEVICE", "auto").strip().lower()
+        if device.startswith("cuda"):
+            import torch
+
+            if not torch.cuda.is_available():
+                raise RuntimeError("CUDA device requested but CUDA is unavailable")
         snapshot = snapshot_download(
             repo_id=MODEL_ID,
             revision=MODEL_REVISION,
@@ -113,6 +121,7 @@ class VieNeuRuntime:
         )
         return Vieneu(
             backbone_repo=snapshot,
+            device=device,
             backend="auto",
             onnx_dir=str(Path(snapshot) / "onnx_int8"),
         )
@@ -121,8 +130,15 @@ class VieNeuRuntime:
         if self._model is not None:
             return
         try:
-            self._model = self._load_model()
-            self._backend = getattr(self._model, "backend", "auto")
+            model = self._load_model()
+            backend = str(getattr(model, "backend", "")).lower()
+            device = getattr(getattr(model, "engine", None), "device", None)
+            device = str(getattr(device, "type", device or "")).lower()
+            if backend not in {"onnx", "pytorch"} or not device:
+                raise RuntimeError("VieNeu engine did not expose backend/device")
+            self._model = model
+            self._backend = backend
+            self._device = device
             self._error_code = None
         except ImportError as exc:
             self._error_code = "VieNeuDependencyMissing"
@@ -172,8 +188,14 @@ async def service_error_handler(_request: Request, exc: ServiceError):
 @app.get("/health")
 def health():
     status = runtime.health()
+    if status["error_code"] is None:
+        try:
+            runtime._ensure_loaded()
+        except ServiceError:
+            pass
+        status = runtime.health()
     return JSONResponse(
-        status_code=503 if status["error_code"] and not status["ready"] else 200,
+        status_code=200 if status["ready"] else 503,
         content=status,
     )
 

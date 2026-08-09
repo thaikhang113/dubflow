@@ -66,22 +66,39 @@ class ServiceTests(unittest.TestCase):
     def test_import_does_not_load_qwen_dependency(self):
         self.assertNotIn("qwen_asr", sys.modules)
 
-    def test_health_reports_readiness_without_loading_models(self):
+    def test_health_warm_loads_models_after_installer_download(self):
+        runtime = self.service.QwenRuntime()
+        self.service.runtime = runtime
+        loaded_model = SimpleNamespace(forced_aligner=object())
+
+        with patch.object(
+            runtime,
+            "_load_models",
+            return_value=(loaded_model, "cpu"),
+        ) as load_models:
+            response = TestClient(self.service.app).get("/health")
+
+        self.assertEqual(200, response.status_code)
+        self.assertTrue(response.json()["model_ready"])
+        self.assertTrue(response.json()["aligner_ready"])
+        self.assertEqual("cpu", response.json()["device"])
+        load_models.assert_called_once()
+
+    def test_health_returns_503_when_model_load_fails(self):
         runtime = self.service.QwenRuntime()
         self.service.runtime = runtime
 
-        response = TestClient(self.service.app).get("/health")
+        with patch.object(
+            runtime,
+            "_load_models",
+            side_effect=RuntimeError("broken model"),
+        ):
+            response = TestClient(self.service.app).get("/health")
 
-        self.assertEqual(200, response.status_code)
-        self.assertEqual(
-            {
-                "model_ready": False,
-                "aligner_ready": False,
-                "device": "uninitialized",
-                "error_code": None,
-            },
-            response.json(),
-        )
+        self.assertEqual(503, response.status_code)
+        self.assertFalse(response.json()["model_ready"])
+        self.assertFalse(response.json()["aligner_ready"])
+        self.assertEqual("MODEL_LOAD_FAILED", response.json()["error_code"])
 
     def test_transcribe_returns_fixed_contract(self):
         runtime = FakeRuntime(
@@ -251,12 +268,17 @@ class ServiceTests(unittest.TestCase):
     def test_runtime_loads_aligner_through_official_from_pretrained_api(self):
         calls = []
         loaded_model = object()
+        snapshots = []
 
         class FakeModelClass:
             @classmethod
             def from_pretrained(cls, model_id, **kwargs):
                 calls.append((model_id, kwargs))
-                return loaded_model
+                return SimpleNamespace(forced_aligner=loaded_model)
+
+        def snapshot_download(**kwargs):
+            snapshots.append(kwargs)
+            return f"/models/{len(snapshots)}"
 
         fake_torch = SimpleNamespace(
             cuda=SimpleNamespace(is_available=lambda: False),
@@ -264,17 +286,38 @@ class ServiceTests(unittest.TestCase):
             float32="float32",
         )
         fake_qwen = SimpleNamespace(Qwen3ASRModel=FakeModelClass)
+        fake_hub = SimpleNamespace(snapshot_download=snapshot_download)
 
         with patch.dict(
-            sys.modules, {"torch": fake_torch, "qwen_asr": fake_qwen}
+            sys.modules,
+            {
+                "torch": fake_torch,
+                "qwen_asr": fake_qwen,
+                "huggingface_hub": fake_hub,
+            },
         ):
             model, device = self.service.QwenRuntime()._load_models()
 
-        self.assertIs(loaded_model, model)
+        self.assertIs(loaded_model, model.forced_aligner)
         self.assertEqual("cpu", device)
-        self.assertEqual("Qwen/Qwen3-ASR-0.6B", calls[0][0])
         self.assertEqual(
-            "Qwen/Qwen3-ForcedAligner-0.6B",
+            [
+                {
+                    "repo_id": "Qwen/Qwen3-ASR-0.6B",
+                    "revision": "5eb144179a02acc5e5ba31e748d22b0cf3e303b0",
+                    "cache_dir": str(Path("/models")),
+                },
+                {
+                    "repo_id": "Qwen/Qwen3-ForcedAligner-0.6B",
+                    "revision": "c7cbfc2048c462b0d63a45797104fc9db3ad62b7",
+                    "cache_dir": str(Path("/models")),
+                },
+            ],
+            snapshots,
+        )
+        self.assertEqual("/models/1", calls[0][0])
+        self.assertEqual(
+            "/models/2",
             calls[0][1]["forced_aligner"],
         )
         self.assertEqual(
@@ -329,6 +372,14 @@ class ServiceTests(unittest.TestCase):
         self.assertIn("uvicorn[standard]==0.52.1", requirements)
         self.assertIn("qwen-asr==0.0.6", requirements)
         self.assertIn("transformers==4.57.6", requirements)
+        self.assertEqual(
+            "5eb144179a02acc5e5ba31e748d22b0cf3e303b0",
+            self.service.MODEL_REVISION,
+        )
+        self.assertEqual(
+            "c7cbfc2048c462b0d63a45797104fc9db3ad62b7",
+            self.service.ALIGNER_REVISION,
+        )
         self.assertRegex(constraints, r"(?m)^starlette==\S+$")
         self.assertRegex(constraints, r"(?m)^pydantic==\S+$")
         pins = [
@@ -340,6 +391,11 @@ class ServiceTests(unittest.TestCase):
         self.assertIn("COPY requirements.txt constraints.txt ./", dockerfile)
         self.assertIn(
             "pip install --no-cache-dir -r requirements.txt -c constraints.txt",
+            dockerfile,
+        )
+        self.assertIn(
+            "FROM python:3.11-slim@sha256:"
+            "90744cff8f32887f075c47d747a173ff333e9e98801667af93c357fa9f5e28ff",
             dockerfile,
         )
         self.assertIn("HF_HOME=/models", dockerfile)

@@ -11,6 +11,8 @@ from pydantic import BaseModel, constr
 
 MODEL_ID = "Qwen/Qwen3-ASR-0.6B"
 ALIGNER_ID = "Qwen/Qwen3-ForcedAligner-0.6B"
+MODEL_REVISION = "5eb144179a02acc5e5ba31e748d22b0cf3e303b0"
+ALIGNER_REVISION = "c7cbfc2048c462b0d63a45797104fc9db3ad62b7"
 PROVIDER = "qwen3-asr-local"
 MAX_CHUNK_SECONDS = 240
 JOBS_ROOT = Path("/data/jobs")
@@ -61,6 +63,9 @@ def load_audio(audio_path):
 
 class QwenRuntime:
     def __init__(self):
+        self.models_dir = Path(
+            os.environ.get("QWEN_ASR_MODELS_DIR", "/models")
+        )
         self._model = None
         self._aligner_ready = False
         self._device = "uninitialized"
@@ -77,19 +82,34 @@ class QwenRuntime:
         }
 
     def _load_models(self):
+        from huggingface_hub import snapshot_download
         import torch
         from qwen_asr import Qwen3ASRModel
 
         device = os.environ.get("QWEN_ASR_DEVICE") or (
             "cuda:0" if torch.cuda.is_available() else "cpu"
         )
+        if device.startswith("cuda") and not torch.cuda.is_available():
+            raise RuntimeError("CUDA device requested but CUDA is unavailable")
+        if device != "cpu" and not device.startswith("cuda"):
+            raise RuntimeError("Unsupported Qwen ASR device")
         dtype = torch.bfloat16 if device.startswith("cuda") else torch.float32
+        model_path = snapshot_download(
+            repo_id=MODEL_ID,
+            revision=MODEL_REVISION,
+            cache_dir=str(self.models_dir),
+        )
+        aligner_path = snapshot_download(
+            repo_id=ALIGNER_ID,
+            revision=ALIGNER_REVISION,
+            cache_dir=str(self.models_dir),
+        )
         model = Qwen3ASRModel.from_pretrained(
-            MODEL_ID,
+            model_path,
             dtype=dtype,
             device_map=device,
             max_new_tokens=4096,
-            forced_aligner=ALIGNER_ID,
+            forced_aligner=aligner_path,
             forced_aligner_kwargs={
                 "dtype": dtype,
                 "device_map": device,
@@ -104,7 +124,10 @@ class QwenRuntime:
             if self._model is not None:
                 return
             try:
-                self._model, self._device = self._load_models()
+                model, device = self._load_models()
+                if model is None or getattr(model, "forced_aligner", None) is None:
+                    raise RuntimeError("Qwen forced aligner did not load")
+                self._model, self._device = model, device
                 self._aligner_ready = True
                 self._error_code = None
             except ImportError as exc:
@@ -226,7 +249,13 @@ async def service_error_handler(_request: Request, exc: ServiceError):
 
 @app.get("/health")
 def health():
-    return runtime.health()
+    try:
+        runtime._ensure_loaded()
+    except ServiceError:
+        pass
+    status = runtime.health()
+    ready = status["model_ready"] and status["aligner_ready"]
+    return JSONResponse(status_code=200 if ready else 503, content=status)
 
 
 @app.post("/v1/transcribe", response_model=TranscribeResponse)

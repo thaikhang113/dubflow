@@ -270,6 +270,11 @@ def install_component(
         health.get(field) is not True for field in ready_fields
     ):
         return {"ok": False, "error_code": f"{error_prefix}NotReady"}
+    if component == "vieneu" and (
+        health.get("backend") not in {"onnx", "pytorch"}
+        or health.get("device") in {None, "", "auto", "uninitialized"}
+    ):
+        return {"ok": False, "error_code": f"{error_prefix}NotReady"}
     return {"ok": True, "component": component, "state": "ready"}
 
 def install_status(component: str) -> dict:
