@@ -28,17 +28,24 @@ class PipelineTests(unittest.TestCase):
                 "bash",
                 str(
                     self.settings.repo_root
-                    / "skills"
-                    / "bilibili-vietnamese-dubber"
-                    / "run.sh"
-                ),
-                source,
+                / "skills"
+                / "bilibili-vietnamese-dubber"
+                / "run.sh"
+            ),
+                "https://www.bilibili.com/video/BV1",
             ],
             build_job_command(
                 {"platform": "bilibili", "source": source},
                 self.settings,
             ),
         )
+
+    def test_rejects_non_video_bilibili_pages(self):
+        with self.assertRaises(ValueError):
+            build_job_command(
+                {"platform": "bilibili", "source": "https://www.bilibili.com/"},
+                self.settings,
+            )
 
     def test_rejects_unsafe_sources_and_resume_directories(self):
         uploads = self.settings.jobs_dir / "uploads"
@@ -115,7 +122,7 @@ class PipelineTests(unittest.TestCase):
         environment = build_job_environment(
             {
                 "id": "job-model-override",
-                "request": {"model": "qwen3:8b"},
+                "request": {"model": "translategemma:4b"},
             },
             {
                 "translation": {
@@ -128,8 +135,8 @@ class PipelineTests(unittest.TestCase):
             },
             self.settings,
         )
-        self.assertEqual("qwen3:8b", environment["OPENCLAW_AI_MODEL"])
-        self.assertEqual("qwen3:8b", environment["OLLAMA_MODEL"])
+        self.assertEqual("translategemma:4b", environment["OPENCLAW_AI_MODEL"])
+        self.assertEqual("translategemma:4b", environment["OLLAMA_MODEL"])
 
     def test_job_selects_allowlisted_local_whisper_model(self):
         environment = build_job_environment(
@@ -157,7 +164,7 @@ class PipelineTests(unittest.TestCase):
                 "id": "job-local-runtime",
                 "request": {
                     "asr_engine": "qwen3",
-                    "vieneu_style": "story",
+                    "vieneu_style": "natural",
                     "default_voice": "vieneu:hong-chau",
                     "hardware_profile": "hybrid",
                 },
@@ -168,7 +175,7 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual("qwen3", environment["ASR_PROVIDER"])
         self.assertEqual("http://qwen-asr:8000", environment["QWEN_ASR_ENDPOINT"])
         self.assertEqual("http://vieneu:8000", environment["VIENEU_ENDPOINT"])
-        self.assertEqual("story", environment["VIENEU_STYLE"])
+        self.assertEqual("natural", environment["VIENEU_STYLE"])
         self.assertEqual(
             "vieneu:hong-chau",
             environment["OPENCLAW_DEFAULT_TTS_VOICE"],
@@ -177,12 +184,28 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual("hybrid", environment["OPENCLAW_HARDWARE_PROFILE"])
         self.assertEqual("vieneu:hong-chau", environment["EDGE_TTS_VOICE_PRESET"])
 
+        cloned = build_job_environment(
+            {
+                "id": "job-cloned-voice",
+                "request": {
+                    "vieneu_voice_profile_id": "profile123",
+                },
+            },
+            {},
+            self.settings,
+        )
+        self.assertEqual("1", cloned["VIENEU_CLONE_ENABLED"])
+        self.assertEqual(
+            "/models/voice-profiles/profile123/reference.wav",
+            cloned["VIENEU_REFERENCE_AUDIO"],
+        )
+
         defaults = build_job_environment(
             {"id": "job-vieneu-defaults", "request": {}},
             {},
             self.settings,
         )
-        self.assertEqual("story", defaults["VIENEU_STYLE"])
+        self.assertEqual("natural", defaults["VIENEU_STYLE"])
         self.assertEqual("hong-chau", defaults["VIENEU_DEFAULT_VOICE"])
 
         legacy = build_job_environment(

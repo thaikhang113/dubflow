@@ -67,6 +67,8 @@ class BilibiliUrlNormalizationTests(unittest.TestCase):
     def test_wrapper_defaults_to_repo_local_dependencies(self):
         run_sh = SCRIPT.parent.parent / "run.sh"
         source = run_sh.read_text(encoding="utf-8")
+        self.assertIn('vieneu) printf', source)
+        self.assertIn('vieneu:*) printf', source)
         self.assertIn(
             'DOUYIN_PIPELINE="${DOUYIN_PIPELINE:-$SKILL_ROOT/douyin-vietnamese-dubber/run.sh}"',
             source,

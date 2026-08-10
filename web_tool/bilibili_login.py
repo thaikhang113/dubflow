@@ -3,15 +3,19 @@ from datetime import datetime, timezone
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import threading
 import time
 import uuid
+from urllib.parse import urlsplit
+import re
 
 from .config import Settings
 from .secrets import SecretStore, sanitize
 
 
 AUTH_COOKIES = {"SESSDATA", "DedeUserID", "bili_jct"}
+BILIBILI_VIDEO_PATH = re.compile(r"^/video/([A-Za-z0-9]+)/*$")
 MAX_COOKIE_BYTES = 1024 * 1024
 QR_SELECTORS = (
     ".login-scan-box img",
@@ -30,6 +34,28 @@ def _now() -> str:
 def _domain_allowed(domain: str) -> bool:
     value = domain.lower().lstrip(".")
     return value == "bilibili.com" or value.endswith(".bilibili.com")
+
+def normalize_video_url(url: str) -> str:
+    try:
+        parsed = urlsplit(str(url or "").strip())
+    except ValueError:
+        return ""
+    if parsed.scheme.lower() not in {"http", "https"}:
+        return ""
+    try:
+        port = parsed.port
+    except ValueError:
+        return ""
+    if parsed.username or parsed.password or port not in {None, 80, 443}:
+        return ""
+    if (parsed.hostname or "").lower() not in {
+        "bilibili.com",
+        "www.bilibili.com",
+        "m.bilibili.com",
+    }:
+        return ""
+    match = BILIBILI_VIDEO_PATH.fullmatch(parsed.path)
+    return f"https://www.bilibili.com/video/{match.group(1)}" if match else ""
 
 
 def _parse_netscape(text: str) -> list[dict]:
@@ -129,6 +155,7 @@ class BilibiliLogin:
         self._status = {
             "state": "logged_in" if cookie_count else "logged_out",
             "logged_in": bool(cookie_count),
+            "verified": False,
             "cookie_count": cookie_count,
             "qr_available": False,
             "error_code": "",
@@ -178,11 +205,97 @@ class BilibiliLogin:
         self._set(
             state="logged_in",
             logged_in=True,
+            verified=False,
             cookie_count=len(cookies),
             qr_available=False,
             error_code="",
         )
         return self.status()
+
+    def probe(self, url: str) -> dict:
+        source = normalize_video_url(url)
+        if not source:
+            raise ValueError("invalid Bilibili video URL")
+        try:
+            _parse_netscape(self.cookie_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, ValueError) as exc:
+            self._set(
+                state="needs_attention",
+                logged_in=False,
+                verified=False,
+                error_code="BilibiliCookieInvalid",
+            )
+            return {
+                "ok": False,
+                "verified": False,
+                "error_code": "BilibiliCookieInvalid",
+                "message": sanitize(exc),
+            }
+        try:
+            result = subprocess.run(
+                [
+                    "yt-dlp",
+                    "--cookies",
+                    str(self.cookie_path),
+                    "--dump-single-json",
+                    "--skip-download",
+                    "--no-warnings",
+                    source,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=45,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            code = "BilibiliProbeUnavailable"
+            self._set(verified=False, error_code=code)
+            return {
+                "ok": False,
+                "verified": False,
+                "error_code": code,
+                "message": sanitize(exc),
+            }
+        if result.returncode == 0:
+            try:
+                import json
+                metadata = json.loads(result.stdout)
+            except (TypeError, ValueError):
+                metadata = {}
+            self._set(
+                state="logged_in",
+                logged_in=True,
+                verified=True,
+                error_code="",
+            )
+            return {
+                "ok": True,
+                "verified": True,
+                "source_url": source,
+                "id": metadata.get("id") or "",
+                "title": metadata.get("title") or "",
+                "duration": metadata.get("duration"),
+            }
+        stderr = (result.stderr or "").lower()
+        if any(marker in stderr for marker in ("captcha", "verify", "验证", "验证码", "人机")):
+            code = "BilibiliCaptchaRequired"
+            message = "Bilibili yêu cầu captcha hoặc xác minh."
+        elif any(marker in stderr for marker in ("login", "cookie", "sessdata", "登录")):
+            code = "BilibiliCookieRejected"
+            message = "Cookie Bilibili bị từ chối hoặc hết hạn."
+        elif any(marker in stderr for marker in ("private video", "unavailable", "not available", "视频不存在")):
+            code = "BilibiliVideoUnavailable"
+            message = "Video Bilibili không khả dụng."
+        else:
+            code = "BilibiliProbeFailed"
+            message = "Không xác minh được quyền tải video Bilibili."
+        self._set(verified=False, error_code=code)
+        return {
+            "ok": False,
+            "verified": False,
+            "error_code": code,
+            "message": message,
+        }
 
     def clear(self) -> dict:
         self.cookie_path.unlink(missing_ok=True)
@@ -203,6 +316,7 @@ class BilibiliLogin:
         self._set(
             state="logged_out",
             logged_in=False,
+            verified=False,
             cookie_count=0,
             qr_available=False,
             error_code="",

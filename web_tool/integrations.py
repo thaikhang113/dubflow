@@ -592,9 +592,12 @@ def runtime_doctor(
         vieneu_sample_rate = int(vieneu.get("sample_rate") or 0)
     except (TypeError, ValueError):
         vieneu_sample_rate = 0
+    vieneu_device = str(vieneu.get("device") or "unknown").lower()
     vieneu_checks = {
         "health": vieneu.get("ready") is True,
         "sample_rate": vieneu_sample_rate,
+        "device": vieneu_device,
+        "clone_ready": vieneu.get("ready") is True and vieneu_device == "cuda",
         "install_state": str(vieneu_install.get("state") or "unknown"),
     }
     vieneu_checks["ready"] = (

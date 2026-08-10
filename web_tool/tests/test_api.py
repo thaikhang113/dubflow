@@ -3,6 +3,7 @@ import json
 import io
 import tempfile
 import unittest
+import wave
 from pathlib import Path
 from unittest.mock import call, patch
 
@@ -38,13 +39,55 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(201, response.status_code, response.text)
         return response.json()
 
+    def test_voice_profile_upload_persists_and_job_uses_it(self):
+        audio = io.BytesIO()
+        with wave.open(audio, "wb") as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(48000)
+            wav.writeframes(b"\x10\x00" * 48000 * 4)
+
+        uploaded = self.client.post(
+            "/api/voice-profiles",
+            data={"name": "Narrator"},
+            files={"file": ("sample.wav", audio.getvalue(), "audio/wav")},
+        )
+        self.assertEqual(201, uploaded.status_code, uploaded.text)
+        profile = uploaded.json()
+        self.assertEqual("Narrator", profile["name"])
+        self.assertNotIn("reference_audio", profile)
+
+        job = self.client.post(
+            "/api/jobs",
+            json={
+                "platform": "bilibili",
+                "source": "https://www.bilibili.com/video/BVVOICE",
+                "voice": "vieneu:hong-chau",
+                "vieneu_voice_profile_id": profile["id"],
+            },
+        )
+        self.assertEqual(201, job.status_code, job.text)
+        self.assertEqual(
+            profile["id"],
+            job.json()["request"]["vieneu_voice_profile_id"],
+        )
+        self.assertEqual(1, len(self.client.get("/api/voice-profiles").json()))
+
     def test_create_list_and_validation(self):
         first = self.create_job("https://www.bilibili.com/video/BV1")
         second = self.create_job("https://www.bilibili.com/video/BV2")
         self.assertEqual("queued", first["state"])
         self.assertNotIn("api_key", repr(first))
+        tracked = self.create_job(
+            "https://www.bilibili.com/video/BV3?vd_source=tracking&spm_id_from=333"
+        )
+        self.assertEqual("https://www.bilibili.com/video/BV3", tracked["source"])
+        self.assertEqual("https://www.bilibili.com/video/BV3", tracked["request"]["source"])
         listed = self.client.get("/api/jobs").json()
-        self.assertEqual([second["id"], first["id"]], [job["id"] for job in listed])
+        self.assertEqual(
+            [tracked["id"], second["id"], first["id"]],
+            [job["id"] for job in listed],
+        )
 
         invalid = self.client.post(
             "/api/jobs",
@@ -344,7 +387,7 @@ class ApiTests(unittest.TestCase):
             "vieneu:hong-chau",
             defaults["default_voice"],
         )
-        self.assertEqual("story", defaults["vieneu_style"])
+        self.assertEqual("natural", defaults["vieneu_style"])
 
         response = self.client.put(
             "/api/settings",
@@ -352,14 +395,14 @@ class ApiTests(unittest.TestCase):
                 "asr_engine": "qwen3",
                 "whisper_model": "small",
                 "default_voice": "vieneu:hong-chau",
-                "vieneu_style": "story",
+                "vieneu_style": "natural",
             },
         )
         self.assertEqual(200, response.status_code, response.text)
         self.assertEqual("qwen3", response.json()["asr_engine"])
         self.assertEqual("small", response.json()["whisper_model"])
         self.assertEqual("vieneu:hong-chau", response.json()["default_voice"])
-        self.assertEqual("story", response.json()["vieneu_style"])
+        self.assertEqual("natural", response.json()["vieneu_style"])
 
         for payload in (
             {"asr_engine": "other"},
@@ -502,7 +545,7 @@ class ApiTests(unittest.TestCase):
             runtime_health.call_args_list,
         )
 
-    def test_vieneu_job_gets_one_configured_ai33_fallback_without_exposing_key(self):
+    def test_vieneu_job_stays_local_without_ai33_fallback(self):
         ai33 = self.client.post(
             "/api/providers",
             json={
@@ -531,7 +574,7 @@ class ApiTests(unittest.TestCase):
         )
         self.assertEqual(201, job.status_code, job.text)
         payload = job.json()
-        self.assertEqual(ai33["id"], payload["request"]["tts_provider_id"])
+        self.assertEqual("", payload["request"]["tts_provider_id"])
         self.assertEqual("vieneu:hong-chau", payload["request"]["voice"])
         self.assertNotIn("secret", repr(payload))
 

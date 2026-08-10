@@ -19,6 +19,18 @@ EXIT_ERRORS = {
         "BilibiliDownloadFailed",
         "Tải video Bilibili thất bại.",
     ),
+    22: (
+        "BilibiliCookieRejected",
+        "Cookie Bilibili bị từ chối hoặc hết hạn.",
+    ),
+    23: (
+        "BilibiliCaptchaRequired",
+        "Bilibili yêu cầu captcha hoặc xác minh trên trình duyệt.",
+    ),
+    24: (
+        "BilibiliVideoUnavailable",
+        "Video Bilibili không khả dụng hoặc bị giới hạn.",
+    ),
 }
 
 

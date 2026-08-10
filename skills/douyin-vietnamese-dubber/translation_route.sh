@@ -2,7 +2,7 @@
 # Resolve the text translation route without inheriting host-wide OpenClaw routes.
 # This file is sourced by run.sh and by the focused route regression test.
 
-TRANSLATION_DEFAULT_OLLAMA_MODEL="ollama/minimax-m3:cloud"
+TRANSLATION_DEFAULT_OLLAMA_MODEL="ollama/translategemma:4b"
 TRANSLATION_REQUESTED_MODEL="${NINEROUTER_MODEL:-}"
 TRANSLATION_PROVIDER="${OPENCLAW_AI_PROVIDER:-}"
 TRANSLATION_PROVIDER="${TRANSLATION_PROVIDER,,}"

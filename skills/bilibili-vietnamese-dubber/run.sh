@@ -5,6 +5,7 @@ INPUT="${1:-}"
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_ROOT="$(dirname "$SKILL_DIR")"
 KOKORO_DEFAULT_VOICE="${KOKORO_DEFAULT_VOICE:-mai_linh}"
+VIENEU_DEFAULT_VOICE="${VIENEU_DEFAULT_VOICE:-hong-chau}"
 VOICE_REGISTRY_PY="${VOICE_REGISTRY_PY:-$SKILL_ROOT/douyin-vietnamese-dubber/voice_registry.py}"
 AI33_MAI_PHUONG_VOICE_ID="${AI33_MAI_PHUONG_VOICE_ID:-vbee_hn_female_maiphuong_vdts_48k-fhg}"
 AI33_PHANH_VOICE_ID="${AI33_PHANH_VOICE_ID:-elevenlabs_UuMSQK8FdLwaY2M8ZAnh}"
@@ -103,6 +104,8 @@ normalize_voice() {
     "") printf '%s' "$OPENCLAW_DEFAULT_TTS_VOICE" ;;
     resona) printf '%s' "resona:${RESONA_DEFAULT_VOICE_ID:-ZJEpWoOyElCKuEljNTkm}" ;;
     resona:*) printf '%s' "$1" ;;
+    vieneu) printf '%s' "vieneu:${VIENEU_DEFAULT_VOICE}" ;;
+    vieneu:*) printf '%s' "$1" ;;
     ai33|vbee|vbee-maiphuong|vbee-mai-phuong|maiphuong|mai-phuong|mai_phuong|ngoc\ huyen|ngọc\ huyền|ngochuyen|vbee-ngochuyen|elevenlabs|elevenlabs-phanh|eleven-phanh|phanh|phan|ai33:*|elevenlabs_*|vbee_*)
       if [[ -f "$VOICE_REGISTRY_PY" ]] && normalized="$(python3 "$VOICE_REGISTRY_PY" normalize-ai33 "$raw" 2>/dev/null)"; then
         printf '%s' "$normalized"
@@ -115,9 +118,9 @@ normalize_voice() {
     diem_trinh|duc_an|duc_duy|hung_thinh|mai_linh|mai_loan|manh_dung|my_yen|ngoc_huyen|phat_tai|storyvert|thanh_dat|thuc_trinh|tuan_ngoc) printf '%s' "kokoro:$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" ;;
     nu|nữ|female|woman|giong-nu|giọng-nữ) printf '%s' "nu" ;;
     nam|male|man|giong-nam|giọng-nam) printf '%s' "nam" ;;
-    capcut:*) fail "CapCut TTS đã tắt khỏi pipeline. Dùng kokoro:<voice>, AI33 registry, resona, nam, nu hoặc vi-vn-*." ;;
+    capcut:*) fail "CapCut TTS đã tắt khỏi pipeline. Dùng vieneu:<voice>, kokoro:<voice>, AI33 registry, resona, nam, nu hoặc vi-vn-*." ;;
     vi-vn-*) printf '%s' "$1" ;;
-    *) fail "VoiceInvalid: preset giọng không hỗ trợ: $1. Dùng kokoro:<voice>, AI33 registry, resona, nam, nu hoặc vi-vn-*." ;;
+    *) fail "VoiceInvalid: preset giọng không hỗ trợ: $1. Dùng vieneu:<voice>, kokoro:<voice>, AI33 registry, resona, nam, nu hoặc vi-vn-*." ;;
   esac
 }
 
@@ -278,9 +281,30 @@ else
   set -e
 fi
 if [[ "$cookie_status" -ne 0 || "$meta_status" -ne 0 ]]; then
-  echo "BilibiliLoginRequired: Chrome CDP chưa sẵn sàng hoặc Bilibili đang yêu cầu login/captcha/verify." >&2
-  echo "Hãy mở Chrome thật CDP, đăng nhập/xử lý xác minh Bilibili rồi chạy lại." >&2
-  exit 20
+  PROBE_LOG="$JOB_CACHE/meta_status.log"
+  [[ -f "$PROBE_LOG" ]] || PROBE_LOG="$JOB_CACHE/meta_status.json"
+  PROBE_ERROR="$(python3 - "$PROBE_LOG" <<'PY'
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace").lower()
+if any(marker in text for marker in ("captcha", "verify", "验证", "验证码", "人机")):
+    print("BilibiliCaptchaRequired")
+elif any(marker in text for marker in ("login", "cookie", "sessdata", "登录")):
+    print("BilibiliCookieRejected")
+elif any(marker in text for marker in ("private video", "unavailable", "not available", "视频不存在")):
+    print("BilibiliVideoUnavailable")
+else:
+    print("BilibiliDownloadFailed")
+PY
+)"
+  echo "$PROBE_ERROR: Bilibili metadata probe failed." >&2
+  case "$PROBE_ERROR" in
+    BilibiliCaptchaRequired) exit 23 ;;
+    BilibiliCookieRejected) exit 22 ;;
+    BilibiliVideoUnavailable) exit 24 ;;
+    *) exit 21 ;;
+  esac
 fi
 
 TITLE="$(python3 - "$META_JSON" <<'PY'

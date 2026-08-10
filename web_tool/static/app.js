@@ -1,6 +1,7 @@
 const state = {
   jobs: [],
   providers: [],
+  voiceProfiles: [],
   channels: [],
   series: [],
   settings: null,
@@ -137,6 +138,56 @@ function providerOptions(select, providers, emptyLabel) {
 
 function selectFirstProvider(select) {
   if (!select.value && select.options.length > 1) select.selectedIndex = 1;
+}
+
+function renderVoiceProfiles() {
+  for (const id of ["#job-vieneu-profile", "#settings-vieneu-profile"]) {
+    const select = document.querySelector(id);
+    if (!select) continue;
+    const previous = select.value;
+    clear(select);
+    const empty = element(
+      "option",
+      "",
+      id === "#job-vieneu-profile" ? "Preset voice" : "No clone",
+    );
+    empty.value = "";
+    select.append(empty);
+    state.voiceProfiles.forEach((profile) => {
+      const option = element("option", "", profile.name);
+      option.value = profile.id;
+      select.append(option);
+    });
+    if ([...select.options].some((option) => option.value === previous)) {
+      select.value = previous;
+    }
+  }
+}
+
+async function loadVoiceProfiles() {
+  state.voiceProfiles = await api("/api/voice-profiles");
+  renderVoiceProfiles();
+}
+
+async function uploadVoiceProfile() {
+  const file = document.querySelector("#settings-vieneu-profile-file").files[0];
+  const name = document.querySelector("#settings-vieneu-profile-name").value.trim();
+  if (!file || !name) {
+    notify("Nhập tên và chọn file mẫu giọng.", true);
+    return;
+  }
+  const form = new FormData();
+  form.append("name", name);
+  form.append("file", file);
+  try {
+    await api("/api/voice-profiles", {method: "POST", body: form});
+    document.querySelector("#settings-vieneu-profile-file").value = "";
+    document.querySelector("#settings-vieneu-profile-name").value = "";
+    await loadVoiceProfiles();
+    notify("Đã lưu voice profile local.");
+  } catch (error) {
+    notify(`Lưu voice profile lỗi: ${error.message}`, true);
+  }
 }
 
 function renderProviders() {
@@ -295,7 +346,7 @@ async function installLocalOllama() {
         default_provider_id: provider.id,
         default_model: "translategemma:4b",
         default_voice: settings.default_voice || "",
-        vieneu_style: settings.vieneu_style || "story",
+      vieneu_style: settings.vieneu_style || "natural",
         asr_engine: settings.asr_engine || "auto",
         whisper_model: settings.whisper_model || "medium",
         hardware_mode: settings.hardware_mode || "auto",
@@ -495,6 +546,7 @@ async function createJob(event) {
         asr_engine: document.querySelector("#job-asr-engine").value,
         whisper_model: document.querySelector("#job-whisper-model").value,
         vieneu_style: document.querySelector("#job-vieneu-style").value,
+        vieneu_voice_profile_id: document.querySelector("#job-vieneu-profile").value,
         preset: document.querySelector("#job-preset").value,
       }),
     });
@@ -542,8 +594,15 @@ function loginStateLabel(stateName) {
 }
 
 function renderBilibiliStatus(status) {
+  const stateLabel = loginStateLabel(status.state);
+  const verificationLabel =
+    status.verified === true
+      ? "Tải video đã kiểm tra"
+      : status.logged_in
+        ? "Cookie đã lưu, chưa probe"
+        : "";
   document.querySelector("#bilibili-login-state").textContent =
-    loginStateLabel(status.state);
+    [stateLabel, verificationLabel].filter(Boolean).join(" · ");
   const details = [
     `${status.cookie_count || 0} cookie`,
     status.error_code || "",
@@ -687,7 +746,7 @@ function resetChannelForm() {
   document.querySelector("#channel-form").reset();
   document.querySelector("#channel-id").value = "";
   document.querySelector("#channel-interval").value = "60";
-    document.querySelector("#channel-model").value = "translategemma:4b";
+      document.querySelector("#channel-model").value = "translategemma:4b";
   document.querySelector("#channel-voice").value =
     "ai33:vbee_hn_female_ngochuyen_full_48k-fhg";
   document.querySelector("#channel-enabled").checked = true;
@@ -886,7 +945,10 @@ async function loadSettings() {
     const defaultVoice =
     settings.default_voice || "vieneu:hong-chau";
     document.querySelector("#settings-voice").value = defaultVoice;
-    document.querySelector("#settings-vieneu-style").value = settings.vieneu_style || "story";
+    document.querySelector("#settings-vieneu-style").value = settings.vieneu_style || "natural";
+    renderVoiceProfiles();
+    document.querySelector("#settings-vieneu-profile").value =
+      settings.default_vieneu_voice_profile_id || "";
     document.querySelector("#settings-asr-engine").value = settings.asr_engine || "auto";
     document.querySelector("#settings-whisper-model").value = settings.whisper_model || "medium";
     document.querySelector("#settings-hardware-mode").value = settings.hardware_mode || "auto";
@@ -928,6 +990,7 @@ function settingsPayload(hardwareProfile = state.settings?.hardware_profile || "
     default_model: document.querySelector("#settings-model").value.trim(),
     default_voice: document.querySelector("#settings-voice").value.trim(),
     vieneu_style: document.querySelector("#settings-vieneu-style").value,
+    default_vieneu_voice_profile_id: document.querySelector("#settings-vieneu-profile").value,
     asr_engine: document.querySelector("#settings-asr-engine").value,
     whisper_model: document.querySelector("#settings-whisper-model").value,
     hardware_mode: document.querySelector("#settings-hardware-mode").value,
@@ -1371,6 +1434,7 @@ document.querySelector("#settings-vieneu-install").addEventListener("click", () 
 document.querySelector("#settings-hardware-detect").addEventListener("click", detectHardware);
 document.querySelector("#settings-logo-save").addEventListener("click", saveBrandLogo);
 document.querySelector("#settings-logo-remove").addEventListener("click", removeBrandLogo);
+document.querySelector("#settings-vieneu-profile-upload").addEventListener("click", uploadVoiceProfile);
 document.querySelector("#settings-doctor").addEventListener("click", loadDoctor);
 document.querySelector("#settings-telegram-test").addEventListener("click", () => showRuntime("/api/telegram/test"));
 document.querySelector("#settings-hyperframes").addEventListener("click", () => showRuntime("/api/hyperframes/status"));
@@ -1395,6 +1459,7 @@ const initialView = new URLSearchParams(window.location.search).get("view");
 if (["providers", "bilibili-login", "channels", "series", "trend", "settings"].includes(initialView)) showView(initialView);
 checkHealth();
 loadProviders();
+loadVoiceProfiles();
 loadJobs();
 loadChannels();
 loadSettings();

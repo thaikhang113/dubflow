@@ -49,7 +49,7 @@ class SecretTests(unittest.TestCase):
                 "name": "Ollama",
                 "kind": "ollama",
                 "endpoint": "http://host.docker.internal:11434",
-                "model": "qwen3:8b",
+            "model": "translategemma:4b",
                 "timeout_seconds": 90,
             }
         )

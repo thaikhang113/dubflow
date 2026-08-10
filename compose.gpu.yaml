@@ -20,8 +20,12 @@ services:
               capabilities: [gpu]
 
   vieneu:
+    build:
+      args:
+        VIENEU_TORCH_INDEX: https://download.pytorch.org/whl/cu124
     environment:
       VIENEU_DEVICE: cuda
+      VIENEU_ENABLE_CLONE: "1"
     deploy:
       resources:
         reservations:

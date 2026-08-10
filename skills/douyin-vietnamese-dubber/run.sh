@@ -96,7 +96,9 @@ case "${SYNC_MODE,,}" in
     LOCAL_RETIME_SCENE_SAFE="${LOCAL_RETIME_SCENE_SAFE:-1}"
     MAX_FREEZE_PER_SEGMENT_MS="${MAX_FREEZE_PER_SEGMENT_MS:-1500}"
     MAX_FREEZE_PER_SCENE_MS="${MAX_FREEZE_PER_SCENE_MS:-1500}"
-    FRAME_STRICT_MAX_SEGMENT_DRIFT_MS="${FRAME_STRICT_MAX_SEGMENT_DRIFT_MS:-40}"
+    # Two frames covers normal ffmpeg timestamp rounding at 24 fps without
+    # allowing material cue drift.
+    FRAME_STRICT_MAX_SEGMENT_DRIFT_MS="${FRAME_STRICT_MAX_SEGMENT_DRIFT_MS:-80}"
     FRAME_STRICT_TOTAL_DRIFT_PER_SEGMENT_MS="${FRAME_STRICT_TOTAL_DRIFT_PER_SEGMENT_MS:-10}"
     STRICT_QUALITY_GATE="${STRICT_QUALITY_GATE:-1}"
     ;;
@@ -1218,11 +1220,11 @@ payload = {
 }
 if provider == 'ollama':
     payload['think'] = False
-        payload['options'] = {
-            'temperature': 0.2,
-            'num_ctx': int(float(__import__('os').environ.get('OLLAMA_NUM_CTX', '2048'))),
-            'num_predict': int(float(__import__('os').environ.get('OLLAMA_NUM_PREDICT', '1024'))),
-        }
+    payload['options'] = {
+        'temperature': 0.2,
+        'num_ctx': int(float(__import__('os').environ.get('OLLAMA_NUM_CTX', '2048'))),
+        'num_predict': int(float(__import__('os').environ.get('OLLAMA_NUM_PREDICT', '1024'))),
+    }
     url = api_base.rstrip('/') + '/api/chat'
     headers = {'Content-Type': 'application/json'}
 else:
@@ -1709,7 +1711,7 @@ generate_vietnamese_voice() {
   TTS_VOICE_FALLBACK_REASON="${TTS_VOICE_FALLBACK_REASON:-}" \
   TTS_SYNC_POLICY="$TTS_SYNC_POLICY" \
   FRAME_STRICT_MAX_SEGMENT_DRIFT_MS="${FRAME_STRICT_MAX_SEGMENT_DRIFT_MS:-80}" \
-  FRAME_STRICT_MAX_TOTAL_DRIFT_MS="${FRAME_STRICT_MAX_TOTAL_DRIFT_MS:-200}" \
+  FRAME_STRICT_MAX_TOTAL_DRIFT_MS="${FRAME_STRICT_MAX_TOTAL_DRIFT_MS:-300}" \
   FRAME_STRICT_TOTAL_DRIFT_PER_SEGMENT_MS="${FRAME_STRICT_TOTAL_DRIFT_PER_SEGMENT_MS:-5}" \
   "$tts_python_bin" - "$source_srt" "$voice_wav" "$voice_name" "$tmp_dir" "$target_duration_seconds" "$tts_timeout_seconds" "$tts_circuit_breaker" "$max_tts_speed" "$allow_audio_overhang" <<'PY'
 import hashlib, importlib.util, json, os, re, shutil, subprocess, sys, time, urllib.request, urllib.error, wave
@@ -2074,7 +2076,7 @@ else:
     # Bounded mode chỉ cho phép opt-in slow nhẹ 0.95–0.99; mặc định pad silence.
     min_slow_ratio = min(0.99, max(post_atempo_min, min_slow_ratio))
 frame_strict_max_segment_drift = max(0, int(float(os.environ.get("FRAME_STRICT_MAX_SEGMENT_DRIFT_MS", "80"))))
-frame_strict_base_total_drift = max(0, int(float(os.environ.get("FRAME_STRICT_MAX_TOTAL_DRIFT_MS", "200"))))
+frame_strict_base_total_drift = max(0, int(float(os.environ.get("FRAME_STRICT_MAX_TOTAL_DRIFT_MS", "300"))))
 frame_strict_total_drift_per_segment = max(0, int(float(os.environ.get("FRAME_STRICT_TOTAL_DRIFT_PER_SEGMENT_MS", "5"))))
 frame_strict_max_total_drift = frame_strict_base_total_drift
 try:
@@ -2156,6 +2158,7 @@ resona_timeout_seconds = max(30, int(os.environ.get('RESONA_TIMEOUT_SECONDS', '1
 resona_debug_dir = root / 'resona_tts_debug'
 vieneu_endpoint = os.environ.get('VIENEU_ENDPOINT', 'http://vieneu:8000')
 vieneu_style = os.environ.get('VIENEU_STYLE', 'story')
+vieneu_reference_audio = os.environ.get('VIENEU_REFERENCE_AUDIO', '').strip()
 
 # --- AI33 TTS (ElevenLabs provider qua AI33 API) ---
 ai33_wrapper = Path(os.environ.get('AI33_TTS_WRAPPER') or (skill_dir / 'ai33_tts_synthesize.py'))
@@ -2454,7 +2457,13 @@ def synthesize_vieneu_http(text: str, voice_spec: str, style: str, output_path: 
     import json, os, tempfile, urllib.error, urllib.request
     text = (text or "").strip()
     voice = (voice_spec or "").strip()
-    settings = {"provider": "vieneu", "voice": voice, "style": style, "backend": "http"}
+    settings = {
+        "provider": "vieneu",
+        "voice": voice,
+        "style": style,
+        "reference_audio": vieneu_reference_audio,
+        "backend": "http",
+    }
     checkpoint_config = None
     identity = None
     if cue_index and "entries" in globals():
@@ -2474,7 +2483,14 @@ def synthesize_vieneu_http(text: str, voice_spec: str, style: str, output_path: 
                 "attempts": 0, "checkpoint_reused": True, "vieneu_voice": voice,
                 "vieneu_style": style,
             }
-    payload = json.dumps({"text": text, "voice": voice, "style": style}).encode("utf-8")
+    payload = json.dumps(
+        {
+            "text": text,
+            "voice": voice,
+            "style": style,
+            **({"reference_audio": vieneu_reference_audio} if vieneu_reference_audio else {}),
+        }
+    ).encode("utf-8")
     last_error_code = "VieNeuSynthesisFailed"
     last_error_message = "VieNeu synthesis failed"
     for attempt in range(1, 3):
@@ -5777,7 +5793,7 @@ sync_mode = (os.environ.get("SYNC_MODE", "balanced_dub") or "balanced_dub").stri
 sync_policy = (os.environ.get("TTS_SYNC_POLICY", "bounded") or "bounded").strip().lower()
 frame_strict = (sync_policy == "frame_strict")
 frame_strict_max_segment_drift = max(0, int(float(os.environ.get("FRAME_STRICT_MAX_SEGMENT_DRIFT_MS", "80"))))
-frame_strict_base_total_drift = max(0, int(float(os.environ.get("FRAME_STRICT_MAX_TOTAL_DRIFT_MS", "200"))))
+frame_strict_base_total_drift = max(0, int(float(os.environ.get("FRAME_STRICT_MAX_TOTAL_DRIFT_MS", "300"))))
 frame_strict_total_drift_per_segment = max(0, int(float(os.environ.get("FRAME_STRICT_TOTAL_DRIFT_PER_SEGMENT_MS", "5"))))
 frame_strict_max_total_drift = max(frame_strict_base_total_drift, total * frame_strict_total_drift_per_segment)
 raw_ratio = (stats.get('raw_tts_ms', 0) or 0) / video_ms if video_ms > 0 else 1.0
@@ -6081,9 +6097,9 @@ voice_sync_report = {
     "failed_message": stats.get('tts_failed_error_message', '') or '',
     "failed_attempts": stats.get('tts_failed_attempts', 0) or 0,
     "resume_from_cue": stats.get('tts_resume_from_cue', 1) or 1,
-    "requested_voice": stats.get('requested_voice', requested_voice) or requested_voice,
-    "actual_voice": stats.get('actual_voice', voice_name) or voice_name,
-    "voice_fallback_reason": stats.get('voice_fallback_reason', voice_fallback_reason) or None,
+    "requested_voice": stats.get('requested_voice') or os.environ.get('TTS_REQUESTED_VOICE', ''),
+    "actual_voice": stats.get('actual_voice') or stats.get('canonical_voice', ''),
+    "voice_fallback_reason": stats.get('voice_fallback_reason') or os.environ.get('TTS_VOICE_FALLBACK_REASON', '') or None,
     "voice_source": stats.get('voice_source', '') or '',
     "voice_label": stats.get('voice_label', '') or '',
     "voice_id": stats.get('voice_id', '') or stats.get('ai33_voice_used', '') or '',

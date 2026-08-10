@@ -14,12 +14,15 @@ MODEL_REVISION = "75ff82a72f54d55ed389e1eeb12041d3c4bac7d4"
 SAMPLE_RATE = 48_000
 MAX_TEXT_LENGTH = 2_000
 DEFAULT_VOICE = "vieneu:hong-chau"
-DEFAULT_STYLE = "story"
+DEFAULT_STYLE = "natural"
 VOICES = {
     DEFAULT_VOICE: {
         "name": "Hồng Châu",
         "sdk_voice": "Ngọc Linh",
-        "styles": {DEFAULT_STYLE: "doc_truyen"},
+        "styles": {
+            "natural": "tu_nhien",
+            "story": "doc_truyen",
+        },
     }
 }
 
@@ -36,6 +39,7 @@ class SynthesizeRequest(BaseModel):
     text: str
     voice: str = DEFAULT_VOICE
     style: str = DEFAULT_STYLE
+    reference_audio: str = ""
 
 
 def encode_wav(audio):
@@ -113,16 +117,19 @@ class VieNeuRuntime:
 
             if not torch.cuda.is_available():
                 raise RuntimeError("CUDA device requested but CUDA is unavailable")
+        clone_enabled = os.environ.get("VIENEU_ENABLE_CLONE", "0") == "1"
         snapshot = snapshot_download(
             repo_id=MODEL_ID,
             revision=MODEL_REVISION,
             cache_dir=str(self.models_dir),
-            allow_patterns=["config.json", "denoiser.onnx", "onnx_int8/*"],
+            allow_patterns=None
+            if clone_enabled
+            else ["config.json", "denoiser.onnx", "onnx_int8/*"],
         )
         return Vieneu(
             backbone_repo=snapshot,
             device=device,
-            backend="auto",
+            backend="pytorch" if clone_enabled else "auto",
             onnx_dir=str(Path(snapshot) / "onnx_int8"),
         )
 
@@ -151,15 +158,31 @@ class VieNeuRuntime:
                 503, self._error_code, "VieNeu model could not be loaded"
             ) from exc
 
-    def synthesize(self, text, sdk_voice, sdk_style):
+    def synthesize(self, text, sdk_voice, sdk_style, reference_audio=""):
         with self._lock:
             self._ensure_loaded()
+            reference = str(reference_audio or "").strip()
+            if reference:
+                if self._device != "cuda":
+                    raise ServiceError(
+                        503,
+                        "CloneRequiresGPU",
+                        "VieNeu voice cloning requires a CUDA GPU",
+                    )
+                path = Path(reference).expanduser().resolve()
+                if self.models_dir.resolve() not in path.parents or not path.is_file():
+                    raise ServiceError(
+                        422,
+                        "VieNeuReferenceAudioInvalid",
+                        "Reference audio must be an existing local model-volume file",
+                    )
             last_error = None
             for _attempt in range(2):
                 try:
-                    data = encode_wav(
-                        self._model.infer(text, voice=sdk_voice, style=sdk_style)
-                    )
+                    options = {"voice": sdk_voice, "style": sdk_style}
+                    if reference:
+                        options.update(ref_audio=str(path), denoise=True)
+                    data = encode_wav(self._model.infer(text, **options))
                     validate_wav(data)
                     self._error_code = None
                     return data
@@ -233,6 +256,11 @@ def synthesize(request: SynthesizeRequest):
     if sdk_style is None:
         raise ServiceError(422, "VieNeuStyleUnknown", "Unknown VieNeu style")
     return Response(
-        runtime.synthesize(text, voice["sdk_voice"], sdk_style),
+        runtime.synthesize(
+            text,
+            voice["sdk_voice"],
+            sdk_style,
+            request.reference_audio,
+        ),
         media_type="audio/wav",
     )

@@ -177,7 +177,7 @@ class IntegrationTests(unittest.TestCase):
                 "/api/settings",
                 json={
                     "default_provider_id": provider["id"],
-                    "default_model": "qwen3:8b",
+            "default_model": "translategemma:4b",
                     "default_voice": "voice-one",
                     "queue_poll_seconds": 2,
                     "telegram_chat_id": "123456",
@@ -204,7 +204,7 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual(201, job.status_code, job.text)
             request = job.json()["request"]
             self.assertEqual(provider["id"], request["translation_provider_id"])
-            self.assertEqual("qwen3:8b", request["model"])
+            self.assertEqual("translategemma:4b", request["model"])
             self.assertEqual("voice-one", request["voice"])
             self.assertNotIn(
                 "secret-token-value",

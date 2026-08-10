@@ -157,7 +157,11 @@ class MonitorScheduler:
                     for candidate in self.store.list_providers()
                     if candidate['kind'] == 'ai33' and candidate['configured']
                 ]
-                if 'tts_provider_id' not in request and len(ai33) == 1:
+                if (
+                    'tts_provider_id' not in request
+                    and str(request.get('voice') or '').lower().startswith('ai33:')
+                    and len(ai33) == 1
+                ):
                     request['tts_provider_id'] = ai33[0]['id']
                 build_job_command(request, self.settings)
                 job = self.store.enqueue_seen_video(

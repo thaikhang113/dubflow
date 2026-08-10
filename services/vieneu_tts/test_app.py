@@ -28,8 +28,12 @@ class FakeModel:
         self.outputs = iter(outputs)
         self.calls = []
 
-    def infer(self, text, *, voice, style):
-        self.calls.append({"text": text, "voice": voice, "style": style})
+    def infer(self, text, *, voice, style, ref_audio=None, denoise=False):
+        call = {"text": text, "voice": voice, "style": style}
+        if ref_audio is not None:
+            call["ref_audio"] = ref_audio
+            call["denoise"] = denoise
+        self.calls.append(call)
         output = next(self.outputs)
         if isinstance(output, Exception):
             raise output
@@ -102,7 +106,7 @@ class ServiceTests(unittest.TestCase):
         self.assertFalse(response.json()["ready"])
         self.assertEqual("VieNeuModelLoadFailed", response.json()["error_code"])
 
-    def test_voices_exposes_app_voice_and_story_style(self):
+    def test_voices_exposes_natural_and_story_styles(self):
         response = TestClient(service.app).get("/v1/voices")
 
         self.assertEqual(200, response.status_code)
@@ -112,8 +116,8 @@ class ServiceTests(unittest.TestCase):
                     {
                         "id": "vieneu:hong-chau",
                         "name": "Hồng Châu",
-                        "styles": ["story"],
-                        "default_style": "story",
+                        "styles": ["natural", "story"],
+                        "default_style": "natural",
                     }
                 ]
             },
@@ -133,7 +137,7 @@ class ServiceTests(unittest.TestCase):
                 {
                     "text": "Xin chào",
                     "voice": "Ngọc Linh",
-                    "style": "doc_truyen",
+                    "style": "tu_nhien",
                 }
             ],
             model.calls,
@@ -142,6 +146,28 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(1, wav.getnchannels())
             self.assertEqual(2, wav.getsampwidth())
             self.assertEqual(48000, wav.getframerate())
+
+    def test_synthesize_passes_reference_audio_for_voice_clone(self):
+        model = FakeModel([np.full(4800, 0.25, dtype=np.float32)])
+        client, runtime = self.client_with_model(model)
+        runtime._device = "cuda"
+        reference = runtime.models_dir / "voice-profiles" / "demo" / "reference.wav"
+        reference.parent.mkdir(parents=True, exist_ok=True)
+        reference.write_bytes(b"sample")
+
+        response = client.post(
+            "/v1/synthesize",
+            json={
+                "text": "Xin chao",
+                "reference_audio": str(reference),
+            },
+        )
+
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual("Xin chao", model.calls[0]["text"])
+        self.assertEqual("tu_nhien", model.calls[0]["style"])
+        self.assertTrue(model.calls[0]["ref_audio"].endswith("voice-profiles\\demo\\reference.wav"))
+        self.assertTrue(model.calls[0]["denoise"])
 
     def test_rejects_empty_text_before_inference(self):
         model = FakeModel([np.full(100, 0.25, dtype=np.float32)])

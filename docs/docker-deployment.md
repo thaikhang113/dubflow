@@ -42,15 +42,17 @@ When ASR/TTS services run beside the pipeline, use service DNS names and ports:
   integer `start_ms`, `end_ms`, and `text`.
 - `vieneu:8000`: `GET /health` is ready only when JSON `{"ready": true}`.
   `POST /v1/synthesize` accepts JSON `{"text": "...", "voice": "...",
-  "style": "story"}` and returns WAV bytes.
+  "style": "natural", "reference_audio": "..."}` and returns WAV bytes.
 
-Pipeline defaults are `vieneu:hong-chau` and `story`. No Compose changes are
-part of this integration fix.
+Pipeline defaults are `vieneu:hong-chau` and `natural`. Clone requests use
+`reference_audio` from the shared local voice-profile volume.
 
-The web job path uses local VieNeu by default. If VieNeu health is unavailable,
-the job selects exactly one configured AI33 provider as whole-job fallback.
+The web job path uses local VieNeu by default. VieNeu voice cloning requires the
+GPU Compose override and a local 3-8 second voice profile. VieNeu jobs do not
+fall back to AI33.
 Provider IDs may appear in job requests; API keys stay in the runtime secret
-store and never appear in HTTP responses.
+store and never appear in HTTP responses. Voice profiles stay in the local
+`vieneu-voice-profiles` volume.
 
 ## Secrets and shutdown
 

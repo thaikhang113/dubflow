@@ -107,7 +107,14 @@
               <span>Phong cách VieNeu</span>
               <select id="job-vieneu-style" name="vieneu_style">
                 <option value="">Theo cài đặt</option>
+                <option value="natural">Tự nhiên</option>
                 <option value="story">Đọc truyện</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Clone voice local</span>
+              <select id="job-vieneu-profile" name="vieneu_voice_profile_id">
+                <option value="">Preset voice</option>
               </select>
             </label>
             <label class="field">
@@ -181,7 +188,7 @@
               </label>
               <label class="field">
                 <span>Model</span>
-            <input id="provider-model" name="model" type="text" placeholder="translategemma:4b" autocomplete="off">
+        <input id="provider-model" name="model" type="text" placeholder="translategemma:4b" autocomplete="off">
               </label>
               <label class="field">
                 <span>Timeout (giây)</span>
@@ -298,7 +305,7 @@
               </label>
               <label class="field">
                 <span>Model dịch</span>
-            <input id="channel-model" type="text" value="translategemma:4b" maxlength="200" autocomplete="off">
+        <input id="channel-model" type="text" value="translategemma:4b" maxlength="200" autocomplete="off">
               </label>
               <label class="field">
                 <span>Giọng</span>
@@ -508,12 +515,30 @@
               </label>
               <label class="field">
                 <span>Phong cách VieNeu</span>
-                <select id="settings-vieneu-style">
-                  <option value="story">Đọc truyện</option>
+            <select id="settings-vieneu-style">
+              <option value="natural">Tự nhiên</option>
+              <option value="story">Đọc truyện</option>
                 </select>
               </label>
               <label class="field">
                 <span>Công cụ nhận dạng</span>
+                <select id="settings-vieneu-profile">
+                  <option value="">No clone</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Voice sample name</span>
+                <input id="settings-vieneu-profile-name" type="text" maxlength="100" placeholder="Voice name">
+              </label>
+              <label class="field">
+                <span>Voice sample 3-8 seconds</span>
+                <input id="settings-vieneu-profile-file" type="file" accept=".wav,.mp3,.m4a,.flac,audio/*">
+              </label>
+              <div class="command-field">
+                <button class="secondary" id="settings-vieneu-profile-upload" type="button">Save voice profile</button>
+              </div>
+              <label class="field">
+                <span>ASR</span>
                 <select id="settings-asr-engine">
                   <option value="auto">Tự động (Qwen3, fallback Whisper)</option>
                   <option value="qwen3">Qwen3 ASR</option>

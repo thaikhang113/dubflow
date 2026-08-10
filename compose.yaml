@@ -19,6 +19,7 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - tool-data:/data/data
+      - vieneu-voice-profiles:/data/voice-profiles
       - tool-secrets:/data/secrets
       - tool-jobs:/data/jobs
       - tool-output:/data/output
@@ -77,8 +78,10 @@ services:
       VIENEU_BIND_HOST: 0.0.0.0
       VIENEU_BIND_PORT: "8000"
       VIENEU_MODELS_DIR: /models
+      VIENEU_ENABLE_CLONE: "0"
     volumes:
       - vieneu-models:/models
+      - vieneu-voice-profiles:/models/voice-profiles:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import json, urllib.request; body=json.load(urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)); raise SystemExit(0 if body.get('ready') is True and body.get('backend') in ('onnx', 'pytorch') and body.get('device') not in ('auto', 'uninitialized') else 1)"]
       interval: 15s
@@ -113,4 +116,5 @@ volumes:
   ollama-models:
   qwen-asr-models:
   vieneu-models:
+  vieneu-voice-profiles:
   trend-db-data:

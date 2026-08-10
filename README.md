@@ -12,7 +12,7 @@ Tài liệu này mô tả pipeline lõi từ nhánh `khang` và ứng dụng web
 - ASR: `ASR_PROVIDER=auto|whisper|qwen3`; auto dùng Qwen3 trên runtime đủ mạnh, fallback Whisper khi hardware yếu hoặc Qwen service lỗi, ghi `asr_provider_report.json`.
 - OCR subtitle: 9Router vision, có đường fallback được cấu hình trong runtime.
 - Dịch: Ollama mặc định; 9Router là đường opt-in.
-- TTS: VieNeu (`vieneu:<voice>`), AI33, Kokoro, Resona hoặc Edge TTS tùy voice registry/preset. Web mặc định VieNeu local; khi VieNeu preflight fail, job tự gắn đúng một AI33 provider đã cấu hình nếu có đúng một provider phù hợp. API key chỉ nằm trong SecretStore. Reports giữ `requested_voice` và `actual_voice`; cue lỗi retry 1 lần rồi dừng, không tạo silence.
+ - TTS: VieNeu (`vieneu:<voice>`), AI33, Kokoro, Resona hoặc Edge TTS tùy voice registry/preset. Web mặc định VieNeu local với style `natural` (`tu_nhien`). VieNeu hỗ trợ voice profile clone local 3-8 giây khi chạy GPU; job VieNeu không tự fallback sang AI33. API key chỉ nằm trong SecretStore. Reports giữ `requested_voice` và `actual_voice`; cue lỗi retry 1 lần rồi dừng, không tạo silence.
 - AI33 chạy tối đa 3 worker song song để tránh rate limit.
 - Audio TTS chuẩn: 48 kHz mono; audio final: 48 kHz stereo AAC.
 - Nhạc nền: ưu tiên stem `no_vocals.wav` từ Demucs, có ducking khi giọng Việt phát.
@@ -1096,7 +1096,7 @@ GET /health
 
 POST /v1/synthesize
 Content-Type: application/json
-{"text": "...", "voice": "vieneu:hong-chau", "style": "story"}
+{"text": "...", "voice": "vieneu:hong-chau", "style": "natural"}
 ```
 
 VieNeu response body is WAV bytes. Health is ready only when JSON `ready` is
@@ -1199,7 +1199,7 @@ http://127.0.0.1:18793
 #### Thiết lập lần đầu
 
 1. Mở **Providers**, thêm provider dịch Ollama hoặc OpenAI-compatible.
-2. Mở **Settings**; mặc định web là `vieneu:hong-chau` và `story`. Nếu VieNeu chưa sẵn sàng, cấu hình đúng một AI33 provider để job tự fallback toàn job.
+2. Mở **Settings**; mặc định web là `vieneu:hong-chau` và `natural`. Nếu VieNeu chưa sẵn sàng, cấu hình đúng một AI33 provider để job tự fallback toàn job.
 3. Nếu chọn voice `ai33:*`, thêm provider TTS AI33 với endpoint và API key. Key không xuất hiện trong job/API response.
 4. Mở **Bilibili Login**, bấm bắt đầu Bilibili QR rồi quét bằng ứng dụng Bilibili.
 5. Nếu QR không dùng được, nhập file cookie Netscape trong cùng màn hình.
@@ -1247,7 +1247,7 @@ QR và nhập `cookies.txt` vẫn dùng được khi không chạy host helper.
 
 #### Ollama
 
-Với host helper đang chạy, mở **Providers** và bấm **Cài Ollama local**. Tool chỉ bật service khi bấm nút, tải `translategemma:4b`, tạo provider `http://ollama:11434` và chọn làm mặc định. Ollama không cần API key.
+ Với host helper đang chạy, mở **Providers** và bấm **Cài Ollama local**. Tool chỉ bật service khi bấm nút, tải `translategemma:4b`, tạo provider `http://ollama:11434` và chọn làm mặc định. Ollama không cần API key.
 
 Nếu Ollama chạy trên máy host, endpoint dùng trong provider:
 
@@ -1259,7 +1259,7 @@ Fallback thủ công:
 
 ```bash
 docker compose --profile ollama up -d --build
-docker compose exec ollama ollama pull translategemma:4b
+ docker compose exec ollama ollama pull translategemma:4b
 ```
 
 Khi dùng service Compose, endpoint provider là:

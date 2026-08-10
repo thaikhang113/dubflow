@@ -175,7 +175,7 @@ class MonitorTests(unittest.TestCase):
                 "url": "https://space.bilibili.com/123",
                 "interval_minutes": 30,
                 "enabled": True,
-                "model": "qwen3:8b",
+                "model": "translategemma:4b",
                 "preset": {"mode": "exact_sync"},
             }
             created = client.post("/api/channels", json=payload)

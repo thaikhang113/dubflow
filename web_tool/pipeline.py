@@ -1,6 +1,7 @@
 import json
 import os
 from pathlib import Path
+import re
 from urllib.parse import urlsplit
 
 from .config import Settings
@@ -29,6 +30,7 @@ STATUS_FIELDS = {
 }
 WHISPER_MODELS = {"small", "medium"}
 ASR_ENGINES = {"auto", "whisper", "qwen3"}
+BILIBILI_VIDEO_PATH = re.compile(r"^/video/([A-Za-z0-9]+)/*$")
 
 
 def _request(job: dict) -> dict:
@@ -67,6 +69,15 @@ def _validate_url(source: str, platform: str) -> str:
         or not any(hostname == domain or hostname.endswith("." + domain) for domain in allowed)
     ):
         raise ValueError(f"invalid {platform} URL")
+    if platform == "bilibili" and hostname in {
+        "bilibili.com",
+        "www.bilibili.com",
+        "m.bilibili.com",
+    }:
+        match = BILIBILI_VIDEO_PATH.fullmatch(parsed.path)
+        if not match:
+            raise ValueError("invalid bilibili video URL")
+        return f"https://www.bilibili.com/video/{match.group(1)}"
     return source
 
 
@@ -137,12 +148,14 @@ def build_job_environment(
         "OPENCLAW_AI_MODEL": "translategemma:4b",
         "OLLAMA_API_BASE": "http://host.docker.internal:11434",
         "OLLAMA_MODEL": "translategemma:4b",
+        "OLLAMA_NUM_CTX": "4096",
         "ASR_PROVIDER": "auto",
         "QWEN_ASR_ENDPOINT": "http://qwen-asr:8000",
         "ASR_LANGUAGE": "zh",
         "VIENEU_ENDPOINT": "http://vieneu:8000",
         "VIENEU_DEFAULT_VOICE": "hong-chau",
-        "VIENEU_STYLE": "story",
+        "VIENEU_STYLE": "natural",
+        "VIENEU_CLONE_ENABLED": "0",
         "OPENCLAW_HARDWARE_PROFILE": "cpu",
         "AI33_TTS_WORKERS": "3",
         "BASE_ROOT": str(job_root),
@@ -177,6 +190,19 @@ def build_job_environment(
         ):
             raise ValueError("invalid VieNeu style")
         environment["VIENEU_STYLE"] = vieneu_style
+
+    profile_id = str(request.get("vieneu_voice_profile_id") or "").strip()
+    if profile_id:
+        if (
+            len(profile_id) > 100
+            or profile_id != Path(profile_id).name
+            or not all(character.isalnum() or character == "-" for character in profile_id)
+        ):
+            raise ValueError("invalid VieNeu voice profile")
+        environment["VIENEU_CLONE_ENABLED"] = "1"
+        environment["VIENEU_REFERENCE_AUDIO"] = (
+            f"/models/voice-profiles/{profile_id}/reference.wav"
+        )
 
     translation = _provider(providers.get("translation") or {})
     if translation:

@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -53,6 +54,51 @@ class BilibiliLoginTests(unittest.TestCase):
         )
         self.assertTrue(login.status()["logged_in"])
         self.assertEqual(2, login.status()["cookie_count"])
+        self.assertFalse(login.status()["verified"])
+
+    def test_probe_normalizes_tracking_url_and_marks_verified(self):
+        self.login.import_netscape(
+            netscape(".bilibili.com\tTRUE\t/\tTRUE\t0\tSESSDATA\tsecret")
+        )
+        completed = type(
+            "Completed",
+            (),
+            {
+                "returncode": 0,
+                "stdout": '{"id":"BV1","title":"Demo","duration":31.0}',
+                "stderr": "",
+            },
+        )()
+        with patch("web_tool.bilibili_login.subprocess.run", return_value=completed) as run:
+            result = self.login.probe(
+                "https://www.bilibili.com/video/BV1?vd_source=tracking"
+            )
+        self.assertTrue(result["verified"])
+        self.assertEqual("BV1", result["id"])
+        self.assertTrue(self.login.status()["verified"])
+        self.assertEqual(
+            "https://www.bilibili.com/video/BV1",
+            run.call_args.args[0][-1],
+        )
+        self.assertNotIn("secret", repr(result))
+
+    def test_probe_classifies_cookie_rejection_without_exposing_stderr(self):
+        self.login.import_netscape(
+            netscape(".bilibili.com\tTRUE\t/\tTRUE\t0\tSESSDATA\tsecret")
+        )
+        failed = type(
+            "Completed",
+            (),
+            {
+                "returncode": 1,
+                "stdout": "",
+                "stderr": "ERROR: login required SESSDATA=secret",
+            },
+        )()
+        with patch("web_tool.bilibili_login.subprocess.run", return_value=failed):
+            result = self.login.probe("https://www.bilibili.com/video/BV1")
+        self.assertEqual("BilibiliCookieRejected", result["error_code"])
+        self.assertNotIn("secret", repr(result))
 
     def test_rejects_missing_header_malformed_line_and_foreign_domain(self):
         cases = (

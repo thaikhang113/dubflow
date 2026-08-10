@@ -8,6 +8,7 @@ runtime_dirs=(
   /data/output
   /data/models
   /data/browser
+  /data/voice-profiles
 )
 mkdir -p "${runtime_dirs[@]}"
 

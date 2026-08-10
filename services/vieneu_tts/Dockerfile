@@ -12,6 +12,12 @@ RUN apt-get update \
 WORKDIR /app
 COPY requirements.txt constraints.txt ./
 RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
+ARG VIENEU_TORCH_INDEX=""
+RUN if [ -n "$VIENEU_TORCH_INDEX" ]; then \
+      pip install --no-cache-dir --index-url "$VIENEU_TORCH_INDEX" \
+        torch==2.6.0 torchaudio==2.6.0 \
+      && pip install --no-cache-dir transformers==4.57.1; \
+    fi
 COPY app.py .
 
 EXPOSE 8000

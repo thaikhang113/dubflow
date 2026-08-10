@@ -8,7 +8,7 @@ import threading
 import uuid
 import zipfile
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile, status
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -34,6 +34,7 @@ from .pipeline import build_job_command, build_job_environment
 from .secrets import SecretStore, sanitize, test_provider_connection, validate_provider
 from .store import Store
 from .worker import Worker
+from .voice_profiles import delete_profile, list_profiles, resolve_profile, save_profile
 
 ARTIFACTS = {
     "final_video_vi.mp4",
@@ -108,12 +109,16 @@ class JobRequest(BaseModel):
     preset: str = ""
     whisper_model: str = Field(default="", pattern=r"^(|small|medium)$")
     asr_engine: str = Field(default="", pattern=r"^(|auto|whisper|qwen3)$")
-    vieneu_style: str = Field(default="", pattern=r"^(|story)$")
+    vieneu_style: str = Field(default="", pattern=r"^(|natural|story)$")
+    vieneu_voice_profile_id: str = Field(default="", max_length=100)
     hardware_profile: str = Field(default="", pattern=r"^(|cpu|hybrid|gpu)$")
 
 
 class CookieImportRequest(BaseModel):
     text: str
+
+class BilibiliProbeRequest(BaseModel):
+    source: str = Field(min_length=1, max_length=2048)
 
 class LogoUrlRequest(BaseModel):
     url: str = Field(min_length=1, max_length=2048)
@@ -146,7 +151,8 @@ class RuntimeSettingsRequest(BaseModel):
     telegram_bot_token: str = Field(default="", max_length=500)
     whisper_model: str = Field(default="medium", pattern=r"^(small|medium)$")
     asr_engine: str = Field(default="auto", pattern=r"^(auto|whisper|qwen3)$")
-    vieneu_style: str = Field(default="story", pattern=r"^story$")
+    vieneu_style: str = Field(default="natural", pattern=r"^(natural|story)$")
+    default_vieneu_voice_profile_id: str = Field(default="", max_length=100)
     hardware_mode: str = Field(default="auto", pattern=r"^(auto|cpu|gpu)$")
     hardware_profile: str = Field(
         default="cpu",
@@ -170,6 +176,8 @@ def _public_job(job: dict) -> dict:
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
+    voice_profiles_root = settings.root / "voice-profiles"
+    voice_profiles_root.mkdir(parents=True, exist_ok=True)
     static_dir = Path(__file__).with_name("static")
     store = Store(settings.database_path)
     secrets = SecretStore(settings.secrets_dir)
@@ -208,6 +216,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.events = events
     app.state.bilibili_login = bilibili_login
     app.state.monitor = monitor
+    app.state.voice_profiles_root = voice_profiles_root
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
     @app.get("/api/health")
@@ -281,6 +290,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def import_bilibili_cookies(request: CookieImportRequest):
         try:
             return bilibili_login.import_netscape(request.text)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.post("/api/bilibili/login/probe")
+    def probe_bilibili_login(request: BilibiliProbeRequest):
+        try:
+            return bilibili_login.probe(request.source)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -413,7 +429,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "default_voice": "vieneu:hong-chau",
                 "whisper_model": "medium",
                 "asr_engine": "auto",
-                "vieneu_style": "story",
+                "vieneu_style": "natural",
+                "default_vieneu_voice_profile_id": "",
                 "hardware_mode": "auto",
                 "hardware_profile": "cpu",
                 "queue_poll_seconds": "2",
@@ -437,6 +454,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             provider_id = values["default_provider_id"].strip()
             if provider_id and store.get_provider(provider_id) is None:
                 raise HTTPException(status_code=422, detail="default_provider_id not found")
+        profile_id = values.get("default_vieneu_voice_profile_id", "").strip()
+        if profile_id:
+            try:
+                resolve_profile(voice_profiles_root, profile_id)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
         for key, pattern in (
             ("telegram_chat_id", r"-?[0-9]+"),
             ("telegram_thread_id", r"[0-9]+"),
@@ -562,9 +585,50 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             temporary.unlink(missing_ok=True)
         return {"source": str(target.resolve())}
 
+    def public_profile(profile: dict) -> dict:
+        return {
+            key: _public_value(value)
+            for key, value in profile.items()
+            if key != "reference_audio"
+        }
+
+    @app.get("/api/voice-profiles")
+    def get_voice_profiles():
+        return [public_profile(profile) for profile in list_profiles(voice_profiles_root)]
+
+    @app.post("/api/voice-profiles", status_code=status.HTTP_201_CREATED)
+    def upload_voice_profile(
+        name: str = Form(...),
+        file: UploadFile = File(...),
+    ):
+        try:
+            profile = save_profile(
+                voice_profiles_root,
+                name,
+                file.filename or "",
+                file.file.read(),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return public_profile(profile)
+
+    @app.delete("/api/voice-profiles/{profile_id}")
+    def remove_voice_profile(profile_id: str):
+        try:
+            delete_profile(voice_profiles_root, profile_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {"deleted": True, "id": profile_id}
+
     @app.post("/api/jobs", status_code=status.HTTP_201_CREATED)
     def create_job(request: JobRequest):
         values = request.model_dump()
+        if values["platform"].strip().lower() == "bilibili":
+            from .bilibili_login import normalize_video_url
+            source = normalize_video_url(values["source"])
+            if not source:
+                raise HTTPException(status_code=422, detail="invalid bilibili video URL")
+            values["source"] = source
         defaults = store.get_settings(
             {
                 "default_provider_id": "",
@@ -572,7 +636,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "default_voice": "vieneu:hong-chau",
                 "whisper_model": "medium",
                 "asr_engine": "auto",
-                "vieneu_style": "story",
+                "vieneu_style": "natural",
+                "default_vieneu_voice_profile_id": "",
                 "hardware_profile": "cpu",
             }
         )
@@ -588,6 +653,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             values["asr_engine"] = defaults["asr_engine"]
         if not values["vieneu_style"].strip():
             values["vieneu_style"] = defaults["vieneu_style"]
+        if not values["vieneu_voice_profile_id"].strip():
+            values["vieneu_voice_profile_id"] = defaults[
+                "default_vieneu_voice_profile_id"
+            ]
+        if values["vieneu_voice_profile_id"].strip():
+            try:
+                resolve_profile(
+                    voice_profiles_root,
+                    values["vieneu_voice_profile_id"],
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
         if not values["hardware_profile"].strip():
             values["hardware_profile"] = defaults["hardware_profile"]
         if not any(
@@ -607,7 +684,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
                 values[role] = provider["id"]
         if (
-            values["voice"].lower().startswith(("ai33:", "vieneu:"))
+            values["voice"].lower().startswith("ai33:")
             and not values["tts_provider_id"].strip()
         ):
             ai33 = [
@@ -693,7 +770,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         request.setdefault("asr_engine", "whisper")
         if str(request.get("voice") or "").lower().startswith("vieneu:"):
-            request.setdefault("vieneu_style", "story")
+            request.setdefault("vieneu_style", "natural")
         if not any(
             str(request.get(key) or '').strip()
             for key in ('translation_provider_id', 'tts_provider_id', 'provider_id')
@@ -713,7 +790,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
                 request[role] = provider['id']
         if (
-            str(request.get('voice') or '').lower().startswith(('ai33:', 'vieneu:'))
+            str(request.get('voice') or '').lower().startswith('ai33:')
             and not str(request.get('tts_provider_id') or '').strip()
         ):
             ai33 = [
@@ -744,9 +821,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request["retry_of"] = job_id
         request.setdefault("asr_engine", "whisper")
         if str(request.get("voice") or "").lower().startswith("vieneu:"):
-            request.setdefault("vieneu_style", "story")
+            request.setdefault("vieneu_style", "natural")
         if (
-            str(request.get("voice") or "").lower().startswith(("ai33:", "vieneu:"))
+            str(request.get("voice") or "").lower().startswith("ai33:")
             and not str(request.get("tts_provider_id") or "").strip()
         ):
             ai33 = [
