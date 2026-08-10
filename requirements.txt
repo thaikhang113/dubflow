@@ -1,0 +1,35 @@
+# --- Core pipeline ---
+pydub>=0.25.1,<2.0
+numpy>=1.24,<3.0
+audioop-lts>=0.2.2; python_version >= "3.13"
+python-dotenv>=1.0.1,<2.0
+requests>=2.31.0,<3.0
+# Mã hóa file trung gian khi hold Vox chưa chốt (autodub/securestore.py)
+cryptography>=42.0.0
+
+# --- ASR (local Whisper — free, offline) ---
+faster-whisper>=1.0.0,<2.0
+
+# --- TTS ---
+# VieNeu (local CPU) lives in its own venv (.venv-vieneu) —
+# set up once with: py scripts/setup_vieneu.py
+
+# --- Download ---
+yt-dlp>=2024.0.0
+playwright>=1.50.0         # Douyin extractor (run: playwright install chromium)
+
+# --- BGM separation (bg-mode demucs) ---
+demucs>=4.0.0,<5.0
+soundfile>=0.13.0,<0.14
+
+# --- GUI ---
+PySide6>=6.6.0
+
+# --- Optional: device token storage in OS keyring ---
+# Cất token thiết bị vào Windows Credential Manager. Không có gói này thì
+# token chỉ sống trong phiên chạy — mỗi lần mở app đăng ký lại, vẫn đúng.
+# Cài một lần: pip install keyring
+# keyring>=24.0.0
+
+# --- Dev ---
+pytest>=8.0.0

@@ -1,4 +1,0 @@
-- Giọng thoại gọn, có lực, hợp tranh đấu và ân oán.
-- Đại ca/lão đại giữ là "đại ca" hoặc "lão đại" tùy quan hệ.
-- Huynh đệ giữ sắc thái thân tình hoặc bang phái.
-- Tránh làm câu quá văn vẻ nếu nhân vật đang đối đầu.

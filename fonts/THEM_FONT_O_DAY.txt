@@ -1,0 +1,12 @@
+THÊM FONT CHO PHỤ ĐỀ
+=====================
+
+1. Tải font tại https://fonts.google.com
+   (lọc Language → Vietnamese để font có đủ dấu tiếng Việt).
+2. Giải nén, thả các file .ttf / .otf vào thư mục này.
+3. Mở lại VoxDub Studio — font xuất hiện trong danh sách chọn font
+   và render đúng trên video ở mọi máy (không cần cài vào Windows).
+
+Gợi ý font hợp kiểu caption: Be Vietnam Pro, Montserrat, Lexend, Baloo 2.
+Font Google Fonts dùng giấy phép mở (OFL) — đóng gói kèm app thoải mái.
+Nhớ giữ kèm file license (OFL.txt) của font nếu phát hành app.

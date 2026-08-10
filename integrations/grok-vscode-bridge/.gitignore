@@ -1,9 +1,0 @@
-node_modules/
-out/
-out-integration/
-*.vsix
-!releases/*.vsix
-.vscode-test/
-.DS_Store
-.env
-docs/codex-style-analysis.md

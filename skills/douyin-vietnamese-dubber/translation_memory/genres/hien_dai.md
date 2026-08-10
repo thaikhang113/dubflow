@@ -1,4 +1,0 @@
-- Dịch hiện đại, tự nhiên, dễ nghe.
-- Ưu tiên câu nói ngắn và rõ, hợp hội thoại đời thường.
-- Không dùng từ cổ trang như "nàng", "huynh", "bổn tọa" nếu không có chủ ý.
-- Xưng hô theo quan hệ: anh/em, tôi/cô, cậu/tớ, mày/tao.

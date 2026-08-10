@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-app text-ink font-sans antialiased;
+  }
+  /* Thanh cuộn tối — thanh cuộn trắng mặc định của Windows cắt ngang giao
+     diện tối và trông như lỗi hiển thị. */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: theme('colors.app'); }
+  ::-webkit-scrollbar-thumb {
+    background: theme('colors.border.DEFAULT');
+    border-radius: 5px;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: theme('colors.ink.muted'); }
+}
+
+@layer components {
+  .card {
+    @apply bg-panel border border-border-subtle rounded-xl;
+  }
+  /* Card kính mờ viền sáng — dùng cho các khối nổi bật trên trang public. */
+  .card-glass {
+    @apply rounded-2xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-xl;
+  }
+  .text-gradient {
+    @apply bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent;
+  }
+  .glow {
+    box-shadow: 0 0 40px -8px rgba(99, 102, 241, 0.45);
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5
+           text-sm font-semibold transition-colors disabled:opacity-50
+           disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn relative overflow-hidden bg-primary text-white hover:bg-primary-hover;
+  }
+  /* Vệt sáng quét qua nút primary khi hover. */
+  .btn-primary::after {
+    content: '';
+    @apply pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-white/20 opacity-0;
+  }
+  .btn-primary:hover::after {
+    @apply opacity-100 animate-shine;
+  }
+  .btn-ghost {
+    @apply btn border border-border text-ink hover:bg-panel-hover;
+  }
+  .btn-danger {
+    @apply btn border border-danger/40 text-danger hover:bg-danger/10;
+  }
+  .input {
+    @apply w-full bg-input border border-border rounded-xl px-3.5 py-2.5
+           text-sm text-ink placeholder:text-ink-muted outline-none
+           focus:border-border-active transition-colors;
+  }
+  .label {
+    @apply block text-xs font-medium text-ink-soft mb-1.5;
+  }
+  .badge {
+    @apply inline-flex items-center rounded-lg px-2 py-0.5 text-xs font-medium;
+  }
+  .th {
+    @apply text-left text-xs font-medium text-ink-muted px-3 py-2.5
+           border-b border-border-subtle whitespace-nowrap;
+  }
+  .td {
+    @apply px-3 py-2.5 text-sm border-b border-border-subtle align-middle;
+  }
+}

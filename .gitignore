@@ -1,107 +1,54 @@
-# Secrets / API / accounts
-.env
-.env.*
-*.env
-*secret*
-!web_tool/secrets.py
-!web_tool/tests/test_secrets.py
-*token*
-*api_key*
-*apikey*
-*cookie*
-*cookies*
-*proxy*
-*.key
-*.pem
-
-# OpenClaw private config
-config/
-secrets/
-credentials/
-
-# Browser / Douyin session
-chrome-profile/
-user-data-dir/
-profiles/
-sessions/
-cookies/
-storage/
-
-# Output video/audio/subtitle
-output/
-outputs/
-downloads/
-videos/
-audios/
-results/
-temp/
-tmp/
-cache/
-*.mp4
-*.mov
-*.mkv
-*.avi
-*.mp3
-*.wav
-*.aac
-*.srt
-*.ass
-*.vtt
-
-# Logs
-logs/
-*.log
-
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# Virtualenvs (tao boi cac script trong scripts/)
 .venv/
+.venv-*/
 venv/
 
-# Node
-node_modules/
-npm-debug.log*
+# Cau hinh ca nhan — chep .env.example thanh .env roi dien
+.env
 
-# Editor / OS
+# Ket qua chay pipeline
+output/
+downloads/
+batch_state.json
+logs/
+
+# Du lieu ca nhan
+linkdouyin.txt
+
+# Models (nhieu GB; tai ve bang cac script trong scripts/)
+models/
+
+# Giong nguoi dung tu them (voices/preset_voices_vn/ VAN duoc commit)
+voices/custom/
+voices/*.wav
+
+# OS / editor
+.DS_Store
+Thumbs.db
 .vscode/
 .idea/
-.DS_Store
-
-# OpenClaw runtime/state files
-skills/content-monitor/daemon.pid
-skills/content-monitor/seen_videos.json
-skills/**/session/
-skills/**/sessions/
-skills/**/cache/
-skills/**/tmp/
-skills/**/temp/
-skills/**/output/
-skills/**/outputs/
-
-# OpenClaw runtime/state files
-skills/content-monitor/daemon.pid
-skills/content-monitor/seen_videos.json
-skills/**/session/
-skills/**/sessions/
-skills/**/cache/
-skills/**/tmp/
-skills/**/temp/
-skills/**/output/
-skills/**/outputs/
-
-# Content monitor runtime state
-skills/content-monitor/daemon.pid
-skills/content-monitor/seen_videos.json
-
-.gitnexus/
-.tool-runtime/
-.tool-runtime-qa/
-.tool-secrets/
-
-# Claude local agent files
 .claude/
-CLAUDE.md
+.tool-runtime/
 
-# Sanitized snapshot exclusions
-.recovery/
-integrations/grok-vscode-bridge/docs/screenshots/
+# Build exe
+*.spec.bak
+pw-browsers/
+smoke_test_result.json
+smoke_err.txt
+
+# Backend (chay tren may chu rieng)
+control_server/node_modules/
+control_server/.env
+control_server/logs/
+
+# Website
+website/node_modules/
+website/dist/

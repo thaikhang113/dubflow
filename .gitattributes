@@ -1,0 +1,20 @@
+# Mac dinh: git tu chuan hoa xuong LF trong kho.
+* text=auto
+
+# File .bat PHAI la CRLF — cmd.exe doc file LF thi hong cac khoi if/else.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Script chay tren Linux (VPS) giu LF du checkout tren Windows.
+*.sh text eol=lf
+
+# Nhi phan — khong dung tay vao.
+*.wav binary
+*.mp3 binary
+*.mp4 binary
+*.png binary
+*.jpg binary
+*.ico binary
+*.ttf binary
+*.onnx binary
+*.zip binary

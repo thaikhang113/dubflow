@@ -1,4 +1,0 @@
-- Giọng thoại đời thường, trẻ trung vừa phải, không quá mạng xã hội.
-- Ưu tiên câu ngắn, tự nhiên như học sinh nói chuyện.
-- Khi quan hệ thân, có thể dùng "cậu/tớ", "mày/tao" nếu ngữ cảnh cho phép.
-- Tránh làm lời thoại quá trang trọng.

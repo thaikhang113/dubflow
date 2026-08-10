@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autodub"
+version = "2.1.0"
+description = "Automatic video dubbing into Vietnamese: download → ASR → translate → TTS → mix → export"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = [
+    "pydub>=0.25.1",
+    "numpy>=1.24",
+    "audioop-lts>=0.2.2; python_version >= '3.13'",
+    "python-dotenv>=1.0.1",
+    "requests>=2.31.0",
+    "cryptography>=42.0.0",
+    "faster-whisper>=1.0.0",
+    "yt-dlp>=2024.0.0",
+    "playwright>=1.50.0",
+    "PySide6>=6.6.0",
+]
+
+[project.optional-dependencies]
+demucs = ["demucs>=4.0.0", "soundfile>=0.13.0"]
+content = ["google-genai>=1.0.0"]
+dev = ["pytest>=8.0.0"]
+
+[project.gui-scripts]
+autodub-gui = "autodub_gui.app:main"
+
+[tool.setuptools.packages.find]
+include = ["autodub*", "autodub_gui*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

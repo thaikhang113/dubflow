@@ -1,0 +1,13 @@
+[2026-08-08 18:20:43] [INFO] === BAT DAU KIEM TRA 1 KENH ===
+[2026-08-08 18:20:43] [INFO] Dang kiem tra kenh: test
+[2026-08-08 18:20:43] [INFO]   -> Video MOI: one (https://example.test/video-1)
+[2026-08-08 18:20:43] [INFO]   -> Kenh test: da xu ly 1 video moi.
+[2026-08-08 18:20:43] [INFO] === KIEM TRA HOAN TAT ===
+
+[2026-08-08 18:21:34] [INFO] === BAT DAU KIEM TRA 1 KENH ===
+[2026-08-08 18:21:34] [INFO] Dang kiem tra kenh: test
+[2026-08-08 18:21:34] [INFO]   -> Video MOI: one (https://example.test/video-1)
+[2026-08-08 18:21:34] [WARN]   -> Gui Telegram that bai, se thu lai video video-1 o chu ky sau.
+[2026-08-08 18:21:34] [INFO]   -> Kenh test: da xu ly 1 video moi.
+[2026-08-08 18:21:34] [INFO] === KIEM TRA HOAN TAT ===
+
