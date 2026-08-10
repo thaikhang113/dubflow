@@ -14,6 +14,8 @@ import os
 import subprocess
 import sys
 
+from setup_support import is_nonempty_file, retry_call
+
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -51,12 +53,18 @@ def step_install() -> None:
     log("cài vieneu (ONNX, không cần GPU) ...")
     # Chặn trần major: bản 2.x có thể đổi API worker (vieneu_worker.py gọi
     # thẳng) — nâng trần sau khi đã thử, đừng để pip tự nhảy phiên bản lớn.
-    subprocess.run([VENV_PY, "-m", "pip", "install", "--quiet", _VIENEU_SPEC],
-                   check=True)
+    retry_call(
+        lambda: subprocess.run(
+            [VENV_PY, "-m", "pip", "install", "--quiet",
+             "--retries", "5", "--timeout", "120", _VIENEU_SPEC],
+            check=True,
+        ),
+        attempts=3,
+    )
 
 
 def step_model_and_voices() -> None:
-    if os.path.isfile(VOICES_JSON) and os.path.isfile(MARKER):
+    if is_nonempty_file(VOICES_JSON) and is_nonempty_file(MARKER):
         log("model + voices.json đã có — bỏ qua")
         return
     log("tải model VieNeu-TTS-v3-Turbo (~300 MB, lần đầu hơi lâu) ...")
@@ -83,7 +91,10 @@ json.dump({{"ok": True, "model": "VieNeu-TTS-v3-Turbo", "backend": "onnx",
           open({MARKER!r}, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 print("model OK,", len(voices), "giọng")
 """
-    subprocess.run([VENV_PY, "-c", code], check=True)
+    retry_call(
+        lambda: subprocess.run([VENV_PY, "-c", code], check=True),
+        attempts=3,
+    )
 
 
 def main() -> None:

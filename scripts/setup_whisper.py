@@ -18,6 +18,8 @@ import subprocess
 import sys
 import wave
 
+from setup_support import retry_call
+
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -62,8 +64,14 @@ def step_install() -> None:
         log("faster-whisper đã cài — bỏ qua")
         return
     log("cài faster-whisper (ctranslate2, CPU/GPU) ...")
-    subprocess.run([VENV_PY, "-m", "pip", "install", "--quiet",
-                    _WHISPER_SPEC], check=True)
+    retry_call(
+        lambda: subprocess.run(
+            [VENV_PY, "-m", "pip", "install", "--quiet",
+             "--retries", "5", "--timeout", "120", _WHISPER_SPEC],
+            check=True,
+        ),
+        attempts=3,
+    )
 
 
 def step_smoke() -> None:
@@ -123,7 +131,7 @@ def main() -> None:
     log(f"Model cache: {MODEL_DIR}")
     step_venv()
     step_install()
-    step_smoke()
+    retry_call(step_smoke, attempts=3)
     log("XONG — Whisper chạy trong .venv-whisper (không bundle trong exe).")
 
 
