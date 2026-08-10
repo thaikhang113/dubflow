@@ -67,7 +67,8 @@ def step_install() -> None:
     retry_call(
         lambda: subprocess.run(
             [VENV_PY, "-m", "pip", "install", "--quiet",
-             "--retries", "5", "--timeout", "120", _WHISPER_SPEC],
+             "--no-cache-dir", "--retries", "5", "--timeout", "120",
+             _WHISPER_SPEC],
             check=True,
         ),
         attempts=3,

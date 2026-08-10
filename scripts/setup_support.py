@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import json
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -33,3 +34,7 @@ def is_nonempty_file(path: str | os.PathLike[str]) -> bool:
         return Path(path).is_file() and Path(path).stat().st_size > 0
     except OSError:
         return False
+
+
+def smoke_request(audio_path: str) -> str:
+    return json.dumps({"audio": str(audio_path)}, ensure_ascii=False) + "\n"

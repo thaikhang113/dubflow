@@ -1,4 +1,4 @@
-from scripts.setup_support import is_nonempty_file, retry_call
+from scripts.setup_support import is_nonempty_file, retry_call, smoke_request
 
 
 def test_retry_call_retries_transient_failure():
@@ -33,3 +33,7 @@ def test_is_nonempty_file_rejects_missing_and_empty(tmp_path):
     assert not is_nonempty_file(path)
     path.write_bytes(b"ok")
     assert is_nonempty_file(path)
+
+
+def test_smoke_request_matches_worker_protocol():
+    assert smoke_request("C:/audio.wav") == '{"audio": "C:/audio.wav"}\n'

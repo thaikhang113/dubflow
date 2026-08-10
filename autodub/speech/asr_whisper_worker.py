@@ -127,7 +127,7 @@ def main() -> None:
         _die(proto_out, "stdin đóng trước khi nhận request")
 
     try:
-        req = json.loads(raw)
+        req = json.loads(raw) if raw.strip() else {"audio": args.audio}
     except (json.JSONDecodeError, ValueError) as e:
         _die(proto_out, f"Request JSON không hợp lệ: {e}")
 
