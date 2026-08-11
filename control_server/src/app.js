@@ -27,7 +27,23 @@ async function build(opts = {}) {
     ...opts.fastify,
   })
 
-  await app.register(require('@fastify/helmet'), { contentSecurityPolicy: false })
+  await app.register(require('@fastify/helmet'), {
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        baseUri: ["'self'"],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+        fontSrc: ["'self'", 'data:'],
+        connectSrc: ["'self'", ...(process.env.CSP_CONNECT_SRC || '')
+          .split(',').map((s) => s.trim()).filter(Boolean)],
+      },
+    },
+  })
+  await app.register(require('@fastify/cookie'))
 
   // Website được backend serve cùng origin nên trình duyệt KHÔNG cần CORS.
   // Danh sách này chỉ để phòng khi website được host tách rời (CORS_ORIGIN),
@@ -38,6 +54,7 @@ async function build(opts = {}) {
     // Cùng origin thì trình duyệt không gửi preflight; danh sách chỉ dùng
     // khi host tách rời.
     origin: origins.length ? origins : false,
+    credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
     // Admin panel gửi token qua header riêng; thiếu dòng này thì trình duyệt
     // chặn preflight và mọi thao tác quản trị đều hỏng với lỗi CORS khó hiểu.

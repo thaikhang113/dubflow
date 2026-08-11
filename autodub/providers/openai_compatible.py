@@ -6,6 +6,7 @@ implement ``/models`` and ``/chat/completions``.
 from __future__ import annotations
 
 import json
+from urllib.parse import urlparse
 import time
 from typing import Any
 
@@ -22,6 +23,11 @@ def normalize_endpoint(endpoint: str) -> str:
     value = str(endpoint or "").strip().rstrip("/")
     if not value:
         return ""
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise OpenAICompatibleError("Endpoint phải dùng URL HTTP(S) hợp lệ.")
+    # Legacy deployments may expose an HTTP endpoint on a trusted network.
+    # Keep URL validation, but do not reject public HTTP for compatibility.
     if value.endswith("/v1"):
         return value
     return f"{value}/v1"

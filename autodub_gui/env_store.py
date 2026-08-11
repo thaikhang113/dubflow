@@ -8,6 +8,7 @@ không bị mất.
 from __future__ import annotations
 
 import os
+import tempfile
 
 from autodub.utils import app_root
 
@@ -55,8 +56,30 @@ def write_env(updates: dict[str, str], path: str = ENV_PATH) -> None:
         for key, val in remaining.items():
             lines.append(f"{key}={val}")
 
-    with open(path, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines) + "\n")
+    parent = os.path.dirname(os.path.abspath(path)) or "."
+    os.makedirs(parent, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".env.", suffix=".tmp", dir=parent,
+                                     text=True)
+    try:
+        os.chmod(temporary, 0o600)
+    except OSError:
+        pass
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+            f.write("\n".join(lines) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporary, path)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
 
 
 def env_to_multiline(value: str) -> str:

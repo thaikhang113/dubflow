@@ -87,6 +87,20 @@ class VideoStep(_StepPanel):
             "Tệp video trên máy", "Chưa chọn tệp nào", self._pick_file)
         self.body.addWidget(self.file_row)
 
+        self.mirror = QCheckBox("Lật ngang video")
+        self.mirror.setToolTip(
+            "Lật hình ảnh trước khi che chữ và ghi phụ đề. Có thể đổi lại "
+            "trong Trình chỉnh sửa trước khi xuất.")
+        self.mirror.stateChanged.connect(lambda _state: self.changed.emit())
+        self.body.addWidget(self.mirror)
+
+        self.ocr_enabled = QCheckBox("Tự động tìm và làm mờ chữ Trung")
+        self.ocr_enabled.setToolTip(
+            "OCR chỉ tìm phụ đề Trung để làm mờ. Tắt nếu video không có phụ đề cứng "
+            "hoặc bạn chỉ muốn dùng vùng khoanh thủ công.")
+        self.ocr_enabled.stateChanged.connect(lambda _state: self.changed.emit())
+        self.body.addWidget(self.ocr_enabled)
+
         self.resume_row, self.resume_edit = self._picker(
             "Thư mục dự án đang dở", "Chọn thư mục kết quả của lần chạy trước",
             self._pick_folder)
@@ -175,6 +189,8 @@ class VideoStep(_StepPanel):
             "url": self.url.text(),
             "file_path": self.file_edit.text(),
             "resume_dir": self.resume_edit.text(),
+            "mirror": self.mirror.isChecked(),
+            "ocr_enabled": self.ocr_enabled.isChecked(),
         }
 
     def load(self, data: dict) -> None:
@@ -182,6 +198,9 @@ class VideoStep(_StepPanel):
         self.url.set_text(data.get("url", ""))
         self.file_edit.set_text(data.get("file_path", ""))
         self.resume_edit.set_text(data.get("resume_dir", ""))
+        self.mirror.setChecked(bool(data.get("mirror", False)))
+        self.ocr_enabled.setChecked(
+            bool(data.get("ocr_enabled", self.ocr_enabled.isChecked())))
         self._on_source(self.source.current_key())
 
     def is_complete(self) -> tuple[bool, str]:

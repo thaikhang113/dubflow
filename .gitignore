@@ -25,6 +25,8 @@ linkdouyin.txt
 
 # Models (nhieu GB; tai ve bang cac script trong scripts/)
 models/
+!control_server/src/models/
+!control_server/src/models/**
 
 # Giong nguoi dung tu them (voices/preset_voices_vn/ VAN duoc commit)
 voices/custom/

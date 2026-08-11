@@ -190,6 +190,11 @@ class NewProjectPage(BasePage):
         self.pages = QStackedWidget()
         clear_background(self.pages)
         self.step_video = VideoStep()
+        try:
+            self.step_video.ocr_enabled.setChecked(
+                bool(self._settings_provider().ocr_enabled))
+        except Exception:
+            pass
         self.step_recognize = RecognizeStep()
         self.step_translate = TranslateStep()
         self.step_voice = VoiceStep()
@@ -400,6 +405,8 @@ class NewProjectPage(BasePage):
             ("Phụ đề",
              f"{label_of(consts.SUBTITLE_MODES, data['subtitle_mode'])} · "
              f"kiểu {label_of(PRESET_CHOICES, data['subtitle_preset'])}"),
+            ("Lật ngang video", "có" if data["mirror"] else "không"),
+            ("OCR làm mờ chữ Trung", "có" if data["ocr_enabled"] else "không"),
             ("Nhạc nền", label_of(consts.BG_MODES, data["bg_mode"])),
             ("Chỉ xuất âm thanh", "có" if data["skip_video"] else "không"),
         ]
@@ -631,6 +638,8 @@ class NewProjectPage(BasePage):
             resume_dir=data["resume_dir"] if source == "resume" else None,
             subtitle_mode=data["subtitle_mode"],
             blur_regions=list(self._blur_regions),
+            mirror=bool(data["mirror"]),
+            ocr_enabled=bool(data["ocr_enabled"]),
              subtitle_style=(self._subtitle_style
                              or self._base_style(data["subtitle_preset"])),
              clone_voice=data["clone_voice"],

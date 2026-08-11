@@ -28,6 +28,7 @@ def test_merge_segments_basic(tmp_path):
 
     audio = AudioSegment.from_wav(result)
     assert abs(len(audio) / 1000.0 - total_duration) < 0.1
+    assert audio.frame_rate == 48000
 
 
 def test_merge_segments_empty(tmp_path):

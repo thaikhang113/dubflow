@@ -7,7 +7,7 @@ from autodub.device_id import get_fingerprint, short_id
 from autodub.text.translate_common import TranslateError
 from autodub.text.translate_saas import (
     _batch_job_id, _context_from_settings, _merge, _payload_segment,
-    _prev_context, run_id_for,
+    _next_context, _prev_context, run_id_for,
 )
 
 
@@ -128,6 +128,11 @@ def test_prev_context_includes_existing_translation():
 
 
 # ---------------------------------------------------------------- ghép -----
+
+def test_next_context_takes_following_segments():
+    segments = [seg(i) for i in range(1, 6)]
+    ctx = _next_context(segments, 2, TARGET, n=2)
+    assert [c["id"] for c in ctx] == [3, 4]
 
 def test_merge_keeps_client_side_fields():
     """Máy chủ chỉ trả id + bản dịch; start/end/slot của máy khách phải còn

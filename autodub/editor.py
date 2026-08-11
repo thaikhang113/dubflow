@@ -660,7 +660,8 @@ def rebuild_output(
         blur_regions=blur_regions, subtitle_lang=target.iso639_2,
         subtitle_style=style,
         speed=deferred_speed[0] if deferred_speed else None,
-        fps=deferred_speed[1] if deferred_speed else None)
+        fps=deferred_speed[1] if deferred_speed else None,
+        mirror=bool(state.render_opts.get("mirror", False)))
     emit("merge_video", "done", detail=dubbed)
     emit("done", "done", detail=work_dir)
     logger.info(f"Đã xuất xong video: {dubbed}")
@@ -716,7 +717,8 @@ def rebuild_subtitles(
         blur_regions=blur_regions, subtitle_lang=target.iso639_2,
         subtitle_style=style,
         speed=deferred_speed[0] if deferred_speed else None,
-        fps=deferred_speed[1] if deferred_speed else None)
+        fps=deferred_speed[1] if deferred_speed else None,
+        mirror=bool(state.render_opts.get("mirror", False)))
     if reporter is not None:
         reporter.emit("merge_video", "done", detail=dubbed)
         reporter.emit("done", "done", detail=work_dir)

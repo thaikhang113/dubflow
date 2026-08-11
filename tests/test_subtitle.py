@@ -4,8 +4,10 @@ from autodub.media.subtitle import (
     blur_filter,
     build_filter_complex,
     build_force_style,
+    compact_blur_regions,
     escape_subtitles_path,
     hex_to_ass_color,
+    mirror_blur_regions,
 )
 
 W, H = 1920, 1080
@@ -140,6 +142,68 @@ def test_time_window_adds_enable_expression():
 def test_no_enable_without_full_time_window():
     graph = build_filter_complex([{**FULL_WIDTH_BAND, "t_start": 1.0}], W, H)
     assert "enable" not in graph
+
+
+# --------------------------- OCR compaction --------------------------- #
+
+def test_compact_blur_regions_merges_repeated_ocr_box():
+    regions = [
+        {"x": 0.01, "y": 0.04, "w": 0.10, "h": 0.05,
+         "t_start": 0.0, "t_end": 1.0, "source": "ocr"},
+        {"x": 0.012, "y": 0.041, "w": 0.099, "h": 0.049,
+         "t_start": 1.0, "t_end": 3.0, "source": "ocr"},
+    ]
+    compacted = compact_blur_regions(regions)
+    assert len(compacted) == 1
+    assert compacted[0]["t_start"] == 0.0
+    assert compacted[0]["t_end"] == 3.0
+
+
+def test_compact_blur_regions_keeps_separate_positions():
+    regions = [
+        {**FULL_WIDTH_BAND, "t_start": 0.0, "t_end": 1.0, "source": "ocr"},
+        {"x": 0.0, "y": 0.05, "w": 0.2, "h": 0.1,
+         "t_start": 0.0, "t_end": 1.0, "source": "ocr"},
+    ]
+    assert len(compact_blur_regions(regions)) == 2
+
+
+def test_compact_blur_regions_bounds_large_ocr_graph():
+    regions = [
+        {"x": 0.01 + (i % 10) * 0.09, "y": 0.88, "w": 0.05,
+         "h": 0.06, "t_start": float(i * 2), "t_end": float(i * 2 + 1),
+         "source": "ocr"}
+        for i in range(100)
+    ]
+    compacted = compact_blur_regions(regions, max_regions=24)
+    graph = build_filter_complex(compacted, W, H)
+    assert len(compacted) == 100
+    assert max(float(region["w"]) for region in compacted) <= 0.05
+    assert max(float(region["h"]) for region in compacted) <= 0.06
+    assert graph.count("delogo") == len(compacted)
+    assert "boxblur" not in graph
+
+
+def test_compact_blur_regions_does_not_force_distant_ocr_boxes_into_large_regions():
+    regions = [
+        {"x": 0.01 + (i % 8) * 0.12, "y": 0.04 + (i % 4) * 0.05,
+         "w": 0.08, "h": 0.04, "t_start": float(i),
+         "t_end": float(i + 1), "source": "ocr"}
+        for i in range(32)
+    ]
+    compacted = compact_blur_regions(regions, max_regions=4)
+    assert max(float(region["w"]) for region in compacted) <= 0.16
+    assert max(float(region["h"]) for region in compacted) <= 0.08
+
+def test_compact_blur_regions_drops_malformed_regions():
+    assert compact_blur_regions([{"x": 0.1}, {"x": "bad"}]) == []
+
+def test_mirror_blur_region_moves_x_only():
+    region = {"x": 0.2, "y": 0.3, "w": 0.25, "h": 0.1}
+    mirrored = mirror_blur_regions([region])[0]
+    assert mirrored["x"] == 0.55
+    assert mirrored["y"] == region["y"]
+    assert mirrored["w"] == region["w"]
 
 
 # --------------------------- combined --------------------------- #

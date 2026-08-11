@@ -280,11 +280,13 @@ async function callWithFallback(role, args) {
  * gấp đôi, đúng thứ đang bị chặn.
  */
 async function translateBatch({ segments, sourceLang, targetField, context,
-  cpsBudget, prevContext = [], maxRetries = 2, depth = 0 }) {
+  cpsBudget, prevContext = [], nextContext = [], maxRetries = 2, depth = 0 }) {
   const system = prompts.buildTranslateSystemPrompt({
     sourceLang, targetField, context, cpsBudget,
   })
-  const user = prompts.buildTranslateUserPrompt({ segments, targetField, prevContext })
+  const user = prompts.buildTranslateUserPrompt({
+    segments, targetField, prevContext, nextContext,
+  })
   const schema = prompts.translateSchema(targetField)
 
   const { content, usage, provider } = await callWithFallback('translate',
@@ -308,7 +310,7 @@ async function translateBatch({ segments, sourceLang, targetField, context,
 
   const results = await Promise.all(halves.map((half) => translateBatch({
     segments: half, sourceLang, targetField, context, cpsBudget,
-    prevContext, maxRetries, depth: depth + 1,
+    prevContext, nextContext, maxRetries, depth: depth + 1,
   }).catch(() => null)))
 
   const extra = []
@@ -344,28 +346,31 @@ async function fixCjkLeftovers({ merged, sourceLang, targetField, context, cpsBu
   let promptTokens = 0
   let completionTokens = 0
 
-  const fixes = await Promise.all(bad.map(async (seg) => {
-    const user = 'Your previous translation still contained Chinese characters: '
-      + `${JSON.stringify(seg[targetField])}\n`
-      + `Translate this ONE segment again. "${targetField}" must be pure Vietnamese `
-      + '(Latin script only). Return ONLY JSON: '
-      + `{"segments": [{"id": ..., "${targetField}": "..."}]}\n\n`
-      + JSON.stringify({ id: seg.id })
+  const fixes = []
+  for (let offset = 0; offset < bad.length; offset += 20) {
+    const chunk = bad.slice(offset, offset + 20)
+    const user = 'These translations still contain Chinese characters. Rewrite every '
+      + `segment into pure Vietnamese Latin script. Return exactly one result per id. `
+      + `Return ONLY JSON: {"segments":[{"id":...,"${targetField}":"..."}]}\n\n`
+      + JSON.stringify(chunk.map((seg) => ({
+        id: seg.id, source: seg.text, current: seg[targetField],
+      })))
     try {
       const { content, usage } = await callWithFallback('translate',
         { system, user, schema, maxRetries: 2 })
       promptTokens += usage.promptTokens
       completionTokens += usage.completionTokens
       const returned = parseResponseSegments(content)
-      const text = returned[0] && String(returned[0][targetField] || '').trim()
-      if (text && !containsCjk(text)) return [seg.id, text]
+      for (const item of returned) {
+        const text = String(item[targetField] || '').trim()
+        if (text && !containsCjk(text)) fixes.push([item.id, text])
+      }
     } catch {
       // Giữ bản cũ — giọng đọc sẽ bỏ qua ký tự lạ, còn hơn mất cả câu.
     }
-    return null
-  }))
+  }
 
-  const fixed = new Map(fixes.filter(Boolean))
+  const fixed = new Map(fixes)
   const segments = merged.map((s) => (
     fixed.has(s.id) ? { ...s, [targetField]: fixed.get(s.id) } : s
   ))

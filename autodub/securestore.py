@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from pathlib import Path
 
 from autodub.utils import save_json_atomic, setup_logging
 
@@ -32,6 +33,23 @@ LOCK_FILENAME = "voxdub_lock.json"
 
 class SecureStoreError(Exception):
     """Không đọc/ghi được file mã hóa (sai khóa, file hỏng...)."""
+
+
+def _contained_lock_path(work_dir: str, rel: object) -> str:
+    if not isinstance(rel, str) or not rel or os.path.isabs(rel):
+        raise SecureStoreError("Invalid lock marker path.")
+    root = Path(work_dir).resolve()
+    candidate = (root / rel).resolve(strict=False)
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise SecureStoreError("Lock marker escapes project.") from exc
+    current = root
+    for part in candidate.relative_to(root).parts[:-1]:
+        current /= part
+        if current.is_symlink():
+            raise SecureStoreError("Lock marker crosses symlink.")
+    return str(candidate)
 
 
 def _aesgcm(key: bytes):
@@ -208,7 +226,11 @@ def unlock_all(work_dir: str, key: bytes | str) -> list[str]:
         return []
     done: list[str] = []
     for rel in lock.get("encrypted", []):
-        path = os.path.join(work_dir, rel)
+        try:
+            path = _contained_lock_path(work_dir, rel)
+        except SecureStoreError:
+            logger.warning("Skipping unsafe lock marker path")
+            continue
         if not os.path.exists(path):
             continue
         decrypt_file(path, key)

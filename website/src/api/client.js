@@ -26,6 +26,7 @@ async function request(path, { method = 'GET', body, headers = {}, signal } = {}
   try {
     resp = await fetch(`${BASE}${path}`, {
       method,
+      credentials: 'include',
       headers: {
         ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         ...headers,
@@ -69,16 +70,13 @@ export const api = {
     }),
 
   /** `token` chỉ có ở trình duyệt đã tạo đơn — thiếu nó thì không thấy key. */
-  getOrder: (orderCode, token, signal) =>
-    request(
-      `/v1/billing/orders/${encodeURIComponent(orderCode)}`
-      + (token ? `?token=${encodeURIComponent(token)}` : ''),
-      { signal }),
+  getOrder: (orderCode, signal) =>
+    request(`/v1/billing/orders/${encodeURIComponent(orderCode)}`, { signal }),
 
-  resendKey: (orderCode, token, email) =>
+  resendKey: (orderCode, email) =>
     request(`/v1/billing/orders/${encodeURIComponent(orderCode)}/resend`, {
       method: 'POST',
-      body: { token, email },
+      body: { email },
     }),
 }
 

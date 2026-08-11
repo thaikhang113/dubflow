@@ -52,6 +52,20 @@ def test_ocr_converts_pixel_box_to_normalized_timed_region():
     }]
 
 
+def test_ocr_ignores_chinese_text_outside_subtitle_band():
+    detections = [
+        _det(box=[[100, 100], [900, 100], [900, 160], [100, 160]]),
+        _det(box=[[100, 800], [900, 800], [900, 860], [100, 860]]),
+    ]
+
+    regions = detections_to_regions(
+        detections, video_w=1920, video_h=1080, min_confidence=0.8
+    )
+
+    assert len(regions) == 1
+    assert regions[0]["y"] > 0.7
+
+
 def test_ocr_regions_merge_across_adjacent_samples():
     regions = detections_to_regions(
         [_det(t=1.0), _det(t=2.0)],
@@ -76,4 +90,4 @@ def test_ocr_artifact_round_trip(tmp_path):
     save_regions(str(path), regions)
 
     assert load_regions(str(path)) == regions
-    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 1
+    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 2

@@ -260,6 +260,10 @@ class ProjectsPage(BasePage):
             self._apply_filters()
             TOASTS.info("Đã ẩn khỏi danh sách. Tệp trên máy vẫn còn nguyên.")
             return
+        output_dir = self._settings_provider().output_dir
+        if not projects_mod.is_within_directory(project.work_dir, output_dir):
+            TOASTS.error("Project náº±m ngoÃ i thÆ° má»¥c output, khÃ´ng xÃ³a.")
+            return
         try:
             shutil.rmtree(project.work_dir)
         except OSError as e:

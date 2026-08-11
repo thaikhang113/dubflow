@@ -420,6 +420,7 @@ class VoiceAndExportMixin:
         self._refresh_banner()
         REGISTRY.finish_job(True)
         self.export_panel.set_status(f"Đã xuất xong: {path}")
+        self.export_panel.set_recovery(False)
         TOASTS.success("Đã xuất video mới.", action_label="Mở video",
                        on_action=lambda: open_file(path))
         self._reload_player(path)
@@ -445,7 +446,9 @@ class VoiceAndExportMixin:
         self._sync_overlay(path)
 
     def _on_export_cancelled(self) -> None:
-        self.export_panel.set_status("Đã dừng theo yêu cầu.")
+        self.export_panel.set_status(
+            "Đã dừng theo yêu cầu. File export tạm có thể còn trong thư mục dự án.")
+        self._refresh_export_recovery()
         self.restore_video(getattr(self, "_export_resume_pos", None))
         self._export_resume_pos = None
 
@@ -453,7 +456,8 @@ class VoiceAndExportMixin:
         text, level = error_line(message)
         self.log.append_log(text, level)
         REGISTRY.finish_job(False, message[:120])
-        self.export_panel.set_status("")
+        self.export_panel.set_status(f"Xuất thất bại: {message}")
+        self._refresh_export_recovery()
         self.restore_video(getattr(self, "_export_resume_pos", None))
         self._export_resume_pos = None
         friendly = friendly_error(message)

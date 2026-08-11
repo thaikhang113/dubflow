@@ -35,6 +35,7 @@ from autodub.saas_client import (
     get_client,
 )
 from autodub.text.translate_common import HOLD, TranslateCheckpoint, TranslateError
+from autodub.text.translate_queue import TranslationQueue, TranslationTask
 from autodub.utils import setup_logging
 
 logger = setup_logging("autodub.translate_saas")
@@ -200,6 +201,16 @@ def _prev_context(all_segments: list[dict], batch_start: int,
         ctx.append(item)
     return ctx
 
+def _next_context(all_segments: list[dict], batch_end: int,
+                  target: TargetLang, n: int = 2) -> list[dict]:
+    ctx = []
+    for seg in all_segments[batch_end:batch_end + n]:
+        item = {"id": seg.get("id"), "text": str(seg.get("text", ""))[:300]}
+        if seg.get(target.text_field):
+            item[target.text_field] = str(seg[target.text_field])[:300]
+        ctx.append(item)
+    return ctx
+
 
 def translate_segments(
     segments: list[dict], target: TargetLang, source_lang: str, settings,
@@ -222,11 +233,19 @@ def translate_segments(
     context = _context_from_settings(settings)
     run_id = run_id_for(segments, target)
 
-    batch_size = max(1, min(100, int(getattr(settings, "translate_batch_size", 40))))
+    batch_size = max(1, min(40, int(getattr(settings, "translate_batch_size", 20))))
     batches = [segments[i:i + batch_size] for i in range(0, len(segments), batch_size)]
     checkpoint = TranslateCheckpoint(checkpoint_path, target.text_field)
     workers = min(max(1, int(getattr(settings, "parallel_workers", 4))),
                   len(batches), _WORKERS_CAP)
+    tasks = [
+        TranslationTask(
+            index=index,
+            segments=batch,
+            job_id=_batch_job_id(run_id, batch),
+        )
+        for index, batch in enumerate(batches)
+    ]
 
     logger.info(f"Đang dịch {len(segments)} câu qua VoxDub Cloud "
                 f"(mỗi lượt {batch_size} câu, {workers} lượt song song)")
@@ -236,11 +255,15 @@ def translate_segments(
     out_of_credit: list[InsufficientCreditError] = []
     stop = threading.Event()
 
-    def _run_batch(index: int, batch: list[dict]) -> list[dict]:
+    def _run_batch(
+        task: TranslationTask,
+        report_state,
+    ) -> list[dict]:
+        index, batch = task.index, task.segments
         cached = checkpoint.take(batch)
         if cached is not None:
             return cached
-        if stop.is_set():
+        if stop.is_set() and out_of_credit:
             raise out_of_credit[0]
 
         payload = [_payload_segment(s, cps) for s in batch]
@@ -261,6 +284,8 @@ def translate_segments(
                     context=context,
                     cps_budget=cps,
                     prev_context=_prev_context(segments, index * batch_size, target),
+                    next_context=_next_context(
+                        segments, (index + 1) * batch_size, target),
                     hold_id=HOLD.hold_id,
                 )
                 break
@@ -277,36 +302,47 @@ def translate_segments(
                 logger.warning(
                     f"  Lô {index + 1} lỗi tạm thời ({e}) — thử lại lần "
                     f"{attempt}/{_MAX_ATTEMPTS - 1} sau {delay:.0f}s")
+                report_state("retrying", f"attempt {attempt + 1}")
                 _sleep_cancellable(delay, reporter, stop)
-                if stop.is_set():
+                if stop.is_set() and out_of_credit:
                     raise out_of_credit[0]
 
         merged = _merge(batch, data.get("segments") or [], target.text_field)
         checkpoint.put(merged)
         return merged
 
-    from concurrent.futures import ThreadPoolExecutor
-
     done = 0
-    pool = ThreadPoolExecutor(max_workers=workers)
-    try:
-        futures = [pool.submit(_run_batch, i, b) for i, b in enumerate(batches)]
-        results: list[list[dict]] = []
-        for i, fut in enumerate(futures):
-            if reporter is not None:
-                reporter.check_cancelled()
-            results.append(fut.result())
-            done += len(batches[i])
-            logger.info(f"  Đã dịch {done}/{len(segments)} câu")
+    done_lock = threading.Lock()
+
+    def _queue_state(task: TranslationTask, status: str, detail: str):
+        nonlocal done
+        if status == "queued":
+            logger.info(f"  Lô {task.index + 1}/{len(tasks)} queued")
+        elif status == "done":
+            with done_lock:
+                done += len(task.segments)
+                current = done
+            logger.info(f"  Đã dịch {current}/{len(segments)} câu")
             if reporter is not None:
                 reporter.emit("translate", "progress",
-                              current=done, total=len(segments))
-    except BaseException:
-        # Hủy hoặc lỗi: không chờ các lô đang bay — trả điều khiển về ngay.
-        pool.shutdown(wait=False, cancel_futures=True)
-        raise
-    else:
-        pool.shutdown(wait=True)
+                              current=current, total=len(segments))
+        elif status in ("running", "retrying"):
+            logger.info(f"  Lô {task.index + 1}/{len(tasks)} {status}"
+                        f"{f' ({detail})' if detail else ''}")
+            if reporter is not None:
+                reporter.emit(
+                    "translate", "progress",
+                    detail=f"Lô {task.index + 1}/{len(tasks)} {status}",
+                    current=done, total=len(segments),
+                )
+
+    results = TranslationQueue(
+        tasks,
+        worker_count=workers,
+        handler=_run_batch,
+        on_state=_queue_state,
+        cancel_event=reporter.cancel_event if reporter is not None else None,
+    ).run()
 
     if checkpoint.write_errors:
         logger.error(

@@ -120,7 +120,7 @@ def test_translate_defaults(monkeypatch):
         monkeypatch.delenv(var, raising=False)
     s = Settings.load()
     assert s.translate_enabled is True
-    assert s.translate_batch_size == 10
+    assert s.translate_batch_size == 20
     assert s.translation_endpoint == ""
     assert s.translation_model == ""
 
@@ -128,12 +128,14 @@ def test_translate_defaults(monkeypatch):
 def test_ocr_defaults_and_paths(monkeypatch):
     monkeypatch.setattr("autodub.config.load_dotenv", lambda *a, **kw: None)
     for var in ("OCR_ENABLED", "OCR_MIN_CONFIDENCE",
-                "OCR_MAX_REGION_AREA", "OCR_SAMPLE_INTERVAL"):
+                "OCR_MAX_REGION_AREA", "OCR_SUBTITLE_Y_MIN",
+                "OCR_SAMPLE_INTERVAL"):
         monkeypatch.delenv(var, raising=False)
     s = Settings.load()
     assert s.ocr_enabled is True
     assert s.ocr_min_confidence == 0.8
     assert s.ocr_max_region_area == 0.25
+    assert s.ocr_subtitle_y_min == 0.65
     assert s.ocr_sample_interval == 1.0
     assert s.ocr_venv_python_path().replace("\\", "/").endswith(
         ".venv-ocr/Scripts/python.exe")
@@ -151,10 +153,10 @@ def test_clone_defaults(monkeypatch):
 
 
 def test_translate_batch_size_capped_for_api_stability(monkeypatch):
-    """Máy chủ AI chậm với lô lớn — mặc định 10 câu và không bao giờ vượt trần."""
+    """Batch mặc định vừa phải, cấu hình không vượt trần client."""
     monkeypatch.setattr("autodub.config.load_dotenv", lambda *a, **kw: None)
     monkeypatch.setenv("TRANSLATE_BATCH_SIZE", "500")
-    assert Settings.load().translate_batch_size == 10
+    assert Settings.load().translate_batch_size == 40
 
 
 def test_translate_enabled_off(monkeypatch):

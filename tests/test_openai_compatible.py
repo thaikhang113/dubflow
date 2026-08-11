@@ -11,12 +11,18 @@ from autodub.pipeline import _api_translation_batches
 
 def test_api_translation_batches_cap_large_configured_batch():
     batches = _api_translation_batches(list(range(25)), 40)
-    assert [len(batch) for batch in batches] == [10, 10, 5]
+    assert [len(batch) for batch in batches] == [25]
 
 
 def test_normalize_endpoint_removes_duplicate_api_suffix():
     assert normalize_endpoint("https://example.test/v1/") == "https://example.test/v1"
     assert normalize_endpoint("https://example.test") == "https://example.test/v1"
+
+def test_public_http_endpoint_is_allowed_for_legacy_servers():
+    assert normalize_endpoint("http://example.test") == "http://example.test/v1"
+
+def test_local_http_endpoint_is_allowed():
+    assert normalize_endpoint("http://127.0.0.1:11434") == "http://127.0.0.1:11434/v1"
 
 
 def test_list_models_sends_bearer_and_returns_ids():

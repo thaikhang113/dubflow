@@ -68,6 +68,12 @@ MODEL_SIZES: dict[str, str] = {
 # Bảng dịch lỗi kỹ thuật sang lời khuyên cho người dùng.
 # Mỗi mục gồm: chuỗi nhận dạng, tiêu đề ngắn, việc cần làm.
 FRIENDLY_ERRORS: list[tuple[str, str, str]] = [
+    ("Video cũ đang được ứng dụng khác mở", "Video cũ đang bị khóa",
+     "Đóng video trong VoxDub hoặc trình phát ngoài rồi bấm Xuất video lại. "
+     "File export tạm vẫn được giữ nếu đã mã hóa xong."),
+    ("timeout after", "FFmpeg quá thời gian",
+     "FFmpeg đã chạy quá lâu và bị dừng. Kiểm tra file nguồn, driver GPU, "
+     "hoặc thử lại bằng CPU nếu NVENC tiếp tục lỗi."),
     ("Thiếu cấu hình bắt buộc", "Thiếu cấu hình",
      "Mở trang Cài đặt và điền các mục còn trống, rồi chạy lại."),
     ("Không đủ Vox", "Hết Vox",
@@ -87,7 +93,7 @@ FRIENDLY_ERRORS: list[tuple[str, str, str]] = [
      "Đóng bớt ứng dụng đang dùng card đồ họa như trò chơi hoặc trình duyệt "
      "mở nhiều video, hoặc đổi Nhạc nền sang Giảm nhỏ tiếng gốc cho nhẹ hơn, "
      "rồi chạy tiếp thư mục dự án đang dở."),
-    ("ffmpeg", "Máy chưa có FFmpeg",
+    ("Máy chưa có FFmpeg", "Máy chưa có FFmpeg",
      "Cài FFmpeg rồi thêm vào đường dẫn hệ thống, sau đó mở lại ứng dụng."),
     ("VieNeu worker", "Bộ giọng đọc gặp sự cố",
      "Chọn chạy tiếp thư mục dự án đang dở để tiếp tục từ chỗ dừng. Nếu vẫn "

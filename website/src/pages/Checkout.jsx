@@ -6,14 +6,14 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { api } from '../api/client'
 import { formatCountdown, formatVnd, formatVox } from '../api/format'
 import { CopyButton, ErrorBox, Loading, Spinner } from '../components/ui'
-import { getOrderToken, markOrderPaid } from '../store/orders'
+import { markOrderPaid } from '../store/orders'
 
 // Người dùng đang ngồi chờ trước màn hình — 4 giây đủ nhanh để thấy "tức
 // thì" mà không dội request lên máy chủ. Backend cho 120 req/phút/IP.
 const POLL_MS = 4000
 
 /** Màn hình thành công: mã kích hoạt + hướng dẫn dùng. */
-function PaidView({ order, token }) {
+function PaidView({ order }) {
   const [emailInput, setEmailInput] = useState('')
   const [sending, setSending] = useState(false)
   const [sent, setSent] = useState('')
@@ -34,7 +34,7 @@ function PaidView({ order, token }) {
     setSending(true)
     setSendError(null)
     try {
-      const result = await api.resendKey(order.orderCode, token, emailInput.trim())
+      const result = await api.resendKey(order.orderCode, emailInput.trim())
       setSent(result.email)
     } catch (err) {
       setSendError(err)
@@ -297,8 +297,6 @@ export default function Checkout() {
   const [searchParams] = useSearchParams()
   // PayOS đưa người dùng về đây với ?huy=1 khi họ bấm hủy trên trang thanh toán.
   const cancelled = searchParams.get('huy') === '1'
-  const token = getOrderToken(orderCode)
-
   const [order, setOrder] = useState(null)
   const [error, setError] = useState(null)
   const [secondsLeft, setSecondsLeft] = useState(0)
@@ -309,7 +307,7 @@ export default function Checkout() {
     const controller = new AbortController()
     abortRef.current = controller
     try {
-      const result = await api.getOrder(orderCode, token, controller.signal)
+      const result = await api.getOrder(orderCode, controller.signal)
       setOrder(result)
       setError(null)
       if (result.status === 'paid' && result.keyCode) {
@@ -320,7 +318,7 @@ export default function Checkout() {
       if (err.name !== 'AbortError') setError(err)
       return null
     }
-  }, [orderCode, token])
+  }, [orderCode])
 
   useEffect(() => {
     load()
@@ -376,7 +374,7 @@ export default function Checkout() {
         </div>
       )
     }
-    return <PaidView order={order} token={token} />
+  return <PaidView order={order} />
   }
   if (order.status === 'expired' || order.status === 'cancelled') {
     return <ExpiredView order={order} />

@@ -10,6 +10,10 @@ const billing = require('../services/billing.service')
 const email = require('../services/email.service')
 const payos = require('../services/payos.service')
 
+function orderCookie(orderCode) {
+  return `voxdub_order_${String(orderCode).toUpperCase()}`
+}
+
 module.exports = async function billingRoutes(fastify) {
   // --- Bảng giá (công khai) ---------------------------------------------
   fastify.get('/packages', async () => billing.getPackages())
@@ -35,9 +39,15 @@ module.exports = async function billingRoutes(fastify) {
       // `accessToken` chỉ trả về ĐÚNG MỘT LẦN, ngay lúc tạo đơn. Trình
       // duyệt cất nó lại để theo dõi đơn và nhận key; ai không tạo đơn thì
       // không có token, và mã đơn ngắn không thay thế được nó.
+      reply.setCookie(orderCookie(order.orderCode), order.accessToken, {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        path: `/v1/billing/orders/${encodeURIComponent(order.orderCode)}`,
+        maxAge: Math.max(60, Math.ceil((order.expiresAt.getTime() - Date.now()) / 1000)),
+      })
       return {
         ...billing.orderView(order, { authorized: true }),
-        accessToken: order.accessToken,
         payment,
       }
     } catch (err) {
@@ -57,7 +67,6 @@ module.exports = async function billingRoutes(fastify) {
     schema: {
       querystring: {
         type: 'object',
-        properties: { token: { type: 'string', maxLength: 100 } },
       },
     },
   }, async (request, reply) => {
@@ -67,7 +76,8 @@ module.exports = async function billingRoutes(fastify) {
     }
     return billing.orderView(order, {
       includePayment: true,
-      authorized: billing.tokenMatches(order, request.query.token),
+      authorized: billing.tokenMatches(
+        order, request.cookies[orderCookie(order.orderCode)]),
     })
   })
 
@@ -79,16 +89,15 @@ module.exports = async function billingRoutes(fastify) {
     schema: {
       body: {
         type: 'object',
-        required: ['token'],
         properties: {
-          token: { type: 'string', maxLength: 100 },
           email: { type: 'string', maxLength: 200 },
         },
       },
     },
   }, async (request, reply) => {
     const order = await billing.getOrder(request.params.orderCode)
-    if (!order || !billing.tokenMatches(order, request.body.token)) {
+    if (!order || !billing.tokenMatches(
+      order, request.cookies[orderCookie(order.orderCode)])) {
       return reply.code(404).send({ code: 'ORDER_NOT_FOUND', message: 'Không tìm thấy đơn hàng.' })
     }
     if (order.status !== 'paid' || !order.keyCode) {

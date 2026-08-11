@@ -251,6 +251,7 @@ class EditorPage(VoiceAndExportMixin, BasePage):
         self.export_panel.export_srt_requested.connect(self._export_srt_file)
         self.export_panel.export_ass_requested.connect(self._export_ass_file)
         self.export_panel.export_audio_mp3_requested.connect(self._export_audio_mp3)
+        self.export_panel.recovery_requested.connect(self._recover_export)
         self.export_panel.changed.connect(self._on_export_options_changed)
         self._preview.status_changed.connect(self.voice_panel.status.setText)
         # Khoá nút khi đang tổng hợp / phát, mở lại khi xong — giống hành vi
@@ -350,6 +351,7 @@ class EditorPage(VoiceAndExportMixin, BasePage):
         self.banner.set_count(0, 0)
         self._refresh_qc()
         self.export_panel.refresh_history(self._work_dir)
+        self._refresh_export_recovery()
         self.save_indicator.set_state("idle")
         self._load_video()
         self._load_waveform()
@@ -403,6 +405,45 @@ class EditorPage(VoiceAndExportMixin, BasePage):
             self._start_thumb_worker(target, dur)
         else:
             self.timeline.set_duration(self._project.duration_s)
+
+    def _refresh_export_recovery(self) -> None:
+        from autodub.media.video import validate_export_part
+
+        part = os.path.join(self._work_dir, "dubbed_video.mp4.part")
+        if not os.path.isfile(part):
+            self.export_panel.set_recovery(False)
+            return
+        try:
+            info = validate_export_part(
+                part, expected_duration=self._project.duration_s or None)
+        except (OSError, RuntimeError, ValueError):
+            self.export_panel.set_recovery(False)
+            return
+        self.export_panel.set_recovery(
+            True, f"File tạm hợp lệ: {part} ({info['duration']:.1f}s)")
+
+    def _recover_export(self) -> None:
+        from autodub.media.video import replace_output_with_retry, validate_export_part
+        from autodub_gui.projects import load_project
+
+        part = os.path.join(self._work_dir, "dubbed_video.mp4.part")
+        output = os.path.join(self._work_dir, "dubbed_video.mp4")
+        if os.path.isfile(output):
+            self.export_panel.set_status(
+                "Bản export cũ vẫn được giữ nguyên; không ghi đè tự động. "
+                f"File tạm: {part}")
+            return
+        try:
+            validate_export_part(part, expected_duration=self._project.duration_s or None)
+            self.player.release()
+            replace_output_with_retry(part, output)
+        except (OSError, RuntimeError) as exc:
+            self.export_panel.set_status(str(exc))
+            return
+        self._project = load_project(self._work_dir)
+        self.export_panel.set_recovery(False)
+        self.export_panel.set_status(f"Đã khôi phục bản export: {output}")
+        self._reload_player(output)
 
     def _start_thumb_worker(self, video_path: str, duration_s: float) -> None:
         """Khởi động worker grab thumbnail nền; hủy lần trước nếu còn chạy."""
@@ -491,6 +532,7 @@ class EditorPage(VoiceAndExportMixin, BasePage):
         self.background_panel.set_separated(self._has_separated_audio())
         self.export_panel.subtitle.set_key(
             opts.get("subtitle_mode", settings.subtitle_mode))
+        self.export_panel.mirror.setChecked(bool(opts.get("mirror", False)))
         self.voice_panel.picker.reload(settings)
         # Giọng của dự án đã được pipeline ghim lại lúc chạy (tên thật, kể cả
         # khi người dùng để mặc định). Chưa có tên ghim trong render_opts thì

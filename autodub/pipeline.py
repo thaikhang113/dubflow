@@ -44,7 +44,7 @@ class _PostTarget:
 _POST_TARGET = _PostTarget()
 
 
-_MAX_API_TRANSLATION_BATCH = 10
+_MAX_API_TRANSLATION_BATCH = 40
 
 def _api_translation_batches(segments: list, requested_size: int) -> list[list]:
     """Split API translation work into bounded requests."""
@@ -104,6 +104,9 @@ class DubRequest:
     # cover hardcoded source captions. Any region forces a video re-encode.
     blur_regions: list[dict] = field(default_factory=list)
     subtitle_style: dict | None = None  # libass styling; None → Settings default
+    mirror: bool = False
+    # None keeps legacy behavior: use global Settings value.
+    ocr_enabled: bool | None = None
 
     # The dub target is always Vietnamese now.
     target: str = "vi"
@@ -113,6 +116,13 @@ class DubRequest:
     #: dưới dạng mã hóa cho tới khi người dùng bấm Xuất video (commit hold).
     #: Batch/legacy giữ False: trừ Vox theo từng lượt như cũ, không mã hóa.
     defer_export: bool = False
+
+
+def ocr_enabled_for_request(settings: Settings, request: DubRequest) -> bool:
+    """Resolve per-video OCR toggle without breaking CLI/batch callers."""
+    if request.ocr_enabled is None:
+        return settings.ocr_enabled
+    return bool(request.ocr_enabled)
 
 
 @dataclass
@@ -287,7 +297,7 @@ class DubPipeline:
         # optional: manual regions remain fully usable when PaddleOCR is absent.
         blur_regions = list(req.blur_regions or [])
         ocr_path = data_path(work_dir, "ocr_regions.json", create_dir=True)
-        if settings.ocr_enabled:
+        if ocr_enabled_for_request(settings, req):
             from autodub.media.ocr_regions import load_regions, save_regions
             cached_ocr = load_regions(ocr_path)
             if cached_ocr:
@@ -713,6 +723,8 @@ class DubPipeline:
             "skip_video": req.skip_video,
             "subtitle_mode": req.subtitle_mode,
             "blur_regions": blur_regions,
+            "mirror": req.mirror,
+            "ocr_enabled": req.ocr_enabled,
             "voice": effective_voice,
             "elapsed_before": round(time.time() - start_time, 1),
         }
@@ -754,6 +766,7 @@ class DubPipeline:
         render_opts.setdefault("subtitle_mode", state.get("subtitle_mode"))
         render_opts.setdefault("blur_regions", state.get("blur_regions"))
         render_opts.setdefault("subtitle_style", state.get("subtitle_style"))
+        render_opts.setdefault("mirror", state.get("mirror", False))
         save_render_opts(work_dir, render_opts)
 
         # Audio ghép + trạng thái xuất: mã hóa rồi ghi vào marker.
@@ -876,7 +889,9 @@ class DubPipeline:
         req = DubRequest(url=state.get("url"), voice=state.get("voice"),
                          skip_video=bool(state.get("skip_video")),
                          subtitle_mode=state.get("subtitle_mode", "none"),
-                         blur_regions=state.get("blur_regions") or [])
+                         blur_regions=state.get("blur_regions") or [],
+                         mirror=bool(state.get("mirror", False)),
+                         ocr_enabled=state.get("ocr_enabled"))
 
         # --- Step 7: Merge video (optional) ---
         # Ghim tên giọng THẬT đã dùng (kể cả khi người dùng để mặc định),
@@ -902,6 +917,8 @@ class DubPipeline:
                 "subtitle_mode": req.subtitle_mode,
                 "blur_regions": req.blur_regions,
                 "subtitle_style": subtitle_style,
+                "mirror": req.mirror,
+                "ocr_enabled": req.ocr_enabled,
             })
         else:
             # Chỉ xuất âm thanh: vẫn ghim kiểu phụ đề của LẦN CHẠY NÀY để
@@ -929,6 +946,7 @@ class DubPipeline:
                 subtitle_lang=target.iso639_2,
                 speed=deferred_speed[0] if deferred_speed else None,
                 fps=deferred_speed[1] if deferred_speed else None,
+                mirror=req.mirror,
             )
             rep.emit("merge_video", "done", detail=dubbed_video_path)
         else:
@@ -1291,7 +1309,6 @@ class DubPipeline:
         self, segments: list[dict], target: TargetLang,
         source_lang: str, work_dir: str | None,
     ) -> list[dict]:
-        from autodub.providers.openai_compatible import OpenAICompatibleProvider
         from autodub.text.translate_common import (
             TranslateCheckpoint, merge_translations,
         )
@@ -1299,46 +1316,73 @@ class DubPipeline:
             _context_from_settings, _payload_segment, _prev_context,
         )
         from autodub.text.translate_hint import effective_cps
+        from autodub.text.translate_queue import TranslationQueue, TranslationTask
 
         settings, rep = self.settings, self._reporter
-        provider = OpenAICompatibleProvider(
-            settings.translation_endpoint,
-            settings.translation_api_key,
-            settings.translation_model,
-        )
         checkpoint_path = (
             data_path(work_dir, "translate_checkpoint.json")
             if work_dir else None
         )
         checkpoint = TranslateCheckpoint(checkpoint_path, target.text_field)
-        batch_size = max(1, min(10, int(settings.translate_batch_size)))
+        batch_size = max(1, min(40, int(settings.translate_batch_size)))
         batches = _api_translation_batches(segments, batch_size)
+        tasks = [
+            TranslationTask(index=index, segments=batch, job_id=f"legacy-{index}")
+            for index, batch in enumerate(batches)
+        ]
         context = _context_from_settings(settings)
         cps = effective_cps(settings)
-        output: list[dict] = []
         rep.emit(
             "translate", "start",
             detail=f"API endpoint · model {settings.translation_model}",
         )
-        for index, batch in enumerate(batches):
+
+        def handle(task: TranslationTask, report_state):
+            batch = task.segments
             cached = checkpoint.take(batch)
-            if cached is None:
-                logger.info(
-                    f"Đang dịch lô {index + 1}/{len(batches)} "
-                    f"({len(batch)} câu)..."
-                )
-                payload = [_payload_segment(item, cps) for item in batch]
-                returned = provider.translate(
-                    payload, context,
-                    _prev_context(segments, index * batch_size, target),
-                )
-                cached = merge_translations(batch, returned, target.text_field)
-                checkpoint.put(cached)
-            output.extend(cached)
-            rep.emit(
-                "translate", "progress",
-                current=len(output), total=len(segments),
+            if cached is not None:
+                return cached
+            report_state("running", f"{len(batch)} câu")
+            payload = [_payload_segment(item, cps) for item in batch]
+            from autodub.providers.openai_compatible import (
+                OpenAICompatibleProvider,
             )
+            batch_provider = OpenAICompatibleProvider(
+                settings.translation_endpoint,
+                settings.translation_api_key,
+                settings.translation_model,
+            )
+            returned = batch_provider.translate(
+                payload, context,
+                _prev_context(segments, task.index * batch_size, target),
+            )
+            cached = merge_translations(batch, returned, target.text_field)
+            checkpoint.put(cached)
+            return cached
+
+        done = 0
+        done_lock = threading.Lock()
+
+        def on_state(task: TranslationTask, status: str, detail: str):
+            nonlocal done
+            if status == "done":
+                with done_lock:
+                    done += len(task.segments)
+                    current = done
+                rep.emit("translate", "progress",
+                         current=current, total=len(segments))
+
+        output = [
+            item
+            for batch in TranslationQueue(
+                tasks,
+                worker_count=min(settings.parallel_workers, len(tasks)),
+                handler=handle,
+                on_state=on_state,
+                cancel_event=rep.cancel_event,
+            ).run()
+            for item in batch
+        ]
         checkpoint.discard()
         logger.info(
             f"Đã dịch {len(output)} câu bằng {settings.translation_model}"

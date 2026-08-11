@@ -237,6 +237,12 @@ FIELDS: tuple[Field, ...] = (
           TAB_PERF, "Che phụ đề cứng", "0.25",
           "Bỏ qua vùng nhận diện chiếm quá nhiều khung hình để tránh làm mờ nhầm.",
           suffix=" phần khung", minimum=0.02, maximum=0.8, step=0.05, decimals=2),
+    Field("OCR_SUBTITLE_Y_MIN", SLIDER, "Vị trí bắt đầu vùng phụ đề OCR",
+          TAB_PERF, "Che phụ đề cứng", "0.65",
+          "Chỉ nhận chữ Trung nằm từ vị trí này xuống dưới khung hình. "
+          "0.65 phù hợp phụ đề một hoặc hai dòng ở cuối video.",
+          suffix=" chiều cao khung", minimum=0.0, maximum=0.95, step=0.05,
+          decimals=2),
     Field("OCR_SAMPLE_INTERVAL", SLIDER, "Khoảng quét OCR",
           TAB_PERF, "Che phụ đề cứng", "1.00",
           "Quét mỗi bao nhiêu giây. Số nhỏ bắt chữ ngắn tốt hơn nhưng chạy lâu hơn.",

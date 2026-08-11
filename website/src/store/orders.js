@@ -31,11 +31,10 @@ function writeAll(orders) {
   }
 }
 
-export function rememberOrder({ orderCode, accessToken, amountVnd, vox, email }) {
+export function rememberOrder({ orderCode, amountVnd, vox, email }) {
   const orders = readAll().filter((o) => o.orderCode !== orderCode)
   orders.unshift({
     orderCode,
-    accessToken,
     amountVnd,
     vox,
     email: email || '',
@@ -46,11 +45,6 @@ export function rememberOrder({ orderCode, accessToken, amountVnd, vox, email })
 
 export function listOrders() {
   return readAll()
-}
-
-export function getOrderToken(orderCode) {
-  const found = readAll().find((o) => o.orderCode === orderCode)
-  return found ? found.accessToken : ''
 }
 
 /** Ghi lại mã đã nhận để trang "Đơn của tôi" hiện luôn, khỏi gọi lại API. */

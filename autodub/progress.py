@@ -86,3 +86,7 @@ class ProgressReporter:
     def check_cancelled(self) -> None:
         if self._cancel_event is not None and self._cancel_event.is_set():
             raise PipelineCancelled("Pipeline cancelled by user")
+
+    @property
+    def cancel_event(self) -> threading.Event | None:
+        return self._cancel_event

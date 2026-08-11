@@ -60,9 +60,9 @@ _SEG_TIMEOUT_S = 120
 # core contention eat the gains anyway.
 _FFMPEG_WORKERS = max(2, min(6, (os.cpu_count() or 4) - 1))
 
-# Dub voices render at 24 kHz but the 16 kHz ASR-rate background used to
-# drag the whole mix down to 16 kHz. Mix at least at this rate instead.
-_MIN_MERGE_RATE = 44100
+# Dub voices may render at 24 kHz; final mix stays at 48 kHz so the MP4
+# never inherits a low-rate intermediate voice file.
+_MIN_MERGE_RATE = 48000
 
 # Streaming merge block length — one block is the peak RAM of the mixer.
 _MERGE_BLOCK_S = 60

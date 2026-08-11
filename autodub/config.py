@@ -147,6 +147,7 @@ class Settings:
     ocr_device: str = "auto"  # "auto" | "gpu" | "cpu"
     ocr_min_confidence: float = 0.80
     ocr_max_region_area: float = 0.25
+    ocr_subtitle_y_min: float = 0.65
     ocr_sample_interval: float = 1.0
 
     # --- Giọng đọc tiếng Việt (VieNeu — bộ giọng DUY NHẤT) -----------------
@@ -251,7 +252,7 @@ class Settings:
     # phía máy khách vì chúng quyết định cách CHIA VIỆC, không phải cách dịch.
     translate_enabled: bool = True
     # Số câu mỗi lượt gửi lên máy chủ (trần cứng phía máy chủ là 120).
-    translate_batch_size: int = 10
+    translate_batch_size: int = 20
     translation_endpoint: str = ""
     translation_api_key: str = ""
     translation_model: str = ""
@@ -366,6 +367,8 @@ class Settings:
                 env_float("OCR_MIN_CONFIDENCE", "0.80"))),
             ocr_max_region_area=min(0.8, max(0.02,
                 env_float("OCR_MAX_REGION_AREA", "0.25"))),
+            ocr_subtitle_y_min=min(0.95, max(0.0,
+                env_float("OCR_SUBTITLE_Y_MIN", "0.65"))),
             ocr_sample_interval=min(10.0, max(0.5,
                 env_float("OCR_SAMPLE_INTERVAL", "1.0"))),
             vieneu_venv_python=env("VIENEU_VENV_PYTHON"),
@@ -429,8 +432,8 @@ class Settings:
                               not in ("0", "false", "no"),
             translate_enabled=env("TRANSLATE_ENABLED", "true").strip().lower()
                               not in ("0", "false", "no"),
-            translate_batch_size=max(1, min(10,
-                env_int("TRANSLATE_BATCH_SIZE", "10"))),
+            translate_batch_size=max(1, min(40,
+                env_int("TRANSLATE_BATCH_SIZE", "20"))),
             translation_endpoint=env("TRANSLATION_ENDPOINT").strip(),
             translation_api_key=env("TRANSLATION_API_KEY").strip(),
             translation_model=env("TRANSLATION_MODEL").strip(),

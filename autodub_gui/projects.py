@@ -51,6 +51,13 @@ _THUMB_WIDTH = 480
 _THUMB_SEEK_S = 1
 _FFMPEG_TIMEOUT_S = 20
 
+def is_within_directory(path: str, directory: str) -> bool:
+    try:
+        Path(path).resolve().relative_to(Path(directory).resolve())
+        return True
+    except (OSError, ValueError):
+        return False
+
 
 @dataclass
 class Project:

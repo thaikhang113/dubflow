@@ -161,7 +161,9 @@ If a segment fails any check, rewrite it into natural spoken Vietnamese before r
 }
 
 /** User message của một lô dịch (kèm ngữ cảnh chỉ-đọc là các câu liền trước). */
-function buildTranslateUserPrompt({ segments, targetField = 'text_vi', prevContext = [] }) {
+function buildTranslateUserPrompt({
+  segments, targetField = 'text_vi', prevContext = [], nextContext = [],
+}) {
   let ctxPart = ''
   if (prevContext && prevContext.length) {
     ctxPart = 'The "context" array holds the lines IMMEDIATELY BEFORE this batch — '
@@ -169,6 +171,12 @@ function buildTranslateUserPrompt({ segments, targetField = 'text_vi', prevConte
       + `(a "${targetField}" field there shows wording already used). Do NOT translate `
       + 'them and do NOT include them in the output.\n\n"context": '
       + JSON.stringify(prevContext) + '\n\n'
+  }
+  if (nextContext && nextContext.length) {
+    ctxPart += 'The "nextContext" array holds the lines IMMEDIATELY AFTER this batch. '
+      + 'Use them only to resolve meaning, pronouns, and terminology. Do NOT translate '
+      + 'them and do NOT include them in the output.\n\n"nextContext": '
+      + JSON.stringify(nextContext) + '\n\n'
   }
   return 'Translate these segments. Return ONLY JSON of the form '
     + '{"segments": [...]} with the same length, order and ids, each segment as '

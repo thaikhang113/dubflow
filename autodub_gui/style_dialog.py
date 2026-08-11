@@ -23,7 +23,7 @@ import subprocess
 import tempfile
 
 from PySide6.QtCore import QPoint, QRect, QRectF, Qt, QThread, Signal
-from PySide6.QtGui import (QColor, QFont, QPainter,
+from PySide6.QtGui import (QColor, QFont, QGuiApplication, QPainter,
                            QPainterPath, QPen, QPixmap)
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QFormLayout, QHBoxLayout,
@@ -361,9 +361,13 @@ class StyleDialog(QDialog):
                  preview_text: str = ""):
         super().__init__(parent)
         self.setWindowTitle("Phụ đề & che chữ")
-        # Đủ chỗ cho panel phải hiện trọn cả 3 nhóm không phải cuộn.
-        self.resize(1150, 700)
-        self.setMinimumSize(1050, 620)
+        # Giữ dialog trong vùng màn hình khả dụng, tránh Qt cảnh báo geometry.
+        screen = QGuiApplication.primaryScreen()
+        available = screen.availableGeometry() if screen else QRect(0, 0, 1150, 700)
+        width = min(1150, max(720, available.width() - 80))
+        height = min(700, max(520, available.height() - 100))
+        self.resize(width, height)
+        self.setMinimumSize(min(1050, width), min(620, height))
         self._style = dict(style)
         self._video_path = video_path
         self._regions_pending = regions

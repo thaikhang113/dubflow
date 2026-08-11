@@ -133,6 +133,17 @@ def test_unlock_skips_missing_files(tmp_path):
     assert securestore.unlock_all(work, KEY) == []
     assert not securestore.is_locked(work)
 
+def test_unlock_rejects_marker_path_traversal(tmp_path):
+    work = str(tmp_path / "work")
+    os.makedirs(os.path.join(work, "data"))
+    outside = tmp_path / "outside.txt"
+    outside.write_bytes(b"keep")
+    securestore.write_lock(work, "hold-abc", [str(outside)])
+
+    assert securestore.unlock_all(work, KEY) == []
+    assert outside.read_bytes() == b"keep"
+    assert not securestore.is_locked(work)
+
 
 def test_is_encrypted_on_missing_file(tmp_path):
     assert not securestore.is_encrypted(str(tmp_path / "khong_ton_tai"))

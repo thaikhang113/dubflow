@@ -30,7 +30,10 @@ def captured(monkeypatch):
 
     class Ok:
         returncode = 0
-        stdout = ""
+        stdout = (
+            '{"format":{"duration":"2.0"},'
+            '"streams":[{"codec_type":"video"},{"codec_type":"audio"}]}'
+        )
         stderr = ""
 
     def fake_run(cmd, **kw):
@@ -38,6 +41,8 @@ def captured(monkeypatch):
         # lệnh ffmpeg vì các assert đều nhắm vào nó.
         if cmd[0] == "ffmpeg":
             calls.append(cmd)
+            from pathlib import Path
+            Path(cmd[-1]).write_bytes(b"ok")
         return Ok()
 
     monkeypatch.setattr(video_mod.subprocess, "run", fake_run)
@@ -93,6 +98,7 @@ def test_burn_reencodes_and_maps_vout(paths, captured):
     assert get_opt(cmd, "-map") == "[vout]"
     assert "subtitles=" in get_opt(cmd, "-filter_complex")
     assert get_opt(cmd, "-pix_fmt") == "yuv420p"
+    assert get_opt(cmd, "-ar") == "48000"
 
 
 # --------------------------- blur --------------------------- #
@@ -133,6 +139,53 @@ def test_reencode_uses_nvenc_when_available(paths, captured, monkeypatch):
     cmd = captured[0]
     assert get_opt(cmd, "-c:v") == "h264_nvenc"
     assert get_opt(cmd, "-pix_fmt") == "yuv420p"
+
+def test_mirror_adds_hflip_and_keeps_subtitles_after_flip(paths, captured):
+    video_mod.merge_video(
+        paths["video"], paths["audio"], paths["out"],
+        srt_path=paths["srt"], subtitle_mode="burn", mirror=True)
+    graph = get_opt(captured[0], "-filter_complex")
+    assert graph.startswith("[0:v]hflip[vflip];[vflip]")
+    assert graph.index("hflip") < graph.index("subtitles")
+
+def test_hardware_failure_retries_with_cpu(paths, monkeypatch):
+    calls = []
+
+    class Bad:
+        returncode = 1
+        stdout = ""
+        stderr = "hardware encoder failed"
+
+    class Good:
+        returncode = 0
+        stdout = (
+            '{"format":{"duration":"2.0"},'
+            '"streams":[{"codec_type":"video"},{"codec_type":"audio"}]}'
+        )
+        stderr = ""
+
+    def fake_run(cmd, **kw):
+        if cmd[0] == "ffmpeg":
+            calls.append(cmd)
+            from pathlib import Path
+            Path(cmd[-1]).write_bytes(b"ok")
+            return Bad() if len(calls) == 1 else Good()
+        return Good()
+
+    monkeypatch.setattr(video_mod.subprocess, "run", fake_run)
+    monkeypatch.setattr(video_mod, "probe_dimensions", lambda p: (1920, 1080))
+    monkeypatch.setattr(video_mod, "_resolve_encoder", lambda: (
+        "AMD AMF",
+        ("-c:v", "h264_amf", "-quality", "speed", "-rc", "cqp",
+         "-qp_i", "23", "-qp_p", "23")))
+
+    video_mod.merge_video(
+        paths["video"], paths["audio"], paths["out"],
+        srt_path=paths["srt"], subtitle_mode="burn")
+
+    assert len(calls) == 2
+    assert get_opt(calls[0], "-c:v") == "h264_amf"
+    assert get_opt(calls[1], "-c:v") == "libx264"
 
 
 # --------------------------- validation --------------------------- #

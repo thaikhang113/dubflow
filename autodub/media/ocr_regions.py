@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 
 _CJK_RE = re.compile(r"[\u3400-\u9fff]")
+_CACHE_VERSION = 2
 
 
 def _box_bounds(box) -> tuple[float, float, float, float] | None:
@@ -37,6 +38,7 @@ def detections_to_regions(
     *,
     min_confidence: float = 0.8,
     max_area: float = 0.25,
+    subtitle_y_min: float = 0.65,
     min_width_px: int = 24,
     min_height_px: int = 8,
     sample_interval: float = 1.0,
@@ -53,6 +55,8 @@ def detections_to_regions(
         if confidence < min_confidence or not _has_cjk(text) or bounds is None:
             continue
         x, y, w, h = bounds
+        if (y + h) / video_h < max(0.0, min(1.0, subtitle_y_min)):
+            continue
         if w < min_width_px or h < min_height_px:
             continue
         if (w * h) / frame_area > max_area:
@@ -117,7 +121,7 @@ def merge_regions(regions: list[dict], *, max_gap: float = 1.5) -> list[dict]:
 def save_regions(path: str, regions: list[dict]) -> None:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"version": 1, "regions": regions}
+    payload = {"version": _CACHE_VERSION, "regions": regions}
     temp = target.with_suffix(target.suffix + ".tmp")
     temp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     temp.replace(target)
@@ -128,5 +132,7 @@ def load_regions(path: str) -> list[dict]:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return []
-    regions = payload.get("regions") if isinstance(payload, dict) else None
+    if not isinstance(payload, dict) or payload.get("version") != _CACHE_VERSION:
+        return []
+    regions = payload.get("regions")
     return regions if isinstance(regions, list) else []

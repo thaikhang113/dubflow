@@ -61,6 +61,7 @@ def detect_regions(
         detections, video_w, video_h,
         min_confidence=settings.ocr_min_confidence,
         max_area=settings.ocr_max_region_area,
+        subtitle_y_min=getattr(settings, "ocr_subtitle_y_min", 0.65),
         sample_interval=settings.ocr_sample_interval,
     )
     return merge_regions(regions, max_gap=settings.ocr_sample_interval * 1.25)

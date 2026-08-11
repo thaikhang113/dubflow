@@ -24,7 +24,7 @@ export default function MyOrders() {
     const pending = orders.filter((o) => !o.keyCode)
     Promise.all(pending.map(async (o) => {
       try {
-        const fresh = await api.getOrder(o.orderCode, o.accessToken)
+        const fresh = await api.getOrder(o.orderCode)
         if (fresh.status === 'paid' && fresh.keyCode) {
           markOrderPaid(o.orderCode, fresh.keyCode)
         }

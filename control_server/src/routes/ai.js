@@ -190,6 +190,11 @@ module.exports = async function aiRoutes(fastify) {
             maxItems: 5,
             items: { type: 'object', additionalProperties: true },
           },
+          nextContext: {
+            type: 'array',
+            maxItems: 3,
+            items: { type: 'object', additionalProperties: true },
+          },
           context: {
             type: 'object',
             properties: {
@@ -206,7 +211,10 @@ module.exports = async function aiRoutes(fastify) {
     },
   }, async (request, reply) => {
     const { device } = request
-    const { jobId, holdId, segments, sourceLang = 'zh-CN', cpsBudget = 12.5 } = request.body
+    const {
+      jobId, holdId, segments, sourceLang = 'zh-CN', cpsBudget = 12.5,
+      prevContext = [], nextContext = [],
+    } = request.body
 
     const cached = await replay(jobId, device.fingerprint)
     if (cached) return cached
@@ -271,7 +279,8 @@ module.exports = async function aiRoutes(fastify) {
         targetField: TARGET_FIELD,
         context,
         cpsBudget,
-        prevContext: request.body.prevContext || [],
+        prevContext,
+        nextContext,
         maxRetries: cfg['ai.max.retries'],
       })
       // Lưới cuối: câu nào còn chữ Hán thì dịch lại ngay, app không phải

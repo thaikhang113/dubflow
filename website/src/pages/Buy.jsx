@@ -110,7 +110,6 @@ export default function Buy() {
       // kích hoạt sau này, và máy chủ không bao giờ trả lại nó lần thứ hai.
       rememberOrder({
         orderCode: order.orderCode,
-        accessToken: order.accessToken,
         amountVnd: order.amountVnd,
         vox: order.vox,
         email: email.trim(),

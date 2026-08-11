@@ -903,6 +903,7 @@ class ExportPanel(CollapsibleSection):
     export_srt_requested = Signal()
     export_ass_requested = Signal()
     export_audio_mp3_requested = Signal()
+    recovery_requested = Signal()
     changed = Signal()
 
     def __init__(self, parent: QWidget | None = None):
@@ -913,6 +914,13 @@ class ExportPanel(CollapsibleSection):
                                      "Cách hiện phụ đề trên video kết quả")
         self.subtitle.changed.connect(self.changed.emit)
         self.add_widget(self.subtitle)
+
+        self.mirror = QCheckBox("Lật ngang video")
+        self.mirror.setToolTip(
+            "Lật hình ảnh theo chiều ngang trước khi che chữ và ghi phụ đề. "
+            "Mặc định tắt.")
+        self.mirror.stateChanged.connect(lambda _state: self.changed.emit())
+        self.add_widget(self.mirror)
 
         self.preset = LabeledCombo(
             "Bộ kiểu chữ", PRESET_CHOICES,
@@ -933,6 +941,13 @@ class ExportPanel(CollapsibleSection):
             f"color: {tokens.TEXT_MUTED}; font-size: {tokens.FS_META}px; "
             f"background: transparent;")
         self.add_widget(self.source_info)
+
+        self.recovery = GhostButton("Khôi phục bản export")
+        self.recovery.setToolTip(
+            "Dùng file export tạm hợp lệ còn sót lại sau lần xuất trước.")
+        self.recovery.clicked.connect(self.recovery_requested.emit)
+        self.recovery.setVisible(False)
+        self.add_widget(self.recovery)
 
         self.btn_preview = GhostButton("Xem thử câu đang chọn")
         self.btn_preview.setToolTip(
@@ -1079,9 +1094,15 @@ class ExportPanel(CollapsibleSection):
     def set_status(self, text: str) -> None:
         self.status.setText(text)
 
+    def set_recovery(self, visible: bool, detail: str = "") -> None:
+        self.recovery.setVisible(visible)
+        self.recovery.setToolTip(detail or
+                                 "Dùng file export tạm hợp lệ còn sót lại sau lần xuất trước.")
+
     def values(self) -> dict:
         return {"subtitle_mode": self.subtitle.current_key(),
-                "subtitle_preset": self.preset.current_key()}
+                "subtitle_preset": self.preset.current_key(),
+                "mirror": self.mirror.isChecked()}
 
 
 class DirtyBanner(QWidget):

@@ -19,9 +19,9 @@ export default defineConfig({
     // riêng để khách vào trang mua hàng không phải tải phần đó.
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom', 'react-router-dom'],
-          motion: ['framer-motion'],
+        manualChunks(id) {
+          if (id.includes('node_modules/framer-motion')) return 'motion'
+          if (id.includes('node_modules/')) return 'vendor'
         },
       },
     },

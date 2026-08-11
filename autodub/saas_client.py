@@ -382,6 +382,7 @@ class SaasClient:
     def translate(self, segments: list[dict], *, job_id: str, source_lang: str,
                   context: dict | None = None, cps_budget: float = 12.5,
                   prev_context: list[dict] | None = None,
+                  next_context: list[dict] | None = None,
                   hold_id: str | None = None) -> dict:
         """Dịch một lô câu.
 
@@ -398,6 +399,8 @@ class SaasClient:
             payload["context"] = context
         if prev_context:
             payload["prevContext"] = prev_context
+        if next_context:
+            payload["nextContext"] = next_context
         if hold_id:
             payload["holdId"] = hold_id
         data = self._request("POST", "/v1/ai/translate", json_body=payload)
