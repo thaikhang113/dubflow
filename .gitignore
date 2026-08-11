@@ -37,6 +37,7 @@ Thumbs.db
 .idea/
 .claude/
 .tool-runtime/
+bilibili-cookies.txt
 
 # Build exe
 *.spec.bak

@@ -8,34 +8,43 @@ echo.
 echo ============================================================
 echo   VoxDub Studio - CAI TAT CA THANH PHAN
 echo ============================================================
-echo   Se cai core, Whisper, VieNeu, Paraformer va Chromium.
-echo   Co the mat nhieu GB dung luong va nhieu phut.
+echo   Se cai runtime .venv, Demucs, Whisper, VieNeu,
+echo   Paraformer, PaddleOCR va Chromium.
 echo ============================================================
 echo.
 
-set "PY="
-py -3 --version >nul 2>&1 && set "PY=py -3"
-if not defined PY python --version >nul 2>&1 && set "PY=python"
-if not defined PY (
+where py >nul 2>&1
+if errorlevel 1 (
   echo [LOI] Khong tim thay Python 3.10+.
   pause
   exit /b 1
 )
 
-%PY% -m pip install --upgrade pip
-if errorlevel 1 goto :fail
-%PY% -m pip install -r requirements.txt
-if errorlevel 1 goto :fail
+if not exist ".venv\Scripts\python.exe" (
+  py -3 -m venv .venv
+  if errorlevel 1 goto :fail
+)
 
 if not exist ".env" copy ".env.example" ".env" >nul
 
-%PY% scripts\setup_whisper.py
+set "VENV_PY=%CD%\.venv\Scripts\python.exe"
+%VENV_PY% -m pip --version >nul 2>&1
+if errorlevel 1 %VENV_PY% -m ensurepip --upgrade
 if errorlevel 1 goto :fail
-%PY% scripts\setup_vieneu.py
+%VENV_PY% -m pip install --upgrade pip
 if errorlevel 1 goto :fail
-%PY% scripts\setup_paraformer.py
+%VENV_PY% -m pip install -r requirements.txt
 if errorlevel 1 goto :fail
-%PY% scripts\setup_douyin.py
+
+py -3 scripts\setup_whisper.py
+if errorlevel 1 goto :fail
+py -3 scripts\setup_vieneu.py
+if errorlevel 1 goto :fail
+py -3 scripts\setup_paraformer.py
+if errorlevel 1 goto :fail
+py -3 scripts\setup_ocr.py
+if errorlevel 1 echo [CANH BAO] OCR khong cai duoc - app van chay voi blur thu cong
+py -3 scripts\setup_douyin.py
 if errorlevel 1 goto :fail
 
 echo.

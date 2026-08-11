@@ -70,6 +70,16 @@ def download_voices(progress_callback=None) -> str:
     logger.info(f"Đã tải xong: {temp_zip}")
     return temp_zip
 
+def _local_voice_library() -> str | None:
+    """Return bundled WAV library path, if present."""
+    voices_dir = os.path.join(app_root(), VOICES_TARGET_DIR)
+    if os.path.isdir(voices_dir) and any(
+        voices_dir_path.is_file()
+        for voices_dir_path in Path(voices_dir).glob("*.wav")
+    ):
+        return voices_dir
+    return None
+
 
 def extract_voices(zip_path: str) -> str:
     """Giải nén voices.zip vào voices/preset_voices_vn/.
@@ -259,26 +269,30 @@ def ensure_voices_available(settings: Settings, progress_callback=None) -> bool:
         return True
 
     try:
-        # 1. Tải voices.zip
-        if progress_callback:
-            progress_callback("download_start", None, None)
-
-        def _dl_progress(downloaded, total):
+        # Dùng WAV đóng kèm trước; release URL cũ có thể không còn tồn tại.
+        voices_dir = _local_voice_library()
+        if voices_dir:
+            logger.info(f"Dùng voice library local: {voices_dir}")
+        else:
             if progress_callback:
-                progress_callback("download_progress", downloaded, total)
+                progress_callback("download_start", None, None)
 
-        zip_path = download_voices(_dl_progress)
+            def _dl_progress(downloaded, total):
+                if progress_callback:
+                    progress_callback("download_progress", downloaded, total)
 
-        # 2. Giải nén — xoá zip tạm dù giải nén thành công hay lỗi.
-        if progress_callback:
-            progress_callback("extract_start", None, None)
-        try:
-            voices_dir = extract_voices(zip_path)
-        finally:
+            zip_path = download_voices(_dl_progress)
+
+            # Giải nén — xoá zip tạm dù giải nén thành công hay lỗi.
+            if progress_callback:
+                progress_callback("extract_start", None, None)
             try:
-                os.remove(zip_path)
-            except OSError:
-                pass
+                voices_dir = extract_voices(zip_path)
+            finally:
+                try:
+                    os.remove(zip_path)
+                except OSError:
+                    pass
 
         # 3. Dùng embeddings đóng sẵn nếu zip kèm custom_voices.json —
         #    bỏ qua bước enroll (chạy ONNX model × 120 giọng) tốn nhiều phút.

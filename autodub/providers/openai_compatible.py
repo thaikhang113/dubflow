@@ -105,6 +105,32 @@ class OpenAICompatibleProvider:
             raise OpenAICompatibleError("Endpoint không trả về model hợp lệ.")
         return models
 
+    def check_model(self) -> None:
+        """Send a minimal request to prove selected model can answer."""
+        if not self.endpoint or not self.model:
+            raise OpenAICompatibleError("Thiếu endpoint hoặc model dịch.")
+        payload = {
+            "model": self.model,
+            "temperature": 0,
+            "max_tokens": 1,
+            "messages": [{"role": "user", "content": "Trả lời OK."}],
+        }
+        try:
+            response = self.session.post(
+                f"{self.endpoint}/chat/completions",
+                headers={**self._headers(), "Content-Type": "application/json"},
+                json=payload,
+                timeout=30,
+            )
+            response.raise_for_status()
+            body = response.json()
+            if not body.get("choices"):
+                raise ValueError("Phản hồi không có choices.")
+        except Exception as exc:
+            raise OpenAICompatibleError(
+                _redact(f"Model không trả lời: {exc}", self.api_key)
+            ) from exc
+
     def translate(
         self,
         segments: list[dict],

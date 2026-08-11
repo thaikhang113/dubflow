@@ -114,21 +114,47 @@ def test_vi_output_dir_default_and_override():
 
 def test_translate_defaults(monkeypatch):
     monkeypatch.setattr("autodub.config.load_dotenv", lambda *a, **kw: None)
-    for var in ("TRANSLATE_ENABLED", "TRANSLATE_BATCH_SIZE"):
+    for var in ("TRANSLATE_ENABLED", "TRANSLATE_BATCH_SIZE",
+                "TRANSLATION_ENDPOINT", "TRANSLATION_API_KEY",
+                "TRANSLATION_MODEL"):
         monkeypatch.delenv(var, raising=False)
     s = Settings.load()
     assert s.translate_enabled is True
-    assert s.translate_batch_size == 40
+    assert s.translate_batch_size == 10
     assert s.translation_endpoint == ""
     assert s.translation_model == ""
 
 
-def test_translate_batch_size_capped_at_server_limit(monkeypatch):
-    """Máy chủ từ chối lô quá 120 câu — kẹp ngay ở đây để không bao giờ gửi
-    một request chắc chắn bị trả về 400."""
+def test_ocr_defaults_and_paths(monkeypatch):
+    monkeypatch.setattr("autodub.config.load_dotenv", lambda *a, **kw: None)
+    for var in ("OCR_ENABLED", "OCR_MIN_CONFIDENCE",
+                "OCR_MAX_REGION_AREA", "OCR_SAMPLE_INTERVAL"):
+        monkeypatch.delenv(var, raising=False)
+    s = Settings.load()
+    assert s.ocr_enabled is True
+    assert s.ocr_min_confidence == 0.8
+    assert s.ocr_max_region_area == 0.25
+    assert s.ocr_sample_interval == 1.0
+    assert s.ocr_venv_python_path().replace("\\", "/").endswith(
+        ".venv-ocr/Scripts/python.exe")
+
+
+def test_clone_defaults(monkeypatch):
+    monkeypatch.setattr("autodub.config.load_dotenv", lambda *a, **kw: None)
+    for var in ("VIENEU_CLONE_ENABLED", "VIENEU_CLONE_SOURCE",
+                "VIENEU_CLONE_REFERENCE_AUDIO"):
+        monkeypatch.delenv(var, raising=False)
+    s = Settings.load()
+    assert s.vieneu_clone_enabled is False
+    assert s.vieneu_clone_source == "video"
+    assert s.vieneu_clone_reference_audio == ""
+
+
+def test_translate_batch_size_capped_for_api_stability(monkeypatch):
+    """Máy chủ AI chậm với lô lớn — mặc định 10 câu và không bao giờ vượt trần."""
     monkeypatch.setattr("autodub.config.load_dotenv", lambda *a, **kw: None)
     monkeypatch.setenv("TRANSLATE_BATCH_SIZE", "500")
-    assert Settings.load().translate_batch_size == 100
+    assert Settings.load().translate_batch_size == 10
 
 
 def test_translate_enabled_off(monkeypatch):

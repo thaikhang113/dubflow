@@ -123,11 +123,13 @@ BUILTIN: tuple[Voice, ...] = ()
 
 
 def source_group(voice: Voice) -> str:
-    """Nhóm nguồn cho tab giao diện: "capcut" hoặc "offline" (mọi thứ khác).
+    """Nhóm nguồn cho tab giao diện.
 
     Điểm phân loại DUY NHẤT — Thư viện giọng và ô chọn giọng đều gọi hàm này
     để hai nơi không bao giờ chia tab khác nhau.
     """
+    if voice.custom:
+        return "clone"
     return "capcut" if voice.is_capcut else "offline"
 
 #: Giọng fallback khi catalog trống (ví dụ chưa tải voices).

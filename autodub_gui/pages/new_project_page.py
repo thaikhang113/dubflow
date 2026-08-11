@@ -392,7 +392,11 @@ class NewProjectPage(BasePage):
              "có (+20 Vox)" if data["generate_metadata"] else "không"),
             ("Giọng đọc",
              f"{data['voice'] or 'theo cài đặt chung'} · "
-             f"tốc độ {data['voice_speed']:.2f}x"),
+            f"tốc độ {data['voice_speed']:.2f}x"),
+            ("Clone giọng",
+             ("bật, " + ("từ file mẫu" if data["clone_source"] == "file"
+                          else "từ video"))
+             if data["clone_voice"] else "tắt"),
             ("Phụ đề",
              f"{label_of(consts.SUBTITLE_MODES, data['subtitle_mode'])} · "
              f"kiểu {label_of(PRESET_CHOICES, data['subtitle_preset'])}"),
@@ -480,6 +484,12 @@ class NewProjectPage(BasePage):
         self.step_voice.speed.set_value(settings.voice_speed)
         self.step_voice.mode.set_key(settings.subtitle_mode)
         self.step_voice.preset.set_key(settings.subtitle_preset)
+        self.step_voice.clone_voice.setChecked(settings.vieneu_clone_enabled)
+        self.step_voice.clone_source.set_key(settings.vieneu_clone_source)
+        self.step_voice.clone_reference_audio.set_text(
+            settings.vieneu_clone_reference_audio)
+        self.step_voice._on_clone_toggled(
+            self.step_voice.clone_voice.isChecked())
 
     def _clear_draft(self) -> None:
         confirmed, _ = ConfirmDialog.ask(
@@ -621,8 +631,11 @@ class NewProjectPage(BasePage):
             resume_dir=data["resume_dir"] if source == "resume" else None,
             subtitle_mode=data["subtitle_mode"],
             blur_regions=list(self._blur_regions),
-            subtitle_style=(self._subtitle_style
-                            or self._base_style(data["subtitle_preset"])),
+             subtitle_style=(self._subtitle_style
+                             or self._base_style(data["subtitle_preset"])),
+             clone_voice=data["clone_voice"],
+             clone_source=data["clone_source"],
+             clone_reference_audio=data["clone_reference_audio"] or None,
             # Luồng wizard: dừng ở ranh giới Xuất video, chờ người dùng chốt.
             defer_export=True,
         )

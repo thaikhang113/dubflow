@@ -133,3 +133,19 @@ def test_slim_zip_contract_no_wav_still_counts_as_installed(settings, tmp_path,
     # Không có bất kỳ file .wav nào trong thư mục voices.
     assert not list(voices_dir.glob("*.wav"))
     assert voice_downloader.voices_installed(settings) is True
+
+def test_local_wav_library_skips_broken_release_download(settings, tmp_path,
+                                                         monkeypatch):
+    monkeypatch.setattr(voice_downloader, "app_root", lambda: str(tmp_path))
+    voices_dir = tmp_path / voice_downloader.VOICES_TARGET_DIR
+    voices_dir.mkdir(parents=True)
+    (voices_dir / "vn_female_01.wav").write_bytes(b"RIFF")
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("local voice library must not download release zip")
+
+    monkeypatch.setattr(voice_downloader, "download_voices", _boom)
+    monkeypatch.setattr(voice_downloader, "enroll_voices",
+                        lambda settings, callback=None: {"ok": True})
+
+    assert voice_downloader.ensure_voices_available(settings) is True

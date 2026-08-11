@@ -140,6 +140,15 @@ class Settings:
     whisper_venv_python: str = ""   # mặc định: <app>/.venv-whisper/Scripts/python.exe
     whisper_model_dir: str = ""     # mặc định: <app>/models/whisper (cache HuggingFace)
 
+    # --- OCR phụ đề cứng (PaddleOCR, tùy chọn) ------------------------------
+    ocr_enabled: bool = True
+    ocr_venv_python: str = ""
+    ocr_model_dir: str = ""
+    ocr_device: str = "auto"  # "auto" | "gpu" | "cpu"
+    ocr_min_confidence: float = 0.80
+    ocr_max_region_area: float = 0.25
+    ocr_sample_interval: float = 1.0
+
     # --- Giọng đọc tiếng Việt (VieNeu — bộ giọng DUY NHẤT) -----------------
     # Chạy trong venv riêng (.venv-vieneu) qua tiến trình con — cài một lần
     # bằng scripts/setup_vieneu.py. Chạy CPU/ONNX nên không tốn VRAM và không
@@ -149,6 +158,11 @@ class Settings:
     #: Tên giọng mặc định cho dự án mới (xem autodub.speech.tts.voices).
     vieneu_voice: str = ""
     vieneu_style: str = "tu_nhien"   # "tu_nhien" | "tin_tuc" | "doc_truyen"
+    vieneu_clone_enabled: bool = False
+    vieneu_clone_source: str = "video"  # "video" | "file"
+    vieneu_clone_reference_audio: str = ""
+    vieneu_clone_min_seconds: float = 1.0
+    vieneu_clone_max_seconds: float = 8.0
     # Số tiến trình con chạy song song (~1.5 GB RAM mỗi cái). Chạy trên CPU
     # nên tăng số luồng là nhanh lên gần như tuyến tính, tới khi hết nhân.
     vieneu_max_workers: int = 3
@@ -237,7 +251,7 @@ class Settings:
     # phía máy khách vì chúng quyết định cách CHIA VIỆC, không phải cách dịch.
     translate_enabled: bool = True
     # Số câu mỗi lượt gửi lên máy chủ (trần cứng phía máy chủ là 120).
-    translate_batch_size: int = 40
+    translate_batch_size: int = 10
     translation_endpoint: str = ""
     translation_api_key: str = ""
     translation_model: str = ""
@@ -343,12 +357,31 @@ class Settings:
             paraformer_model_dir=env("PARAFORMER_MODEL_DIR"),
             asr_num_threads=max(1, min(16, env_int("ASR_NUM_THREADS", "4"))),
             whisper_beam_size=max(1, min(10, env_int("WHISPER_BEAM_SIZE", "5"))),
+            ocr_enabled=env_bool("OCR_ENABLED", "true"),
+            ocr_venv_python=env("OCR_VENV_PYTHON"),
+            ocr_model_dir=env("OCR_MODEL_DIR"),
+            ocr_device=_one_of(env("OCR_DEVICE", "auto"),
+                               ("auto", "gpu", "cpu"), "auto"),
+            ocr_min_confidence=min(0.99, max(0.5,
+                env_float("OCR_MIN_CONFIDENCE", "0.80"))),
+            ocr_max_region_area=min(0.8, max(0.02,
+                env_float("OCR_MAX_REGION_AREA", "0.25"))),
+            ocr_sample_interval=min(10.0, max(0.5,
+                env_float("OCR_SAMPLE_INTERVAL", "1.0"))),
             vieneu_venv_python=env("VIENEU_VENV_PYTHON"),
             vieneu_model_dir=env("VIENEU_MODEL_DIR"),
             vieneu_voice=env("VIENEU_VOICE", "").strip(),
             vieneu_style=_one_of(env("VIENEU_STYLE", "tu_nhien"),
                                  ("tu_nhien", "tin_tuc", "doc_truyen"),
                                  "tu_nhien"),
+            vieneu_clone_enabled=env_bool("VIENEU_CLONE_ENABLED", "false"),
+            vieneu_clone_source=_one_of(env("VIENEU_CLONE_SOURCE", "video"),
+                                        ("video", "file"), "video"),
+            vieneu_clone_reference_audio=env("VIENEU_CLONE_REFERENCE_AUDIO").strip(),
+            vieneu_clone_min_seconds=min(8.0, max(1.0,
+                env_float("VIENEU_CLONE_MIN_SECONDS", "1.0"))),
+            vieneu_clone_max_seconds=min(8.0, max(1.0,
+                env_float("VIENEU_CLONE_MAX_SECONDS", "8.0"))),
             # Người dùng đặt tay thì tôn trọng; chưa đặt thì tự tính theo
             # RAM trống + số nhân (xem _auto_vieneu_workers).
             vieneu_max_workers=max(1, min(8, env_int(
@@ -396,8 +429,8 @@ class Settings:
                               not in ("0", "false", "no"),
             translate_enabled=env("TRANSLATE_ENABLED", "true").strip().lower()
                               not in ("0", "false", "no"),
-            translate_batch_size=max(1, min(100,
-                env_int("TRANSLATE_BATCH_SIZE", "40"))),
+            translate_batch_size=max(1, min(10,
+                env_int("TRANSLATE_BATCH_SIZE", "10"))),
             translation_endpoint=env("TRANSLATION_ENDPOINT").strip(),
             translation_api_key=env("TRANSLATION_API_KEY").strip(),
             translation_model=env("TRANSLATION_MODEL").strip(),
@@ -518,6 +551,23 @@ class Settings:
         """venv Whisper đã cài và có marker hay chưa."""
         return (os.path.isfile(self.whisper_venv_python_path())
                 and os.path.isfile(os.path.join(self.whisper_model_dir_path(),
+                                                "installed_ok.json")))
+
+    def ocr_venv_python_path(self) -> str:
+        if self.ocr_venv_python:
+            return self.ocr_venv_python
+        exe = "Scripts/python.exe" if os.name == "nt" else "bin/python"
+        return os.path.join(app_root(), ".venv-ocr", *exe.split("/"))
+
+    def ocr_model_dir_path(self) -> str:
+        if self.ocr_model_dir:
+            return self.ocr_model_dir
+        return os.path.join(app_root(), "models", "ocr")
+
+    def ocr_configured(self) -> bool:
+        return (self.ocr_enabled
+                and os.path.isfile(self.ocr_venv_python_path())
+                and os.path.isfile(os.path.join(self.ocr_model_dir_path(),
                                                 "installed_ok.json")))
 
     def vieneu_venv_python_path(self) -> str:

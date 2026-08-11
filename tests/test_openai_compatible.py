@@ -7,6 +7,11 @@ from autodub.providers.openai_compatible import (
     OpenAICompatibleProvider,
     normalize_endpoint,
 )
+from autodub.pipeline import _api_translation_batches
+
+def test_api_translation_batches_cap_large_configured_batch():
+    batches = _api_translation_batches(list(range(25)), 40)
+    assert [len(batch) for batch in batches] == [10, 10, 5]
 
 
 def test_normalize_endpoint_removes_duplicate_api_suffix():
@@ -62,6 +67,28 @@ def test_chat_completion_builds_voxdub_json_prompt():
     assert seen["headers"]["Authorization"] == "Bearer secret"
     assert "mình - các bạn" in seen["payload"]["messages"][1]["content"]
     assert "前一句" in seen["payload"]["messages"][1]["content"]
+
+def test_check_model_sends_minimal_chat_request():
+    seen = {}
+
+    class Response:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"message": {"content": "OK"}}]}
+
+    class Session:
+        def post(self, url, headers, json, timeout):
+            seen.update(url=url, payload=json)
+            return Response()
+
+    provider = OpenAICompatibleProvider(
+        "https://example.test/v1", "secret",
+        model="qwen3:4b", session=Session())
+    provider.check_model()
+    assert seen["url"] == "https://example.test/v1/chat/completions"
+    assert seen["payload"]["model"] == "qwen3:4b"
 
 
 def test_provider_error_does_not_include_api_key():

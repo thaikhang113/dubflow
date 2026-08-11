@@ -20,6 +20,7 @@ from autodub_gui import theme, tokens
 
 STEP_LABELS = {
     "acquire": "Tải video",
+    "ocr": "Tìm phụ đề Trung",
     "extract": "Tách âm thanh",
     "separate": "Tách nhạc nền",
     "asr": "Nghe lời thoại gốc",

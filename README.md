@@ -126,13 +126,12 @@ Miễn phí, không giới hạn, chất lượng tuỳ AI bạn dùng.
 
 ### Cách B — Dịch tự động qua endpoint OpenAI-compatible
 
-VoxDub gửi transcript tới endpoint bạn chọn. Ollama local, llama.cpp,
-OpenRouter hoặc server tương thích đều dùng được.
+VoxDub gửi transcript tới endpoint API bạn chọn bằng API key của bạn.
 
 ```dotenv
-TRANSLATION_ENDPOINT=http://localhost:11434/v1
-TRANSLATION_API_KEY=
-TRANSLATION_MODEL=qwen3:4b
+TRANSLATION_ENDPOINT=https://api.example.com/v1
+TRANSLATION_API_KEY=your-api-key
+TRANSLATION_MODEL=model-id
 ```
 
 Endpoint cần có:
@@ -160,15 +159,8 @@ Không commit file cookie.
 Video tiếng Trung dùng Paraformer nếu đã cài `.venv-asr`; nếu thiếu model hoặc
 worker lỗi, pipeline tự quay về Whisper.
 
-Thư mục `control_server/` chứa sẵn một backend Node.js làm việc dịch. Dựng theo `control_server/README.md`, rồi điền địa chỉ vào `.env`:
-
-```ini
-VOXDUB_API_URL=http://localhost:3001
-```
-
-Từ đó pipeline chạy một mạch từ link tới video hoàn chỉnh, không cần thao tác tay.
-
-> Để **trống** `VOXDUB_API_URL` = chạy thuần trên máy. App tự ẩn mọi thứ liên quan tới máy chủ và dùng Cách A.
+Không cần Ollama hay `VOXDUB_API_URL` cho bước dịch. Nếu thiếu một trong
+ba mục trên, pipeline dừng và báo cấu hình thiếu thay vì tự chuyển provider.
 
 ### Dịch chuẩn hơn — điền ngữ cảnh video
 
@@ -397,3 +389,19 @@ Mã nguồn theo giấy phép **MIT** — xem [LICENSE](LICENSE).
 Các model AI mà app tải về (VieNeu, Whisper, Paraformer, Demucs) có giấy phép riêng của từng dự án; kiểm tra trước khi dùng cho mục đích thương mại.
 
 **Xin đừng dùng để giả mạo giọng người khác, hoặc lồng tiếng nội dung vi phạm bản quyền.**
+## Giọng clone VieNeu
+
+Mở trang **Giọng đọc AI**, bấm **Thêm giọng clone** rồi chọn:
+
+- **Đoạn audio**: WAV/MP3/M4A/FLAC/OGG/AAC có 1 đến 8 giây thoại rõ.
+- **Video**: MP4/MKV/WEBM/MOV/AVI có đoạn thoại rõ trong 1 đến 8 giây đầu.
+
+Ứng dụng xử lý cục bộ bằng VieNeu. File nguồn không bị tải lên và không bị xóa.
+Hồ sơ đã học lưu tại `models/vieneu/custom_voices.json`; dữ liệu này được nạp
+lại tự động sau khi mở app.
+
+Sau khi tạo, giọng xuất hiện trong tab **Giọng clone**, có thể nghe thử, chọn
+cho dự án mới, hoặc xóa hồ sơ. Xóa hồ sơ không xóa audio/video nguồn.
+
+Yêu cầu: VieNeu đã cài, FFmpeg có trong `PATH`; video clone cần thêm audio đọc
+được từ video. Nếu học giọng thất bại, các giọng cũ vẫn giữ nguyên.

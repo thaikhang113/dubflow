@@ -1,6 +1,7 @@
 """Video download via yt-dlp, with Douyin routed through Playwright."""
 import os
 import re
+import time
 from urllib.parse import urlparse, parse_qs
 
 import yt_dlp
@@ -8,6 +9,23 @@ import yt_dlp
 from autodub.utils import setup_logging, ensure_dir, save_json_atomic
 
 logger = setup_logging("autodub.downloader")
+
+def _extract_info_with_retry(ydl, url: str, attempts: int = 3) -> dict:
+    """Retry transient Bilibili metadata failures before failing the job."""
+    for attempt in range(attempts):
+        try:
+            return ydl.extract_info(url, download=True)
+        except Exception as exc:
+            message = str(exc)
+            transient = re.search(r"\b(412|429|500|502|503|504)\b", message)
+            if not transient or attempt == attempts - 1:
+                raise
+            delay = 2 * (attempt + 1)
+            logger.warning(
+                f"yt-dlp metadata retry {attempt + 1}/{attempts - 1} "
+                f"after HTTP {transient.group(1)}; waiting {delay}s"
+            )
+            time.sleep(delay)
 
 
 def _save_meta(output_dir: str, title: str, uploader: str = "") -> None:
@@ -94,7 +112,7 @@ def download_video(
     logger.info(f"Downloading video from: {canonical}")
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(canonical, download=True)
+        info = _extract_info_with_retry(ydl, canonical)
         video_id = info.get("id", "video")
         ext = info.get("ext", "mp4")
         filepath = (_ydl_reported_path(info)
@@ -207,7 +225,7 @@ def download_one(
     ydl_opts = build_ydl_opts(output_dir, cookies_from_browser, cookies_file)
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(canonical, download=True)
+        info = _extract_info_with_retry(ydl, canonical)
 
     filepath = _resolve_filepath(info, output_dir)
 

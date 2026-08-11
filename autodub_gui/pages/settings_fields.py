@@ -225,6 +225,22 @@ FIELDS: tuple[Field, ...] = (
     Field("HQ_BACKGROUND", CHECK, "Giữ nhạc nền chất lượng cao",
           TAB_PERF, "Hiệu năng", "true",
           "Tắt đi thì chạy nhanh hơn nhưng nhạc nền kém hơn một chút."),
+    Field("OCR_ENABLED", CHECK, "Tự động làm mờ phụ đề Trung",
+          TAB_PERF, "Che phụ đề cứng", "true",
+          "Dùng PaddleOCR local để tìm đúng vùng chữ Trung. Vùng độ tin cậy thấp "
+          "hoặc quá lớn sẽ tự động bỏ qua; vùng khoanh thủ công vẫn được giữ."),
+    Field("OCR_MIN_CONFIDENCE", SLIDER, "Độ tin cậy OCR tối thiểu",
+          TAB_PERF, "Che phụ đề cứng", "0.80",
+          "Tăng lên nếu OCR nhận nhầm. Chỉ vùng đạt ngưỡng mới được làm mờ.",
+          minimum=0.5, maximum=0.99, step=0.05, decimals=2),
+    Field("OCR_MAX_REGION_AREA", SLIDER, "Diện tích vùng OCR tối đa",
+          TAB_PERF, "Che phụ đề cứng", "0.25",
+          "Bỏ qua vùng nhận diện chiếm quá nhiều khung hình để tránh làm mờ nhầm.",
+          suffix=" phần khung", minimum=0.02, maximum=0.8, step=0.05, decimals=2),
+    Field("OCR_SAMPLE_INTERVAL", SLIDER, "Khoảng quét OCR",
+          TAB_PERF, "Che phụ đề cứng", "1.00",
+          "Quét mỗi bao nhiêu giây. Số nhỏ bắt chữ ngắn tốt hơn nhưng chạy lâu hơn.",
+          suffix=" giây", minimum=0.5, maximum=5.0, step=0.5, decimals=1),
 
     # -- Thẻ Nâng cao -------------------------------------------------
     Field("TRANSLATE_ANALYSIS", CHECK, "Đọc hiểu video trước khi dịch",
@@ -270,36 +286,33 @@ FIELDS: tuple[Field, ...] = (
           "đĩa, nhưng dự án đó sẽ không sửa từng câu hay xuất lại được nữa."),
 
     # -- Thẻ Dịch thuật ------------------------------------------------
-    # Mô hình, lời nhắc và API Key nằm trên máy chủ VoxDub. Người dùng không
-    # chọn nơi dịch nữa — thứ họ đóng góp được là NGỮ CẢNH: video nói về gì,
-    # xưng hô ra sao, thuật ngữ nào phải dịch cố định. Máy chủ tự phân tích
-    # được phần lớn, nhưng người làm kênh biết rõ hơn máy.
+    # Dịch qua endpoint OpenAI-compatible do người dùng chọn.
     Field("TRANSLATE_ENABLED", CHECK, "Bật dịch tự động", TAB_TRANSLATE,
           "Dịch tự động", "true",
           "Bật: máy chủ dịch toàn bộ, 12 Vox mỗi câu thoại. Tắt: ứng dụng "
           "dừng ở bước dịch và hướng dẫn bạn dịch tay, còn 10 Vox mỗi câu."),
     Field("TRANSLATION_ENDPOINT", TEXT, "Endpoint dịch OpenAI-compatible",
           TAB_TRANSLATE, "Nhà cung cấp dịch", "",
-          "Ví dụ Ollama: http://localhost:11434/v1. Có thể dùng endpoint riêng "
-          "miễn có /models và /chat/completions.",
-          placeholder="http://localhost:11434/v1"),
+          "Endpoint phải có /models và /chat/completions. Dùng endpoint do "
+          "nhà cung cấp API cấp.",
+          placeholder="https://api.example.com/v1"),
     Field("TRANSLATION_API_KEY", TEXT, "API key dịch", TAB_TRANSLATE,
           "Nhà cung cấp dịch", "",
           "Lưu cục bộ trong .env. Không hiển thị trong log.",
-          placeholder="Để trống nếu endpoint local"),
+          placeholder="Dán API key"),
     Field("TRANSLATION_MODEL", TEXT, "Model dịch", TAB_TRANSLATE,
           "Nhà cung cấp dịch", "",
-          "Nhập đúng model server hỗ trợ, ví dụ qwen3:4b hoặc translategemma:4b.",
-          placeholder="qwen3:4b"),
+          "Gõ tên model hoặc bấm Tải model để chọn từ danh sách endpoint.",
+          placeholder="Tên model, ví dụ: qwen3:4b"),
     Field("BILIBILI_COOKIES_FILE", TEXT, "Tệp cookie Bilibili",
           TAB_TRANSLATE, "Đăng nhập Bilibili", "",
           "Đường dẫn tệp Netscape cookies.txt. Không dán nội dung cookie vào đây.",
           placeholder="C:\\Users\\...\\bilibili-cookies.txt"),
     Field("TRANSLATE_BATCH_SIZE", NUMBER, "Số câu mỗi lượt gửi", TAB_TRANSLATE,
-          "Dịch tự động", "40",
+          "Dịch tự động", "10",
           "Lô nhỏ hơn thì chậm hơn một chút nhưng mạch dịch bám ngữ cảnh sát "
           "hơn. Không ảnh hưởng số Vox — tính theo câu, không theo lượt gửi.",
-          minimum=1, maximum=100, step=5, decimals=0),
+          minimum=1, maximum=10, step=1, decimals=0),
 
     Field("TRANSLATE_DOMAIN", TEXT, "Chủ đề video", TAB_TRANSLATE,
           "Ngữ cảnh video", "",
@@ -336,6 +349,12 @@ FIELDS: tuple[Field, ...] = (
 EXEMPT_KEYS: dict[str, str] = {
     "VIENEU_VOICE": "chọn ở thẻ Giọng đọc bằng thẻ giọng, không phải ô nhập chữ",
     "VIENEU_STYLE": "chọn ở cột phải của thẻ Giọng đọc",
+    "VIENEU_CLONE_ENABLED": "clone là tùy chọn theo từng job trong wizard, không cần cấu hình chung",
+    "VIENEU_CLONE_SOURCE": "clone là tùy chọn theo từng job trong wizard, không cần cấu hình chung",
+    "VIENEU_CLONE_REFERENCE_AUDIO": "clone là tùy chọn theo từng job trong wizard, không cần cấu hình chung",
+    "VIENEU_CLONE_MIN_SECONDS": "ngưỡng nội bộ của enrollment VieNeu, không cần chỉnh trong giao diện",
+    "VIENEU_CLONE_MAX_SECONDS": "ngưỡng nội bộ của enrollment VieNeu, không cần chỉnh trong giao diện",
+    "OCR_DEVICE": "tự động dùng GPU NVIDIA nếu PaddlePaddle GPU đã cài, nếu không thì dùng CPU",
     "VOICE_RECENT": "ứng dụng tự ghi lại các giọng dùng gần đây",
     "WHISPER_BEAM_SIZE": "nút vặn nâng cao cho người biết việc (đổi tốc độ "
                          "lấy độ chính xác); mặc định giữ nguyên chất lượng, "

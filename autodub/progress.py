@@ -14,6 +14,7 @@ from typing import Callable
 # Pipeline step identifiers, in execution order
 STEPS = (
     "acquire",      # download video / use local file
+    "ocr",          # detect hardcoded source subtitles (optional)
     "extract",      # extract original audio
     "separate",     # Demucs vocal separation / ducking
     "asr",          # speech-to-text

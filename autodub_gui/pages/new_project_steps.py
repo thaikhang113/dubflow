@@ -304,10 +304,9 @@ class TranslateStep(_StepPanel):
 
         # Hai lựa chọn quyết định giá của video — lưu lại vào Cài đặt khi
         # bấm chạy để các video sau dùng luôn, khỏi chọn lại.
-        self.auto_translate = QCheckBox("Dịch tự động qua máy chủ VoxDub")
+        self.auto_translate = QCheckBox("Dịch tự động qua API đã cấu hình")
         self.auto_translate.setToolTip(
-            "Bật: máy chủ dịch toàn bộ, 12 Vox mỗi câu thoại. Tắt: ứng dụng "
-            "dừng ở bước dịch và hướng dẫn bạn dịch tay, còn 10 Vox mỗi câu.")
+            "Bật: dùng endpoint, API key và model đã chọn trong trang Dịch thuật.")
         self.auto_translate.setChecked(True)
         self.auto_translate.toggled.connect(self._on_auto_translate)
         self.body.addWidget(self.auto_translate)
@@ -326,8 +325,7 @@ class TranslateStep(_StepPanel):
             "Quyết định giọng văn của bản dịch, ví dụ trang trọng hay đời thường.")
         self.engine_row = LabeledWidget(
             "Dịch bằng", self._engine_view(),
-            "Máy chủ VoxDub tự chọn mô hình tốt nhất — bạn không phải cấu "
-            "hình gì.")
+            "Dùng model đã chọn trong trang Dịch thuật.")
         self.note = LabeledLineEdit(
             "Ghi chú thêm cho người dịch",
             "ví dụ: giữ tên nhân vật Hán Việt, xưng hô mình với các bạn",
@@ -352,7 +350,7 @@ class TranslateStep(_StepPanel):
 
     @staticmethod
     def _engine_view() -> QLabel:
-        view = QLabel("VoxDub Cloud")
+        view = QLabel("API provider")
         view.setStyleSheet(
             f"color: {tokens.TEXT_PRIMARY}; font-size: {tokens.FS_BODY}px; "
             f"font-weight: 600; background: {tokens.BG_INPUT}; "
@@ -434,6 +432,42 @@ class VoiceStep(_StepPanel):
         self._override.add_widget(self.picker)
         self.body.addWidget(self._override)
 
+        self.clone_voice = QCheckBox("Clone giong nguoi noi tu video")
+        self.clone_voice.setToolTip(
+            "Tao mot giong VieNeu rieng tu doan thoai sach. Neu khong du audio, "
+            "ung dung se dung lai giong preset da chon.")
+        self.clone_voice.toggled.connect(self._on_clone_toggled)
+        self.body.addWidget(self.clone_voice)
+
+        self.clone_source = LabeledCombo(
+            "Nguon audio mau",
+            [("Tu lay tu video", "video"),
+             ("Chon file audio mau", "file")],
+            "Video can bat tach giong. File mau nen la WAV/MP3/M4A, dai 1 den 8 giay.")
+        self.clone_source.changed.connect(self._on_clone_source)
+        self.body.addWidget(self.clone_source)
+
+        clone_holder = QWidget()
+        clear_background(clone_holder)
+        clone_layout = QVBoxLayout(clone_holder)
+        clone_layout.setContentsMargins(0, 0, 0, 0)
+        clone_layout.setSpacing(tokens.SP_2)
+        self.clone_reference_audio = LabeledLineEdit(
+            "File audio mau",
+            "Chua chon file audio",
+            "Chon mot doan giong sach cua nguoi can clone.")
+        self.clone_reference_audio.changed.connect(
+            lambda _text: self.changed.emit())
+        clone_layout.addWidget(self.clone_reference_audio)
+        clone_button_row = QHBoxLayout()
+        clone_button_row.addStretch()
+        clone_button = GhostButton("Chon file...")
+        clone_button.clicked.connect(self._pick_clone_reference)
+        clone_button_row.addWidget(clone_button)
+        clone_layout.addLayout(clone_button_row)
+        self.clone_reference_holder = clone_holder
+        self.body.addWidget(clone_holder)
+
         self.speed = LabeledSlider(
             "Tốc độ đọc", 0.5, 2.0, 0.05,
             "1.00 là tốc độ tự nhiên. Tăng lên khi câu tiếng Việt dài hơn câu "
@@ -486,6 +520,44 @@ class VoiceStep(_StepPanel):
             f"background: transparent;")
         self.body.addWidget(self.status)
         self.finish()
+        self._on_clone_toggled(False)
+
+    def _on_clone_toggled(self, enabled: bool) -> None:
+        self.clone_source.setEnabled(enabled)
+        self.clone_reference_holder.setEnabled(enabled)
+        self._on_clone_source()
+        self.changed.emit()
+
+    def _on_clone_source(self) -> None:
+        self.clone_reference_audio.setVisible(
+            self.clone_voice.isChecked()
+            and self.clone_source.current_key() == "file")
+        self.clone_reference_holder.setVisible(self.clone_voice.isChecked())
+        self.changed.emit()
+
+    def _pick_clone_reference(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Chon audio mau cho clone giong",
+            os.path.expanduser("~"),
+            "Audio (*.wav *.mp3 *.m4a *.flac);;Tat ca tep (*.*)",
+        )
+        if path:
+            self.clone_reference_audio.set_text(path)
+            self.clone_source.set_key("file")
+            self._on_clone_source()
+
+    def _clone_is_complete(self) -> tuple[bool, str]:
+        if not self.clone_voice.isChecked():
+            return True, ""
+        if self.clone_source.current_key() != "file":
+            return True, ""
+        path = self.clone_reference_audio.text().strip()
+        if not path:
+            return False, "Hay chon file audio mau truoc khi clone giong."
+        if not os.path.isfile(path):
+            return False, "Khong tim thay file audio mau. Hay chon lai."
+        return True, ""
         self._refresh_default_label()
 
     @staticmethod
@@ -526,6 +598,9 @@ class VoiceStep(_StepPanel):
             "subtitle_mode": self.mode.current_key(),
             "subtitle_preset": self.preset.current_key(),
             "skip_video": self.audio_only.isChecked(),
+            "clone_voice": self.clone_voice.isChecked(),
+            "clone_source": self.clone_source.current_key(),
+            "clone_reference_audio": self.clone_reference_audio.text(),
         }
 
     def load(self, data: dict) -> None:
@@ -547,7 +622,15 @@ class VoiceStep(_StepPanel):
         self.mode.set_key(data.get("subtitle_mode", fb_mode))
         self.preset.set_key(data.get("subtitle_preset", fb_preset))
         self.audio_only.setChecked(bool(data.get("skip_video", False)))
+        self.clone_voice.setChecked(bool(data.get("clone_voice", False)))
+        self.clone_source.set_key(data.get("clone_source", "video"))
+        self.clone_reference_audio.set_text(
+            data.get("clone_reference_audio", ""))
+        self._on_clone_toggled(self.clone_voice.isChecked())
         self._refresh_default_label()
+
+    def is_complete(self) -> tuple[bool, str]:
+        return self._clone_is_complete()
 
 
 class RunStep(_StepPanel):

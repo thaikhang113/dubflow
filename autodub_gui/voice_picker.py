@@ -108,7 +108,7 @@ class _VoicePopup(QFrame):
         self._voices: list = []
         self._current = ""
         self._selected_row: _VoiceRow | None = None
-        self._src_tab = 0                # 0 = offline, 1 = capcut
+        self._src_tab = 0                # 0 = offline, 1 = capcut, 2 = clone
 
         root = QVBoxLayout(self)
         root.setContentsMargins(tokens.SP_2, tokens.SP_2,
@@ -129,6 +129,7 @@ class _VoicePopup(QFrame):
         self._src_tabs = PillTabBar()
         self._src_tabs.add_tab("Giọng offline")
         self._src_tabs.add_tab("CapCut")
+        self._src_tabs.add_tab("Giọng clone")
         self._src_tabs.changed.connect(self._on_src_tab)
         self._src_tabs.setVisible(False)
         root.addWidget(self._src_tabs)
@@ -172,10 +173,13 @@ class _VoicePopup(QFrame):
         # Tab nguồn chỉ có nghĩa khi thật sự có giọng CapCut; mở bảng thì
         # nhảy sẵn vào tab chứa giọng đang chọn.
         has_capcut = any(source_group(v) == "capcut" for v in voices)
-        self._src_tabs.setVisible(has_capcut)
+        has_clone = any(source_group(v) == "clone" for v in voices)
+        self._src_tabs.setVisible(has_capcut or has_clone)
         picked = next((v for v in voices if v.name == current), None)
-        self._src_tab = (1 if has_capcut and picked is not None
-                         and source_group(picked) == "capcut" else 0)
+        self._src_tab = (
+            1 if picked is not None and source_group(picked) == "capcut"
+            else 2 if picked is not None and source_group(picked) == "clone"
+            else 0)
         self._src_tabs.set_current_index(self._src_tab)   # signal bị chặn vì
         self._rebuild()                                   # index không đổi
         width = max(anchor.width(), _POPUP_MIN_W)
@@ -201,7 +205,8 @@ class _VoicePopup(QFrame):
             return self._voices
         from autodub.speech.tts.voices import source_group
 
-        want = "capcut" if self._src_tab == 1 else "offline"
+        want = ("capcut" if self._src_tab == 1
+                else "clone" if self._src_tab == 2 else "offline")
         return [v for v in self._voices if source_group(v) == want]
 
     def _on_src_tab(self, index: int) -> None:

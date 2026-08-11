@@ -29,6 +29,7 @@ SUCCESS = 25
 
 _STEP_START = {
     "acquire": "Đang lấy video",
+    "ocr": "Đang tìm phụ đề Trung để làm mờ đúng vùng",
     "extract": "Đang lấy âm thanh từ video",
     "separate": "Đang tách giọng nói khỏi nhạc nền",
     "asr": "Đang nghe và ghi lại lời thoại gốc",
@@ -41,6 +42,7 @@ _STEP_START = {
 
 _STEP_DONE = {
     "acquire": "Đã có video",
+    "ocr": "Đã xử lý vùng phụ đề Trung",
     "extract": "Đã lấy xong âm thanh",
     "separate": "Đã tách xong nhạc nền",
     "asr": "Đã ghi lại xong lời thoại gốc",
@@ -52,6 +54,7 @@ _STEP_DONE = {
 }
 
 _STEP_SKIP = {
+    "ocr": "Dùng lại vùng OCR đã lưu",
     "extract": "Dùng lại âm thanh của lần chạy trước",
     "separate": "Không tách nhạc nền (theo lựa chọn của bạn)",
     "asr": "Dùng lại lời thoại đã ghi ở lần chạy trước",

@@ -19,6 +19,7 @@ from PySide6.QtCore import QObject, Signal
 # thanh tiến trình không đứng im rồi nhảy vọt.
 STEP_WEIGHTS: dict[str, int] = {
     "acquire": 6,
+    "ocr": 0,
     "extract": 4,
     "separate": 14,
     "asr": 18,
@@ -32,6 +33,7 @@ STEP_WEIGHTS: dict[str, int] = {
 # Nhãn tiếng Việt cho từng bước, viết theo lời thường (không dùng thuật ngữ).
 STEP_LABELS: dict[str, str] = {
     "acquire": "Đang tải video…",
+    "ocr": "Đang tìm phụ đề Trung để làm mờ…",
     "extract": "Đang tách âm thanh…",
     "separate": "Đang tách nhạc nền…",
     "asr": "Đang nghe lời thoại gốc…",

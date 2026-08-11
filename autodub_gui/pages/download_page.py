@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import webbrowser
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -25,6 +26,9 @@ from autodub_gui.ui.toast import TOASTS
 from autodub_gui.widgets import LogPanel
 from autodub_gui.workers import DownloadWorker
 from autodub_gui.log_text import error_line
+from autodub.media.bilibili import has_login_cookies, save_netscape_cookies
+from autodub_gui.env_store import read_env, write_env
+from autodub.utils import app_root
 
 _PAGE_MARGIN = 28
 _INPUT_MIN_H = 90
@@ -77,6 +81,7 @@ class DownloadPage(BasePage):
         root.setContentsMargins(_PAGE_MARGIN, tokens.SP_2,
                                 _PAGE_MARGIN, tokens.SP_5)
         root.setSpacing(tokens.SP_4)
+        root.addWidget(self._build_bilibili_login_card())
         root.addWidget(self._build_input_card())
         root.addLayout(self._build_actions())
 
@@ -92,6 +97,79 @@ class DownloadPage(BasePage):
         self.log = LogPanel()
         self.log.setMaximumHeight(110)
         root.addWidget(self.log)
+
+    def _build_bilibili_login_card(self) -> QWidget:
+        card = Card(padding=tokens.SP_4)
+        card.add_header("Đăng nhập Bilibili")
+        hint = QLabel(
+            "Mở trang đăng nhập, đăng nhập trên trình duyệt, rồi dán cookie "
+            "Netscape vào ô dưới. Cookie lưu cục bộ, không đưa vào Git.")
+        hint.setWordWrap(True)
+        hint.setStyleSheet(
+            f"color: {tokens.TEXT_MUTED}; font-size: {tokens.FS_META}px; "
+            "background: transparent;")
+        card.body.addWidget(hint)
+
+        actions = QHBoxLayout()
+        open_login = GhostButton("Mở Bilibili để đăng nhập")
+        open_login.clicked.connect(
+            lambda: webbrowser.open("https://passport.bilibili.com/login"))
+        actions.addWidget(open_login)
+        self.cookie_status = QLabel("")
+        self.cookie_status.setStyleSheet(
+            f"color: {tokens.TEXT_SECONDARY}; font-size: {tokens.FS_META}px; "
+            "background: transparent;")
+        actions.addWidget(self.cookie_status, 1)
+        save_button = GhostButton("Lưu cookie")
+        save_button.clicked.connect(self._save_bilibili_cookies)
+        actions.addWidget(save_button)
+        clear_button = GhostButton("Xóa cookie")
+        clear_button.clicked.connect(self._clear_bilibili_cookies)
+        actions.addWidget(clear_button)
+        card.body.addLayout(actions)
+
+        self.cookie_edit = QPlainTextEdit()
+        self.cookie_edit.setPlaceholderText(
+            "# Netscape HTTP Cookie File\n"
+            ".bilibili.com\tTRUE\t/\tFALSE\t0\tSESSDATA\t...\n"
+            ".bilibili.com\tTRUE\t/\tFALSE\t0\tDedeUserID\t...\n"
+            ".bilibili.com\tTRUE\t/\tFALSE\t0\tbili_jct\t...")
+        self.cookie_edit.setFixedHeight(96)
+        card.body.addWidget(self.cookie_edit)
+        self._refresh_bilibili_cookie_status()
+        return card
+
+    def _bilibili_cookie_path(self) -> str:
+        return os.path.join(app_root(), "bilibili-cookies.txt")
+
+    def _save_bilibili_cookies(self) -> None:
+        try:
+            path = self._bilibili_cookie_path()
+            save_netscape_cookies(self.cookie_edit.toPlainText(), path)
+            write_env({"BILIBILI_COOKIES_FILE": path})
+        except (OSError, ValueError) as exc:
+            self.cookie_status.setText(f"Không lưu được cookie: {str(exc)[:180]}")
+            return
+        self.cookie_edit.clear()
+        self._refresh_bilibili_cookie_status()
+
+    def _clear_bilibili_cookies(self) -> None:
+        path = self._bilibili_cookie_path()
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+            write_env({"BILIBILI_COOKIES_FILE": ""})
+        except OSError as exc:
+            self.cookie_status.setText(f"Không xóa được cookie: {str(exc)[:180]}")
+            return
+        self._refresh_bilibili_cookie_status()
+
+    def _refresh_bilibili_cookie_status(self) -> None:
+        path = read_env().get("BILIBILI_COOKIES_FILE", "").strip()
+        if has_login_cookies(path):
+            self.cookie_status.setText("Cookie Bilibili đã lưu và có đủ dấu đăng nhập.")
+        else:
+            self.cookie_status.setText("Chưa có cookie Bilibili hợp lệ.")
 
     def _build_input_card(self) -> QWidget:
         card = Card(padding=tokens.SP_4)
@@ -234,8 +312,12 @@ class DownloadPage(BasePage):
         self.log.reset_log()
         self._set_running(True)
 
+        cookies_file = (
+            read_env().get("BILIBILI_COOKIES_FILE", "").strip()
+            if not self.cookies.current_key() else None
+        ) or None
         worker = DownloadWorker(urls, self.output.text() or "downloads",
-                                self.cookies.current_key(), None, self)
+                                self.cookies.current_key(), cookies_file, self)
         worker.item_status.connect(self._on_item_status)
         worker.log.connect(self.log.append_log)
         worker.finished_ok.connect(self._on_finished)

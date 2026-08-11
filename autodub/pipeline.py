@@ -44,6 +44,13 @@ class _PostTarget:
 _POST_TARGET = _PostTarget()
 
 
+_MAX_API_TRANSLATION_BATCH = 10
+
+def _api_translation_batches(segments: list, requested_size: int) -> list[list]:
+    """Split API translation work into bounded requests."""
+    size = max(1, min(_MAX_API_TRANSLATION_BATCH, int(requested_size)))
+    return [segments[i:i + size] for i in range(0, len(segments), size)]
+
 def source_video_path(work_dir: str) -> str | None:
     """External source video remembered for this work_dir, if still valid.
 
@@ -84,6 +91,9 @@ class DubRequest:
     #: TÊN giọng đọc (xem autodub.speech.tts.voices). None → giọng mặc định
     #: trong cấu hình.
     voice: str | None = None
+    clone_voice: bool = False
+    clone_source: str = "video"       # "video" | "file"
+    clone_reference_audio: str | None = None
     bg_mode: str = "demucs"            # "demucs" | "duck" | "none"
     bg_duck_db: float = -12.0
     skip_video: bool = False
@@ -273,6 +283,39 @@ class DubPipeline:
         rep.emit("acquire", "done", detail=video_path)
         _tick("acquire")
 
+        # Detect hardcoded Chinese subtitles once per work directory. OCR is
+        # optional: manual regions remain fully usable when PaddleOCR is absent.
+        blur_regions = list(req.blur_regions or [])
+        ocr_path = data_path(work_dir, "ocr_regions.json", create_dir=True)
+        if settings.ocr_enabled:
+            from autodub.media.ocr_regions import load_regions, save_regions
+            cached_ocr = load_regions(ocr_path)
+            if cached_ocr:
+                blur_regions.extend(cached_ocr)
+                logger.info(f"Dùng lại {len(cached_ocr)} vùng blur OCR đã lưu")
+                rep.emit("ocr", "skip", detail=f"{len(cached_ocr)} regions (cached)")
+            else:
+                rep.emit("ocr", "start")
+                try:
+                    from autodub.media.video import probe_dimensions, probe_duration_s
+                    from autodub.media.ocr import detect_regions
+                    ocr_regions = detect_regions(
+                        video_path,
+                        *probe_dimensions(video_path),
+                        probe_duration_s(video_path) or 0.0,
+                        settings,
+                    )
+                    save_regions(ocr_path, ocr_regions)
+                    blur_regions.extend(ocr_regions)
+                    logger.info(f"OCR phát hiện {len(ocr_regions)} vùng blur an toàn")
+                    rep.emit("ocr", "done", detail=f"{len(ocr_regions)} regions")
+                except Exception as exc:
+                    logger.warning(f"Bỏ qua OCR tự động: {exc}")
+                    rep.emit("ocr", "warning", detail=str(exc))
+        elif blur_regions:
+            logger.info("OCR tự động đã tắt — giữ nguyên vùng blur thủ công")
+        _tick("ocr")
+
         # --- Step 2: Extract audio ---
         rep.check_cancelled()
         logger.info("=" * 60)
@@ -432,12 +475,25 @@ class DubPipeline:
             bg_future.result()   # kết quả đã cache — lần chạy lại dùng ngay
             return blocked
 
+        effective_voice = req.voice
+        clone_enabled = bool(req.clone_voice or settings.vieneu_clone_enabled)
+        if clone_enabled:
+            bg_future.result()
+            try:
+                effective_voice = self._resolve_clone_voice(
+                    req, segments, work_dir)
+                logger.info(f"Đã dùng voice clone VieNeu: {effective_voice}")
+            except Exception as exc:
+                logger.warning(
+                    f"Clone giọng không khả dụng ({exc}) — dùng preset voice")
+                rep.emit("tts", "warning", detail=f"Clone fallback: {exc}")
+
         # Khởi động sớm bộ giọng: việc nạp model (vài giây trên CPU) nấp sau
         # bước dịch. VieNeu chạy CPU nên không tranh card đồ họa với bất cứ
         # thứ gì — lúc nào cũng khởi động sớm được. Ở đây chỉ NẠP model, còn
         # việc tạo giọng vẫn nằm nguyên trong Bước 5.
         try:
-            tts_synth = self._get_synth(target, req.voice)
+            tts_synth = self._get_synth(target, effective_voice)
             self._active_synth = tts_synth
             warm = getattr(tts_synth, "warm_up_async", None)
             if warm is not None:
@@ -521,7 +577,7 @@ class DubPipeline:
                     "bước lâu nhất, tiến độ hiện ở khung bên trái...")
         seg_dir = ensure_dir(data_path(work_dir, "segments", create_dir=True))
         self._ensure_render_mode(work_dir, seg_dir)
-        tts_results = self._synthesize_segments(target, req.voice, segments,
+        tts_results = self._synthesize_segments(target, effective_voice, segments,
                                                 seg_dir, synth=tts_synth)
         # Free the TTS workers' VRAM before the NVENC video encode — unless a
         # batch cache owns them (the next video reuses the warm pool).
@@ -547,16 +603,15 @@ class DubPipeline:
             # hình / che chữ) → gộp setpts vào lượt đó, đỡ nguyên một lần
             # encode toàn bộ video. Không mã hóa lại thì đi đường rời như cũ.
             deferred = None
-            if req.subtitle_mode == "burn" or req.blur_regions:
+            if req.subtitle_mode == "burn" or blur_regions:
                 deferred = defer_video_speed(video_path, background_path,
                                              segments, work_dir, settings)
             if deferred is not None:
                 if deferred[0] is not None:
                     background_path = deferred[0]
                 deferred_speed = (float(settings.video_speed), deferred[2])
-                if req.blur_regions:
-                    req.blur_regions = rescale_blur_regions(
-                        req.blur_regions, deferred[1])
+                if blur_regions:
+                    blur_regions = rescale_blur_regions(blur_regions, deferred[1])
                 _refresh_subs(segments, work_dir, target, subtitle_style)
             else:
                 slowed = apply_video_speed(video_path, background_path,
@@ -568,9 +623,8 @@ class DubPipeline:
                     # Blur windows + SRT follow the slowed timeline; the dub
                     # transcript keeps ORIGINAL timestamps on disk so a resume
                     # rescales from the same base (and reuses the cached encode).
-                    if req.blur_regions:
-                        req.blur_regions = rescale_blur_regions(
-                            req.blur_regions, slowed[2])
+                    if blur_regions:
+                        blur_regions = rescale_blur_regions(blur_regions, slowed[2])
                     _refresh_subs(segments, work_dir, target, subtitle_style)
 
         # --- Step 6: voice speed + merge audio ---
@@ -658,8 +712,8 @@ class DubPipeline:
             "url": req.url,
             "skip_video": req.skip_video,
             "subtitle_mode": req.subtitle_mode,
-            "blur_regions": req.blur_regions,
-            "voice": req.voice,
+            "blur_regions": blur_regions,
+            "voice": effective_voice,
             "elapsed_before": round(time.time() - start_time, 1),
         }
 
@@ -1134,17 +1188,22 @@ class DubPipeline:
         if not settings.translate_enabled:
             return None
 
-        if settings.translation_endpoint and settings.translation_model:
-            return self._auto_translate_openai(
-                segments, target, source_lang, work_dir
+        missing = [
+            label for value, label in (
+                (settings.translation_endpoint, "endpoint"),
+                (settings.translation_api_key, "API key"),
+                (settings.translation_model, "model"),
+            ) if not str(value or "").strip()
+        ]
+        if missing:
+            from autodub.config import ConfigError
+            raise ConfigError(
+                "Thiếu cấu hình dịch: " + ", ".join(missing) +
+                ". Nhập trong trang Dịch thuật rồi bấm Lưu."
             )
-
-        from autodub.saas_client import is_configured
-        if not is_configured():
-            # Chạy thuần trên máy: không có máy chủ dịch nào được cấu hình.
-            # Trả None để pipeline rẽ sang dịch tay (TRANSLATE_PENDING.txt).
-            logger.info("Chưa cấu hình máy chủ dịch — chuyển sang dịch tay")
-            return None
+        return self._auto_translate_openai(
+            segments, target, source_lang, work_dir
+        )
 
         from autodub.saas_client import (
             DeviceBlockedError, InsufficientCreditError, MaintenanceError,
@@ -1166,7 +1225,7 @@ class DubPipeline:
             from autodub.workdir import load_video_meta
             title = str(load_video_meta(work_dir).get("title", "")).strip()
 
-        rep.emit("translate", "start", detail="VoxDub Cloud")
+        rep.emit("translate", "start", detail="API provider")
         logger.info(f"Đang dịch {len(segments)} câu sang tiếng Việt...")
 
         try:
@@ -1252,18 +1311,22 @@ class DubPipeline:
             if work_dir else None
         )
         checkpoint = TranslateCheckpoint(checkpoint_path, target.text_field)
-        batch_size = max(1, min(100, int(settings.translate_batch_size)))
-        batches = [
-            segments[i:i + batch_size]
-            for i in range(0, len(segments), batch_size)
-        ]
+        batch_size = max(1, min(10, int(settings.translate_batch_size)))
+        batches = _api_translation_batches(segments, batch_size)
         context = _context_from_settings(settings)
         cps = effective_cps(settings)
         output: list[dict] = []
-        rep.emit("translate", "start", detail="OpenAI-compatible provider")
+        rep.emit(
+            "translate", "start",
+            detail=f"API endpoint · model {settings.translation_model}",
+        )
         for index, batch in enumerate(batches):
             cached = checkpoint.take(batch)
             if cached is None:
+                logger.info(
+                    f"Đang dịch lô {index + 1}/{len(batches)} "
+                    f"({len(batch)} câu)..."
+                )
                 payload = [_payload_segment(item, cps) for item in batch]
                 returned = provider.translate(
                     payload, context,
@@ -1475,6 +1538,49 @@ class DubPipeline:
         logger.info("STEP 2.5 skipped: --bg-mode=none, dubbed audio uses silent base")
         rep.emit("separate", "skip")
         return None, 0.0
+
+    def _resolve_clone_voice(
+        self, req: DubRequest, segments: list[dict], work_dir: str
+    ) -> str:
+        """Create/reuse one VieNeu clone from a file or separated source voice."""
+        from autodub.media.audio import wav_duration_s
+        from autodub.speech.tts.voice_clone import (
+            enroll_reference_audio, prepare_reference_audio,
+            select_reference_window,
+        )
+
+        source = req.clone_reference_audio or (
+            self.settings.vieneu_clone_reference_audio
+            if req.clone_source == "file" else "")
+        reference = data_path(work_dir, "voice_clone_reference.wav",
+                              create_dir=True)
+        if req.clone_source == "file":
+            if not source or not os.path.isfile(source):
+                raise FileNotFoundError("Không tìm thấy audio mẫu clone giọng")
+            prepare_reference_audio(
+                source, reference,
+                duration=self.settings.vieneu_clone_max_seconds,
+            )
+        else:
+            source = data_path(work_dir, "vocals.wav")
+            if not os.path.isfile(source):
+                raise RuntimeError(
+                    "Không có vocals.wav; cần bật tách giọng hoặc chọn file mẫu")
+            window = select_reference_window(
+                segments,
+                minimum=self.settings.vieneu_clone_min_seconds,
+                maximum=self.settings.vieneu_clone_max_seconds,
+            )
+            if window is None:
+                raise RuntimeError("Không tìm được đoạn thoại đủ dài để clone")
+            prepare_reference_audio(
+                source, reference,
+                start=window[0],
+                duration=window[1] - window[0],
+            )
+        if not wav_duration_s(reference):
+            raise RuntimeError("Audio mẫu clone không có dữ liệu")
+        return enroll_reference_audio(self.settings, reference)
 
     # Cached segment wavs are only reusable if they were rendered under the
     # same grouping scheme. Bump when the text-to-wav mapping changes.

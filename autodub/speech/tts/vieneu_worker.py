@@ -35,6 +35,7 @@ def load_custom_voices(tts, path: str) -> int:
     import numpy as np
     if not path or not os.path.isfile(path):
         return 0
+
     try:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
@@ -58,6 +59,13 @@ def load_custom_voices(tts, path: str) -> int:
         print(f"[vieneu-worker] bỏ qua custom voices hỏng ({e})",
               file=sys.stderr, flush=True)
         return 0
+
+
+def available_voice_names(preset_names, custom_presets: dict) -> set[str]:
+    """Names accepted by the serve worker after custom voices are loaded."""
+    return set(preset_names) | {
+        str(name) for name in (custom_presets or {}) if str(name).strip()
+    }
 
 
 def _kaldi_fbank_numpy(wav, sr: int, n_mels: int = 80):
@@ -158,6 +166,7 @@ def _encode_one(tts, wav_path: str, style: str, no_denoise: bool,
         # "library" = giọng đóng kèm trong thư mục voices/, "custom" = giọng
         # người dùng tự học từ một đoạn ghi âm của riêng họ.
         "source": meta.get("source") or "custom",
+        "reference_hash": meta.get("reference_hash", ""),
         "style": meta.get("style") or style,
         "speaker_emb": ([round(float(x), 6)
                          for x in np.asarray(speaker_emb).reshape(-1)]
@@ -192,6 +201,7 @@ def enroll_voice(tts, args, proto_out) -> None:
                              "gender": args.enroll_gender,
                              "region": args.enroll_region,
                              "country": args.enroll_country})
+        entry["reference_hash"] = args.enroll_reference_hash
         data = _save_presets(args.custom_voices, {args.enroll_name: entry})
         print(json.dumps({"ok": True, "enrolled": args.enroll_name,
                           "voices": sorted(data["presets"])},
@@ -300,6 +310,7 @@ def main() -> None:
     parser.add_argument("--enroll-country", default="vn",
                         help="mã quốc gia của giọng (vn, us, ...)")
     parser.add_argument("--enroll-desc", default="")
+    parser.add_argument("--enroll-reference-hash", default="")
     parser.add_argument("--enroll-no-denoise", action="store_true",
                         help="skip the denoise pass (clip is already clean)")
     parser.add_argument("--enroll-batch", default="",
@@ -347,6 +358,15 @@ def main() -> None:
             print(f"[vieneu-worker] nạp {n_custom} giọng tùy chỉnh",
                   file=sys.stderr, flush=True)
         known = [name for _, name in tts.list_preset_voices()]
+        custom_names = set()
+        if args.custom_voices and os.path.isfile(args.custom_voices):
+            try:
+                with open(args.custom_voices, encoding="utf-8") as f:
+                    custom_names = set(json.load(f).get("presets", {}))
+            except (OSError, ValueError):
+                custom_names = set()
+        known = available_voice_names(
+            known, {name: {} for name in custom_names})
         if args.voice not in known:
             print(json.dumps({"ready": False,
                               "error": f"unknown voice '{args.voice}'; "

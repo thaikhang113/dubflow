@@ -25,7 +25,8 @@ from PySide6.QtWidgets import (
 from autodub_gui import icons, tokens
 from autodub_gui.pages.settings_panels import VoiceSettingsPanel
 from autodub_gui.ui.avatar import InitialAvatar
-from autodub_gui.ui.buttons import GhostButton, IconButton, PrimaryButton
+from autodub_gui.ui.buttons import DangerButton, GhostButton, IconButton, PrimaryButton
+from autodub_gui.ui.modal import ConfirmDialog
 from autodub_gui.ui.inputs import SearchBox, polish_combo
 from autodub_gui.ui.pagination import Pagination
 from autodub_gui.ui.pill_tabs import PillTabBar
@@ -46,8 +47,8 @@ _WAVE_H     = 48
 
 _TAB_ALL, _TAB_FAV, _TAB_RECENT = 0, 1, 2
 _TAB_LABELS = ("Tất cả", "Yêu thích", "Gần đây")
-_SRC_OFFLINE, _SRC_CAPCUT = 0, 1
-_SRC_LABELS = ("Giọng offline", "CapCut")
+_SRC_OFFLINE, _SRC_CAPCUT, _SRC_CLONE = 0, 1, 2
+_SRC_LABELS = ("Giọng offline", "CapCut", "Giọng clone")
 _HEADERS = ("Giọng đọc", "Thông tin", "Phong cách", "Thao tác")
 
 _SORT_OPTIONS = (
@@ -59,6 +60,10 @@ _SORT_OPTIONS = (
 #: Tỉ lệ bề ngang các cột: tên · thông tin · phong cách · thao tác.
 _COLS = (32, 28, 22, 18)
 _SEP = " · "
+
+def filter_source(voices: list, source: str) -> list:
+    from autodub.speech.tts.voices import source_group
+    return [voice for voice in voices if source_group(voice) == source]
 
 
 def _text(content: str, color: str, size: int, weight: int = 400) -> QLabel:
@@ -347,6 +352,11 @@ class VoiceLibraryTab(QWidget):
         polish_combo(self._sort)
         self._sort.currentIndexChanged.connect(lambda _i: self._reset_page())
         top.addWidget(self._sort)
+        self._add_clone = GhostButton("Thêm giọng clone")
+        self._add_clone.setToolTip(
+            "Học một giọng mới từ file audio hoặc video trên máy.")
+        self._add_clone.clicked.connect(self._open_clone_dialog)
+        top.addWidget(self._add_clone)
         col.addLayout(top)
 
         filters = QHBoxLayout()
@@ -495,6 +505,11 @@ class VoiceLibraryTab(QWidget):
             "Ghi nhớ giọng này cho dự án mới (bấm Lưu ở cuối trang).")
         self._use.clicked.connect(self._on_use)
         col.addWidget(self._use)
+        self._delete_clone = DangerButton("Xóa giọng clone")
+        self._delete_clone.setToolTip(
+            "Xóa hồ sơ giọng clone khỏi máy, không xóa file nguồn.")
+        self._delete_clone.clicked.connect(self._delete_current_clone)
+        col.addWidget(self._delete_clone)
 
         col.addWidget(_text("Giọng đọc gần đây", tokens.TEXT_SECONDARY,
                             tokens.FS_LABEL))
@@ -590,8 +605,9 @@ class VoiceLibraryTab(QWidget):
         # Chưa có giọng CapCut nào (chưa tải được) thì ẩn tab nguồn, giao
         # diện y như trước.
         has_capcut = any(source_group(v) == "capcut" for v in self._voices)
-        self._src_tabs.setVisible(has_capcut)
-        if not has_capcut:
+        has_clone = any(source_group(v) == "clone" for v in self._voices)
+        self._src_tabs.setVisible(has_capcut or has_clone)
+        if not has_capcut and not has_clone:
             self._src_tab = _SRC_OFFLINE
         self._apply_filters()
         self._update_rail()
@@ -619,8 +635,10 @@ class VoiceLibraryTab(QWidget):
             return self._voices
         from autodub.speech.tts.voices import source_group
 
-        want = "capcut" if self._src_tab == _SRC_CAPCUT else "offline"
-        return [v for v in self._voices if source_group(v) == want]
+        want = ("capcut" if self._src_tab == _SRC_CAPCUT
+                else "clone" if self._src_tab == _SRC_CLONE
+                else "offline")
+        return filter_source(self._voices, want)
 
     def _on_page(self, page: int) -> None:
         self._page = page
@@ -676,7 +694,10 @@ class VoiceLibraryTab(QWidget):
         if self._src_tabs.isVisible():
             capcut = sum(1 for v in self._voices
                          if source_group(v) == "capcut")
-            src_counts = (len(self._voices) - capcut, capcut)
+            clone = sum(1 for v in self._voices
+                        if source_group(v) == "clone")
+            src_counts = (
+                len(self._voices) - capcut - clone, capcut, clone)
             for button, label, count in zip(self._src_tab_buttons,
                                             _SRC_LABELS, src_counts):
                 button.setText(f"{label} ({count})")
@@ -769,6 +790,7 @@ class VoiceLibraryTab(QWidget):
         self._use.setEnabled(bool(self._current))
         voice = self._voice_of(self._current)
         self._rail_tags.setText(self._tag_text(voice) if voice else "")
+        self._delete_clone.setEnabled(bool(voice and voice.custom))
 
         _clear(self._recent_row)
         if not self._recent:
@@ -787,7 +809,40 @@ class VoiceLibraryTab(QWidget):
         return _SEP.join(p for p in (countries.get(voice.country, ""),
                                      genders.get(voice.gender, ""),
                                      styles.get(voice.style, ""),
-                                     "CapCut" if voice.is_capcut else "") if p)
+                                     "CapCut" if voice.is_capcut
+                                     else "Giọng clone" if voice.custom else ""))
+
+    def _open_clone_dialog(self) -> None:
+        from autodub.config import Settings
+        from autodub_gui.voice_clone_dialog import VoiceCloneDialog
+
+        dialog = VoiceCloneDialog(Settings.load(override=True), self)
+        dialog.enrolled.connect(self._on_clone_enrolled)
+        dialog.exec()
+
+    def _on_clone_enrolled(self, name: str) -> None:
+        self._current = name
+        self._reload_voices()
+        self.changed.emit()
+
+    def _delete_current_clone(self) -> None:
+        voice = self._voice_of(self._current)
+        if voice is None or not voice.custom:
+            return
+        confirmed, _ = ConfirmDialog.ask(
+            self, "Xóa giọng clone",
+            f"Xóa hồ sơ «{voice.name}» khỏi danh sách? File nguồn vẫn giữ nguyên.",
+            kind="warning", confirm_label="Xóa")
+        if not confirmed:
+            return
+        from autodub.config import Settings
+        from autodub.speech.tts.voice_clone import delete_custom_voice
+
+        if delete_custom_voice(Settings.load().vieneu_custom_voices_path(),
+                               voice.name):
+            self._current = ""
+            self._reload_voices()
+            self.changed.emit()
 
     # -- Nghe thử --------------------------------------------------------
     def _play(self, voice: str) -> None:

@@ -65,6 +65,10 @@ def test_source_decides_the_custom_badge(settings):
     assert by_name["Từ thư viện"].custom is False
     assert "Giọng bạn thêm" not in by_name["Từ thư viện"].label
 
+def test_custom_voice_has_clone_source_group():
+    voice = voices.Voice("Clone", source="custom")
+    assert voices.source_group(voice) == "clone"
+
 
 def test_capcut_catalog_is_available_without_any_local_install(settings):
     """22 giọng CapCut đọc từ Voice.json trong gói — không cần VieNeu, không mạng."""
@@ -81,13 +85,14 @@ def test_capcut_catalog_is_available_without_any_local_install(settings):
 def test_offline_voices_are_never_mistaken_for_capcut(settings):
     write_custom(settings, {
         "Thư viện": {"gender": "male", "source": "library"},
-        "Riêng": {"gender": "male"},
+        "Riêng": {"gender": "male", "source": "custom"},
     })
     by_name = {v.name: v for v in voices.catalog(settings)}
+    assert voices.source_group(by_name["Thư viện"]) == "offline"
+    assert voices.source_group(by_name["Riêng"]) == "clone"
     for name in ("Thư viện", "Riêng"):
         assert by_name[name].is_capcut is False
         assert "CapCut" not in by_name[name].label
-        assert voices.source_group(by_name[name]) == "offline"
         assert voices.is_capcut_voice(name) is False
 
 
