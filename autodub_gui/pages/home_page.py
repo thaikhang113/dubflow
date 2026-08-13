@@ -198,6 +198,8 @@ class HomePage(BasePage):
         if not REGISTRY.request_cancel():
             TOASTS.info("Việc này được điều khiển ở trang khác. "
                         "Hãy mở đúng trang đó rồi bấm Dừng.")
+            return
+        self.processing.show_stopping()
 
     def _open_job_details(self) -> None:
         """Mở dự án đang chạy trong Trình chỉnh sửa để xem tiến trình chi tiết."""

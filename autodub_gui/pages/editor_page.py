@@ -465,9 +465,15 @@ class EditorPage(VoiceAndExportMixin, BasePage):
         worker = TimelineThumbnailWorker(
             video_path, duration_s, self._work_dir, parent=self)
         worker.ready.connect(self.timeline.set_thumbnails)
-        worker.finished.connect(worker.deleteLater)
+        worker.finished.connect(self._on_thumb_worker_finished)
         self._thumb_worker = worker
         worker.start()
+
+    def _on_thumb_worker_finished(self) -> None:
+        worker = self._thumb_worker
+        self._thumb_worker = None
+        if worker is not None:
+            worker.deleteLater()
 
     def _sync_overlay(self, opened_path: str) -> None:
         """Một video chỉ được có MỘT lớp phụ đề.
@@ -952,9 +958,15 @@ class EditorPage(VoiceAndExportMixin, BasePage):
                 worker.cancel()
                 worker.wait(5000)
         # Worker thumbnail chỉ chạy ffmpeg ngắn — hủy rồi chờ nhanh.
-        if self._thumb_worker is not None and self._thumb_worker.isRunning():
-            self._thumb_worker.cancel()
-            self._thumb_worker.wait(2000)
+        worker = self._thumb_worker
+        self._thumb_worker = None
+        if worker is not None:
+            try:
+                if worker.isRunning():
+                    worker.cancel()
+                    worker.wait(2000)
+            except RuntimeError:
+                pass
 
     def cleanup(self) -> None:
         # app.quit() có thể bỏ qua closeEvent → shutdown() chưa chắc đã chạy.

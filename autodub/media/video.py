@@ -171,6 +171,69 @@ def probe_dimensions(video_path: str) -> tuple[int, int]:
     return w, h
 
 
+def branding_region(region: dict | None) -> dict:
+    """Return clamped normalized logo bounds, defaulting to top-right."""
+    if not region:
+        return {"x": 0.76, "y": 0.04, "w": 0.2, "h": 0.1}
+    try:
+        x = max(0.0, min(1.0, float(region["x"])))
+        y = max(0.0, min(1.0, float(region["y"])))
+        w = max(0.01, min(1.0, float(region["w"])))
+        h = max(0.01, min(1.0, float(region["h"])))
+        x = min(x, 1.0 - w)
+        y = min(y, 1.0 - h)
+    except (KeyError, TypeError, ValueError):
+        return branding_region(None)
+    return {"x": x, "y": y, "w": w, "h": h}
+
+
+def compose_video(
+    main_path: str,
+    output_path: str,
+    *,
+    intro_path: str | None = None,
+    outro_path: str | None = None,
+) -> str:
+    """Concatenate optional intro/main/outro clips while retaining audio."""
+    parts = [path for path in (intro_path, main_path, outro_path) if path]
+    if len(parts) == 1:
+        if parts[0] != output_path:
+            import shutil
+            shutil.copyfile(parts[0], output_path)
+        return output_path
+    for path in parts:
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"Video asset not found: {path}")
+
+    inputs = []
+    filters = []
+    for index, _path in enumerate(parts):
+        inputs += ["-i", _path]
+        filters.append(
+            f"[{index}:v]setpts=PTS-STARTPTS[v{index}];"
+            f"[{index}:a]asetpts=PTS-STARTPTS[a{index}]"
+        )
+    labels = "".join(f"[v{i}][a{i}]" for i in range(len(parts)))
+    filters.append(f"{labels}concat=n={len(parts)}:v=1:a=1[vout][aout]")
+    temp_output = output_path + ".part"
+    cmd = [
+        "ffmpeg", *inputs, "-filter_complex", ";".join(filters),
+        "-map", "[vout]", "-map", "[aout]",
+        *video_codec_args(), "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-ar", "48000", "-b:a", "192k",
+        "-movflags", "+faststart", "-y", temp_output,
+    ]
+    result = subprocess.run(
+        cmd, capture_output=True, text=True,
+        timeout=ffmpeg_timeout_s(sum(probe_duration_s(path) or 0 for path in parts)),
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"FFmpeg concat failed: {(result.stderr or '')[-800:]}")
+    validate_export_part(temp_output)
+    replace_output_with_retry(temp_output, output_path)
+    return output_path
+
+
 def render_preview_clip(
     video_path: str,
     audio_path: str,
@@ -251,6 +314,9 @@ def merge_video(
     speed: float | None = None,
     fps: str | None = None,
     mirror: bool = False,
+    logo_path: str | None = None,
+    logo_region: dict | None = None,
+    logo_opacity: float = 1.0,
 ) -> str:
     """Mux the dubbed audio into the video, optionally adding subtitles/blur.
 
@@ -276,6 +342,10 @@ def merge_video(
         raise FileNotFoundError(f"Video not found: {video_path}")
     if not os.path.exists(audio_path):
         raise FileNotFoundError(f"Audio not found: {audio_path}")
+    if logo_path and not os.path.isfile(logo_path):
+        raise FileNotFoundError(f"Logo not found: {logo_path}")
+    if not 0.0 <= float(logo_opacity) <= 1.0:
+        raise ValueError("logo_opacity must be between 0 and 1")
 
     if subtitle_mode not in ("none", "soft", "burn"):
         raise ValueError(f"Invalid subtitle_mode: {subtitle_mode!r}")
@@ -308,10 +378,12 @@ def merge_video(
         render_blur_regions = mirror_blur_regions(render_blur_regions)
     burn_srt = srt_path if subtitle_mode == "burn" else None
     filter_complex = None
-    if render_blur_regions or burn_srt:
+    if render_blur_regions or burn_srt or logo_path:
         width, height = probe_dimensions(video_path)
         filter_complex = build_filter_complex(
-            render_blur_regions, width, height, burn_srt, subtitle_style
+            render_blur_regions, width, height, burn_srt, subtitle_style,
+            logo_region=logo_region if logo_path else None,
+            logo_opacity=float(logo_opacity),
         )
 
     apply_speed = speed is not None and speed < 0.999
@@ -337,6 +409,8 @@ def merge_video(
             filter_complex = "[0:v]hflip[vout]"
 
     cmd = ["ffmpeg", "-i", video_path, "-i", audio_path]
+    if logo_path:
+        cmd += ["-i", logo_path]
     if subtitle_mode == "soft":
         cmd += ["-i", srt_path]
 
@@ -358,7 +432,8 @@ def merge_video(
 
     if subtitle_mode == "soft":
         # mov_text is the subtitle codec MP4 containers accept.
-        cmd += ["-map", "2:0", "-c:s", "mov_text",
+        subtitle_input = 3 if logo_path else 2
+        cmd += [f"-map", f"{subtitle_input}:0", "-c:s", "mov_text",
                 "-metadata:s:s:0", f"language={subtitle_lang}"]
 
     temp_output = output_path + ".part"
@@ -404,7 +479,8 @@ def merge_video(
     def _run(render_cmd: list[str]):
         started = time.monotonic()
         try:
-            result = subprocess.run(render_cmd, capture_output=True, text=True,
+            from autodub.cancel import run_registered
+            result = run_registered(render_cmd, capture_output=True, text=True,
                                     timeout=timeout)
             logger.info(
                         "FFmpeg export finished: returncode=%s, elapsed=%.1fs, "

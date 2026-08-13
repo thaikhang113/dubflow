@@ -271,6 +271,30 @@ def enroll_batch(tts, args, proto_out) -> None:
                      ensure_ascii=False), file=proto_out, flush=True)
 
 
+def embed_batch(tts, args, proto_out) -> None:
+    """Return speaker embeddings for a list of normalized WAV files."""
+    import numpy as np
+
+    try:
+        with open(args.embed_batch, encoding="utf-8") as f:
+            paths = json.load(f)
+        if not isinstance(paths, list):
+            raise ValueError("embed batch must be a JSON list")
+        embeddings = []
+        for path in paths:
+            wav, sr = tts.engine._load_mono(path, None)
+            embeddings.append(
+                np.asarray(_speaker_embed(tts.engine, wav, sr),
+                           dtype=np.float32).tolist()
+            )
+        print(json.dumps({"ok": True, "embeddings": embeddings},
+                         ensure_ascii=False), file=proto_out, flush=True)
+    except Exception as e:
+        print(json.dumps({"ok": False,
+                          "error": f"{type(e).__name__}: {e}"},
+                         ensure_ascii=False), file=proto_out, flush=True)
+        sys.exit(1)
+
 def main() -> None:
     # Vietnamese text over Windows pipes — force UTF-8 on the protocol streams.
     sys.stdin.reconfigure(encoding="utf-8")
@@ -318,9 +342,11 @@ def main() -> None:
                              "{wav, name, gender, region, country}")
     parser.add_argument("--enroll-overwrite", action="store_true",
                         help="học lại cả những giọng đã có trong tệp")
+    parser.add_argument("--embed-batch", default="",
+                        help="speaker embeddings JSON input")
     args = parser.parse_args()
 
-    enrolling = bool(args.enroll or args.enroll_batch)
+    enrolling = bool(args.enroll or args.enroll_batch or args.embed_batch)
     if args.enroll and (not args.enroll_name or not args.custom_voices):
         print(json.dumps({"ok": False,
                           "error": "--enroll cần --enroll-name và "
@@ -347,6 +373,9 @@ def main() -> None:
     try:
         from vieneu import Vieneu
         tts = Vieneu(backend="onnx")
+        if args.embed_batch:
+            embed_batch(tts, args, proto_out)
+            return
         if args.enroll_batch:
             enroll_batch(tts, args, proto_out)
             return

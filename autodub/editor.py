@@ -83,13 +83,6 @@ def load_work_dir(work_dir: str, target_key: str = "vi") -> EditorState:
     """Load the translated segments and context for editing."""
     if not os.path.isdir(work_dir):
         raise EditorError(f"Work directory not found: {work_dir}")
-    from autodub import securestore
-    if securestore.is_locked(work_dir):
-        # Dự án wizard chưa bấm Xuất video — dữ liệu trả phí còn mã hóa.
-        raise EditorError(
-            "Dự án chưa xuất video nên chưa mở được trong Trình chỉnh sửa. "
-            "Mở dự án ở tab Dự án mới và bấm Xuất video trước đã."
-        )
     target = get_target(target_key)
     path = _transcript_path(work_dir, target)
     if not os.path.exists(path):

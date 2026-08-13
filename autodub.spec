@@ -41,19 +41,13 @@ hiddenimports = [
     # PyInstaller đổi cách phân tích bytecode.
     "autodub.content.generator",       # pipeline.py step 8
     "autodub.text.ass_karaoke",        # pipeline/editor: phụ đề cụm chữ
-    "autodub.text.translate_saas",     # pipeline: dịch qua máy chủ VoxDub
-    "autodub.text.translate_review",   # pipeline: soát bản dịch
     "autodub.text.subtitles",          # pipeline/editor: làm mới phụ đề
-    "autodub.saas_client",             # mọi lượt gọi máy chủ
-    "autodub.device_id",               # mã máy gắn với ví Vox
+    "autodub.device_id",               # CapCut catalog device fingerprint
     "autodub.speech.tts.voice_library",  # Cài đặt: nạp thư viện giọng mẫu
     "autodub.speech.tts.voice_downloader",  # tải + enroll giọng lần đầu chạy
     "autodub.speech.tts.capcut_vi",    # engine giọng CapCut (gọi API)
     "autodub.speech.align",            # ass_karaoke: khớp mốc chữ
     "autodub.media.timing",            # pipeline/editor: timeline mềm
-    "autodub.securestore",             # mã hóa file trung gian (hold Vox)
-    "cryptography.hazmat.primitives.ciphers.aead",  # AESGCM của securestore
-    "_cffi_backend",                   # cryptography cần lúc chạy
     "autodub_gui.fonts",               # style_dialog: font kèm app
     # Phần đa phương tiện của Qt — Trình chỉnh sửa phát video bằng nó.
     "PySide6.QtMultimedia",

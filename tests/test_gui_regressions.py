@@ -1,0 +1,326 @@
+from __future__ import annotations
+
+import ast
+import inspect
+import os
+import sys
+import threading
+import time
+from pathlib import Path
+
+import pytest
+
+from autodub.cancel import (
+    cancel_processes,
+    clear_cancel_request,
+    run_registered,
+)
+from autodub.progress import PipelineCancelled
+from autodub_gui import tokens
+from autodub_gui.ui.modal import ConfirmDialog
+
+
+ROOT = Path(__file__).parents[1]
+
+
+def _source(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8")
+
+
+def test_translation_model_updates_labeled_line_edit_through_public_api() -> None:
+    source = _source("autodub_gui/pages/translate_tool_page.py")
+    assert "widget.setText(model)" not in source
+    assert "widget.set_text(model)" in source
+
+
+def test_zero_argument_changed_signals_discard_payload() -> None:
+    for path in (
+        "autodub_gui/pages/editor_panels.py",
+        "autodub_gui/pages/new_project_steps.py",
+    ):
+        source = _source(path)
+        assert ".changed.connect(self.changed.emit)" not in source
+
+
+def test_cancel_path_uses_killable_subprocess_runner() -> None:
+    source = _source("autodub_gui/workers.py")
+    assert "cancel_processes" in source
+    assert "self._cancel_event.set()" in source
+    assert "run_registered" in source
+
+
+def test_cancel_processes_stops_registered_child() -> None:
+    clear_cancel_request()
+    result: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            run_registered(
+                [sys.executable, "-c", "import time; time.sleep(30)"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except BaseException as exc:
+            result.append(exc)
+
+    thread = threading.Thread(target=run)
+    thread.start()
+    time.sleep(0.2)
+    cancel_processes()
+    thread.join(5)
+    clear_cancel_request()
+
+    assert not thread.is_alive()
+    assert result and isinstance(result[0], PipelineCancelled)
+
+
+def test_error_modal_supports_recovery_actions() -> None:
+    params = inspect.signature(ConfirmDialog.show_error).parameters
+
+    assert "on_retry" in params
+    assert "on_open_log" in params
+
+
+def test_muted_text_has_readable_dark_theme_contrast() -> None:
+    def channel(value: str) -> float:
+        raw = int(value, 16) / 255
+        return raw / 12.92 if raw <= 0.04045 else ((raw + 0.055) / 1.055) ** 2.4
+
+    def luminance(color: str) -> float:
+        value = color.lstrip("#")
+        return (
+            0.2126 * channel(value[0:2])
+            + 0.7152 * channel(value[2:4])
+            + 0.0722 * channel(value[4:6])
+        )
+
+    light = luminance(tokens.TEXT_MUTED)
+    dark = luminance(tokens.BG_PANEL)
+    ratio = (light + 0.05) / (dark + 0.05)
+
+    assert ratio >= 4.5
+
+
+def test_stop_buttons_keep_pending_state_until_worker_finishes() -> None:
+    for path in (
+        "autodub_gui/pages/download_page.py",
+        "autodub_gui/pages/batch_page.py",
+        "autodub_gui/pages/new_project_page.py",
+    ):
+        source = _source(path)
+        assert 'setText("Đang dừng…")' in source
+        assert 'setText("Dừng")' in source
+        assert "finished.connect" in source
+
+
+def test_no_arg_changed_signals_use_no_arg_forwarders() -> None:
+    new_project = _source("autodub_gui/pages/new_project_steps.py")
+    assert "widget.changed.connect(lambda _value: self.changed.emit())" not in new_project
+    assert "self.style.changed.connect(lambda _value: self.changed.emit())" not in new_project
+    assert "self.picker.changed.connect(lambda _value: self.changed.emit())" not in new_project
+    assert "self.mode.changed.connect(lambda _value: self.changed.emit())" not in new_project
+    assert "self.preset.changed.connect(lambda _value: self.changed.emit())" not in new_project
+
+    editor = _source("autodub_gui/pages/editor_panels.py")
+    assert "self.mode.changed.connect(lambda _value: self.changed.emit())" not in editor
+    assert "self.subtitle.changed.connect(lambda _value: self.changed.emit())" not in editor
+    assert "self.preset.changed.connect(lambda _value: self.changed.emit())" not in editor
+
+def test_new_project_runs_from_export_step() -> None:
+    source = _source("autodub_gui/pages/new_project_page.py")
+    assert "_RUN_INDEX = 5" in source
+    assert "if index == _RUN_INDEX:\n            self._start()" in source
+
+def test_new_project_keeps_detailed_settings_across_six_steps() -> None:
+    steps = _source("autodub_gui/pages/new_project_steps.py")
+    page = _source("autodub_gui/pages/new_project_page.py")
+    for field in (
+        "ocr_enabled", "ocr_device", "logo_path", "intro_path",
+        "asr_threads", "beam_size", "translate_domain",
+        "translate_context", "clone_voice", "video_speed",
+        "soft_timing", "subtitle_mode", "audio_only",
+    ):
+        assert field in steps
+    assert '"output_dir"' in page
+
+def test_new_project_has_six_owned_pipeline_stages() -> None:
+    steps = _source("autodub_gui/pages/new_project_steps.py")
+    state = _source("autodub/pipeline_state.py")
+    for label in ("Chuẩn bị", "Nhận dạng", "Dịch thuật",
+                  "Giọng đọc", "Ghép tiếng", "Xuất video"):
+        assert label in steps
+    for group in ("prepare", "recognition", "translation",
+                  "voice", "merge", "export"):
+        assert f'"{group}"' in state
+    groups_block = state.split("STEP_SETTING_GROUPS", 1)[1].split("}", 1)[0]
+    assert '"audio":' not in groups_block
+    assert '"parallel"' in groups_block
+    assert '"karaoke"' in groups_block
+
+def test_new_project_draft_persists_custom_style_and_blur_regions() -> None:
+    source = _source("autodub_gui/pages/new_project_page.py")
+    assert 'data["subtitle_style_custom"] = self._subtitle_style' in source
+    assert 'data["blur_regions"] = self._blur_regions' in source
+    assert 'self._subtitle_style = (' in source
+    assert 'self._blur_regions = (' in source
+
+def test_subtitle_editor_is_available_during_translation_step() -> None:
+    steps = _source("autodub_gui/pages/new_project_steps.py")
+    page = _source("autodub_gui/pages/new_project_page.py")
+    translate_block = steps[steps.index("class TranslateStep"):steps.index("class VoiceStep")]
+    assert "style_requested = Signal()" in translate_block
+    assert "Tùy chỉnh phụ đề và vùng che" in translate_block
+    assert "self.step_translate.style_requested.connect(self._open_style_dialog)" in page
+
+def test_new_project_refreshes_next_button_after_step_navigation() -> None:
+    source = _source("autodub_gui/pages/new_project_page.py")
+    assert "self.btn_next.setEnabled(True)" in source
+    assert "self._prefetch_worker is None" in source
+    assert "prefetch_ready = bool(" in source
+    assert "os.path.isfile(self._prefetched_path)" in source
+
+def test_new_project_keeps_pipeline_controls_in_ui_and_runtime() -> None:
+    steps = _source("autodub_gui/pages/new_project_steps.py")
+    page = _source("autodub_gui/pages/new_project_page.py")
+    request = _source("autodub/pipeline.py")
+    for field in (
+        "ocr_enabled", "ocr_device", "ocr_min_confidence",
+        "ocr_max_region_area", "ocr_subtitle_y_min", "ocr_sample_interval",
+        "subtitle_mode", "subtitle_preset", "subtitle_style_custom",
+        "blur_regions", "clone_voice", "clone_source",
+        "clone_reference_audio", "skip_video", "video_speed",
+        "soft_timing_fit", "timing_max_drift_s", "timing_min_gap_s",
+        "timing_max_atempo", "voice_postprocess", "voice_target_lufs",
+        "bg_duck_voice_db", "logo_path", "intro_path", "outro_path",
+        "logo_region", "logo_opacity", "logo_scale", "vision_enabled",
+    ):
+        assert field in steps or field in page
+    for field in (
+        "ocr_enabled", "subtitle_mode", "subtitle_style", "blur_regions",
+        "clone_voice", "skip_video", "mirror", "logo_path", "intro_path",
+        "outro_path", "logo_region", "logo_opacity", "logo_scale",
+        "vision_enabled",
+    ):
+        assert field in request
+    for field in (
+        '"ocr_enabled": bool(data["ocr_enabled"])',
+        '"ocr_device": data["ocr_device"]',
+        '"ocr_min_confidence": data["ocr_min_confidence"]',
+        '"ocr_max_region_area": data["ocr_max_region_area"]',
+        '"ocr_subtitle_y_min": data["ocr_subtitle_y_min"]',
+        '"ocr_sample_interval": data["ocr_sample_interval"]',
+        '"video_speed": data["video_speed"]',
+        '"soft_timing_fit": bool(data["soft_timing_fit"])',
+        '"timing_max_drift_s": data["timing_max_drift_s"]',
+        '"timing_min_gap_s": data["timing_min_gap_s"]',
+        '"timing_max_atempo": data["timing_max_atempo"]',
+        '"voice_postprocess": bool(data["voice_postprocess"])',
+        '"voice_target_lufs": data["voice_target_lufs"]',
+        '"bg_duck_voice_db": data["bg_duck_voice_db"]',
+    ):
+        assert field in page
+
+def test_clone_limits_validate_for_video_and_file_sources() -> None:
+    source = _source("autodub_gui/pages/new_project_steps.py")
+    start = source.index("def _clone_is_complete")
+    end = source.index("    @staticmethod", start)
+    block = source[start:end]
+    assert block.index("clone_min_seconds") < block.index(
+        'if self.clone_source.current_key() != "file"')
+
+def test_new_project_validates_all_steps_before_starting_from_export() -> None:
+    source = _source("autodub_gui/pages/new_project_page.py")
+    start = source.index("    def _start(self) -> None:")
+    end = source.index("    def _resume_after_translation", start)
+    block = source[start:end]
+    assert "for index, step in enumerate(self._steps):" in block
+    assert "step.is_complete()" in block
+    assert "self._go_to_step(index)" in block
+
+def test_new_project_persists_clone_subtitle_and_output_choices() -> None:
+    source = _source("autodub_gui/pages/new_project_page.py")
+    start = source.index("        changes = {", source.index("def _run_settings"))
+    end = source.index("        if merged !=", start)
+    block = source[start:end]
+    for field in (
+        '"vieneu_clone_enabled": bool(data["clone_voice"])',
+        '"vieneu_clone_source": data["clone_source"]',
+        '"vieneu_clone_reference_audio": data["clone_reference_audio"]',
+        '"subtitle_mode": data["subtitle_mode"]',
+        '"subtitle_preset": data["subtitle_preset"]',
+        '"output_dir": data["output_dir"]',
+        '"auto_clean_intermediates": bool(data["auto_clean_intermediates"])',
+    ):
+        assert field in block
+
+def test_new_project_runtime_round_trips_detailed_six_step_values(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from autodub.config import Settings
+    import autodub_gui.pages.new_project_page as page_module
+
+    app = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(
+        page_module, "cache_dir", lambda: str(tmp_path / "cache"))
+    settings = Settings()
+    page = page_module.NewProjectPage(lambda: settings)
+    page.step_video.url.set_text("https://example.com/video")
+    page.step_video.ocr_enabled.setChecked(False)
+    page.step_video.logo_region.set_text(
+        '{"x":0.8,"y":0.05,"w":0.18,"h":0.12}')
+    page.step_recognize.asr_threads.set_value(7)
+    page.step_recognize.beam_size.set_value(3)
+    page.step_translate.video_title.set_text("Test title")
+    page.step_translate.batch_size.set_value(9)
+    page.step_voice.clone_voice.setChecked(True)
+    page.step_voice.clone_min_seconds.set_value(2.0)
+    page.step_voice.clone_max_seconds.set_value(6.0)
+    page.step_run.parallel_workers.set_value(5)
+    page.step_run.soft_timing.setChecked(False)
+    page.step_summary.output_dir.set_text(str(tmp_path / "output"))
+    page.step_summary.subtitle_mode.set_key("burn")
+
+    values = page.values()
+    assert values["ocr_enabled"] is False
+    assert values["asr_threads"] == 7
+    assert values["beam_size"] == 3
+    assert values["translate_video_title"] == "Test title"
+    assert values["translate_batch_size"] == 9
+    assert values["clone_voice"] is True
+    assert values["clone_min_seconds"] == 2.0
+    assert values["clone_max_seconds"] == 6.0
+    assert values["parallel_workers"] == 5
+    assert values["soft_timing_fit"] is False
+    assert values["subtitle_mode"] == "burn"
+
+    page._persist_pricing_choices = lambda *_args: None
+    updated = page._run_settings()
+    assert updated.ocr_enabled is False
+    assert updated.asr_num_threads == 7
+    assert updated.whisper_beam_size == 3
+    assert updated.translate_video_title == "Test title"
+    assert updated.translate_batch_size == 9
+    assert updated.vieneu_clone_enabled is True
+    assert updated.vieneu_clone_min_seconds == 2.0
+    assert updated.vieneu_clone_max_seconds == 6.0
+    assert updated.parallel_workers == 5
+    assert updated.soft_timing_fit is False
+    assert updated.subtitle_mode == "burn"
+    assert updated.output_dir == str(tmp_path / "output")
+
+    page.deleteLater()
+    app.processEvents()
+
+def test_new_project_has_separate_persistent_pipeline_defaults() -> None:
+    source = _source("autodub_gui/pages/new_project_page.py")
+    assert 'PIPELINE_DEFAULTS_FILE = "pipeline_defaults.json"' in source
+    assert "def _defaults_path(self)" in source
+    assert "def _save_pipeline_defaults(self)" in source
+    assert "def _load_pipeline_defaults(self)" in source
+    assert "self._save_pipeline_defaults()" in source
+    assert "self._load_pipeline_defaults()" in source
+    assert 'for key in ("source", "url", "file_path", "resume_dir")' in source
+    assert "data.pop(key, None)" in source

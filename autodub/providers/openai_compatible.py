@@ -88,6 +88,27 @@ class OpenAICompatibleProvider:
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
 
+    async def list_models_async(self) -> list[str]:
+        import asyncio
+
+        return await asyncio.to_thread(self.list_models)
+
+    async def check_model_async(self) -> None:
+        import asyncio
+
+        await asyncio.to_thread(self.check_model)
+
+    async def translate_async(
+        self,
+        segments: list[dict],
+        context: dict[str, str] | None = None,
+        previous: list[dict] | None = None,
+    ) -> list[dict]:
+        import asyncio
+
+        return await asyncio.to_thread(
+            self.translate, segments, context, previous)
+
     def list_models(self) -> list[str]:
         if not self.endpoint:
             raise OpenAICompatibleError("Thiếu endpoint dịch.")

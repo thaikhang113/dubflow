@@ -293,8 +293,10 @@ def _run_demucs_gpu_worker(
         # timeout: video 1-2h hợp lệ mất nhiều phút, nhưng CUDA init treo
         # hoặc tải model kẹt thì không được khóa pipeline vĩnh viễn.
         with GPU_LOCK:
-            result = subprocess.run(cmd, capture_output=True, encoding="utf-8",
-                                    errors="replace", timeout=3600)
+            from autodub.cancel import run_registered
+            result = run_registered(
+                cmd, capture_output=True, encoding="utf-8",
+                errors="replace", text=True, timeout=3600)
     except subprocess.TimeoutExpired:
         logger.warning("Demucs GPU worker quá 60 phút — chuyển sang CPU")
         return False

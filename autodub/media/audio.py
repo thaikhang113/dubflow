@@ -38,9 +38,6 @@ class FallbackCounter:
     def snapshot(self) -> dict[str, list]:
         with self._lock:
             return {k: list(v) for k, v in self._events.items()}
-
-
-#: Sổ chung cho cả lượt chạy — pipeline reset cùng chỗ với ``USAGE``.
 FALLBACKS = FallbackCounter()
 
 

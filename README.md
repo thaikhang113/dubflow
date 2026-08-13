@@ -159,7 +159,6 @@ Không commit file cookie.
 Video tiếng Trung dùng Paraformer nếu đã cài `.venv-asr`; nếu thiếu model hoặc
 worker lỗi, pipeline tự quay về Whisper.
 
-Không cần Ollama hay `VOXDUB_API_URL` cho bước dịch. Nếu thiếu một trong
 ba mục trên, pipeline dừng và báo cấu hình thiếu thay vì tự chuyển provider.
 
 ### Dịch chuẩn hơn — điền ngữ cảnh video
@@ -328,7 +327,6 @@ autodub/                 # lõi pipeline, không phụ thuộc GUI
 ├── speech/              # ASR (Whisper, Paraformer) + TTS (VieNeu, CapCut)
 ├── text/                # SRT, karaoke ASS, dịch, TRANSLATE_PENDING.txt
 ├── content/             # tiêu đề/mô tả/hashtag + prompt thumbnail
-└── saas_client.py       # cổng duy nhất tới máy chủ dịch (tuỳ chọn)
 
 autodub_gui/             # giao diện PySide6, dark theme
 ├── app.py               # MainWindow — thanh bên + các trang
@@ -340,7 +338,6 @@ autodub_gui/             # giao diện PySide6, dark theme
 └── tokens.py            # design tokens — file DUY NHẤT chứa mã màu
 
 scripts/                 # cài đặt & đóng gói (mỗi script chạy lại được)
-control_server/          # backend Node.js cho bước dịch (tuỳ chọn)
 voices/preset_voices_vn/ # 120 giọng mẫu, đi kèm repo
 tests/                   # 584 test
 ```
@@ -349,7 +346,6 @@ tests/                   # 584 test
 
 - **Mỗi thành phần nặng một virtualenv riêng** — `.venv-vieneu` (ONNX, không torch), `.venv-whisper`, `.venv-asr`. Môi trường chính nhẹ, không xung đột phiên bản.
 - **Cache theo file, không theo bộ nhớ** — mọi bước ghi kết quả ra đĩa, nên chạy tiếp sau khi tắt máy là chuyện bình thường.
-- **Máy chủ là tuỳ chọn** — `saas_client.is_configured()` là chốt duy nhất; không cấu hình thì mọi thứ tự rẽ sang chế độ chạy thuần trên máy.
 - **`tokens.py` là nơi duy nhất có mã màu** — không hardcode màu ở chỗ khác.
 
 ### Chạy test

@@ -865,7 +865,7 @@ class BackgroundPanel(CollapsibleSection):
         super().__init__("Nhạc nền", expanded=True, parent=parent)
         self.mode = LabeledCombo("Cách xử lý", consts.BG_MODES,
                                  "Cách xử lý âm thanh gốc của video")
-        self.mode.changed.connect(self.changed.emit)
+        self.mode.changed.connect(lambda: self.changed.emit())
         self.duck = LabeledSlider(
             "Mức giảm tiếng gốc", -40.0, 0.0, 1.0,
             "Càng âm thì tiếng gốc càng nhỏ.", " dB", decimals=0)
@@ -912,7 +912,7 @@ class ExportPanel(CollapsibleSection):
 
         self.subtitle = LabeledCombo("Kiểu phụ đề", consts.SUBTITLE_MODES,
                                      "Cách hiện phụ đề trên video kết quả")
-        self.subtitle.changed.connect(self.changed.emit)
+        self.subtitle.changed.connect(lambda: self.changed.emit())
         self.add_widget(self.subtitle)
 
         self.mirror = QCheckBox("Lật ngang video")
@@ -925,7 +925,7 @@ class ExportPanel(CollapsibleSection):
         self.preset = LabeledCombo(
             "Bộ kiểu chữ", PRESET_CHOICES,
             "Đổi bộ kiểu rồi bấm Ghi lại phụ đề là thấy ngay trên video.")
-        self.preset.changed.connect(self.changed.emit)
+        self.preset.changed.connect(lambda: self.changed.emit())
         self.add_widget(self.preset)
 
         row = QHBoxLayout()

@@ -160,6 +160,16 @@ def test_cancel_calls_registered_callback(registry: RunRegistry) -> None:
 def test_cancel_without_job_returns_false(registry: RunRegistry) -> None:
     assert registry.request_cancel() is False
 
+def test_start_job_does_not_replace_existing_job(registry: RunRegistry) -> None:
+    calls: list[str] = []
+    first = ActiveJob(kind="dub", title="first")
+    second = ActiveJob(kind="batch", title="second")
+    assert registry.start_job(first, on_cancel=lambda: calls.append("first")) is True
+    assert registry.start_job(second, on_cancel=lambda: calls.append("second")) is False
+    assert registry.current() is first
+    assert registry.request_cancel() is True
+    assert calls == ["first"]
+
 
 # -- Nhật ký hoạt động -------------------------------------------------
 

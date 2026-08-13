@@ -326,7 +326,7 @@ class ConnectionChecks(CollapsibleSection):
 
         row = QHBoxLayout()
         row.setSpacing(tokens.SP_2)
-        button = GhostButton("Kiểm tra máy chủ VoxDub")
+        button = GhostButton("Kiểm tra API dịch")
         label = _hint_label("")
         self._labels["server"] = label
         button.clicked.connect(
@@ -375,20 +375,18 @@ class ConnectionChecks(CollapsibleSection):
 
     @staticmethod
     def _probe_server() -> str:
-        from autodub.saas_client import SaasError, get_client, is_configured
-
-        if not is_configured():
-            return (f"{STATUS_OK} Đang chạy thuần trên máy — không cần máy "
-                    "chủ. Bước dịch làm tay theo hướng dẫn hiện trong app.")
-        client = get_client()
         try:
-            device = client.ensure_session()
-        except SaasError as e:
+            from autodub.config import Settings
+            settings = Settings.load()
+            from autodub.providers.openai_compatible import OpenAICompatibleProvider
+            OpenAICompatibleProvider(
+                settings.translation_endpoint,
+                settings.translation_api_key,
+                settings.translation_model,
+            ).check_model()
+            return f"{STATUS_OK} API dịch trả lời bình thường."
+        except Exception as e:
             return f"{STATUS_WARN} {e}"
-        if not device.get("creditEnabled", True):
-            return f"{STATUS_OK} Máy chủ trả lời bình thường. Đang miễn phí."
-        return (f"{STATUS_OK} Máy chủ trả lời bình thường. "
-                f"Ví còn {int(device.get('balance', 0)):,} Vox.")
 
 
 class MaintenancePanel(CollapsibleSection):

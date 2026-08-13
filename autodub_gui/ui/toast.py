@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
 
+from autodub_gui import icons
 from autodub_gui import tokens
 from autodub_gui.ui.effects import soft_shadow
 
@@ -30,6 +31,12 @@ _KIND_COLOR: dict[str, str] = {
     "success": tokens.SUCCESS,
     "warn": tokens.WARNING,
     "error": tokens.DANGER,
+}
+_KIND_ICON = {
+    "info": icons.help_circle,
+    "success": icons.check,
+    "warn": icons.warning,
+    "error": icons.error,
 }
 
 
@@ -55,6 +62,17 @@ class _Toast(QFrame):
 
         top = QHBoxLayout()
         top.setSpacing(tokens.SP_2)
+        icon_label = QLabel()
+        icon_label.setPixmap(_KIND_ICON.get(kind, icons.help_circle)(
+            color).pixmap(18, 18))
+        icon_label.setStyleSheet("background: transparent; border: none;")
+        icon_label.setToolTip({
+            "info": "Thông tin",
+            "success": "Hoàn thành",
+            "warn": "Cảnh báo",
+            "error": "Lỗi",
+        }.get(kind, "Thông tin"))
+        top.addWidget(icon_label, 0, Qt.AlignmentFlag.AlignTop)
         label = QLabel(text)
         label.setWordWrap(True)
         label.setStyleSheet(

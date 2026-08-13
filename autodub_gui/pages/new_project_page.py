@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from dataclasses import replace
+from dataclasses import fields, replace
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
@@ -37,9 +37,10 @@ from autodub_gui.ui.toast import TOASTS
 from autodub_gui.log_text import Narrator, error_line
 from autodub_gui.voice_preview import VoicePreview
 from autodub_gui.widgets import Banner, LogPanel, RunStatsPanel, StepTracker
-from autodub_gui.workers import DubWorker, ExportWorker, PrefetchWorker
+from autodub_gui.workers import DubWorker, PrefetchWorker
 
 DRAFT_FILE = "draft_project.json"
+PIPELINE_DEFAULTS_FILE = "pipeline_defaults.json"
 _DRAFT_DEBOUNCE_MS = 800
 _PAGE_MARGIN = 28
 _FORM_MAX_W = 460
@@ -60,9 +61,8 @@ _STEP_TO_INDEX = {
 }
 
 # Chỉ số hai bước đặc biệt của trình hướng dẫn.
-_RUN_INDEX = 4
+_RUN_INDEX = 5
 _EXPORT_INDEX = 5
-
 
 def cache_dir() -> str:
     """Thư mục lưu bản nháp và dữ liệu tạm của giao diện."""
@@ -83,7 +83,6 @@ class NewProjectPage(BasePage):
         super().__init__(parent)
         self._settings_provider = settings_provider
         self._worker: DubWorker | None = None
-        self._export_worker: ExportWorker | None = None
         self._prefetch_worker: PrefetchWorker | None = None
         self._prefetched_path: str = ""   # file đã tải sẵn khi nguồn là URL
         self._result: DubResult | None = None
@@ -94,6 +93,9 @@ class NewProjectPage(BasePage):
         # (dự án mới = job_id mới = trừ Vox lần nữa).
         self._active_work_dir: str = ""
         self._active_status: str = ""
+        self._resume_request_snapshot: dict = {}
+        self._resume_settings_snapshot: dict = {}
+        self._auto_resume_scheduled = False
         self._preview = VoicePreview(self)
         self._narrator = Narrator()
         self._draft_timer = QTimer(self)
@@ -207,7 +209,8 @@ class NewProjectPage(BasePage):
             step.changed.connect(self._on_form_changed)
             self.pages.addWidget(step)
         self.step_voice.preview_requested.connect(self._preview_voice)
-        self.step_voice.style_requested.connect(self._open_style_dialog)
+        self.step_translate.style_requested.connect(self._open_style_dialog)
+        self.step_summary.style_requested.connect(self._open_style_dialog)
         self._preview.status_changed.connect(self.step_voice.set_status)
         # Khi URL thay đổi, bỏ file đã tải sẵn để tải lại lần sau.
         self.step_video.url.changed.connect(self._on_url_changed)
@@ -241,21 +244,19 @@ class NewProjectPage(BasePage):
     # -- Điều hướng giữa các bước --------------------------------------
     def _go_to_step(self, index: int) -> None:
         self.pages.setCurrentIndex(index)
-        self.stepper.set_current(index)
+        if not self.is_running():
+            self.stepper.set_current(index)
         self._refresh_footer()
         if index == 2:
             self.step_translate.set_source_language(self._source_lang_label())
         if index == _RUN_INDEX:
-            self.step_run.set_summary(self._summary_rows())
+            self.step_summary.set_summary(self._summary_rows())
 
     def _go_next(self) -> None:
-        index = self.stepper.current_step()
+        index = self.pages.currentIndex()
         ok, reason = self._steps[index].is_complete()
         if not ok:
             TOASTS.warn(reason)
-            return
-        if index == _EXPORT_INDEX:
-            self._export()
             return
         if index == _RUN_INDEX:
             self._start()
@@ -274,7 +275,7 @@ class NewProjectPage(BasePage):
         self._go_to_step(index + 1)
 
     def _go_back(self) -> None:
-        index = self.stepper.current_step()
+        index = self.pages.currentIndex()
         if index == 0:
             self.home_requested.emit()
             return
@@ -317,9 +318,7 @@ class NewProjectPage(BasePage):
         TOASTS.warn(f"Tải video thất bại: {message[:120]}")
 
     def _next_label(self) -> str:
-        index = self.stepper.current_step()
-        if index == _EXPORT_INDEX:
-            return "Xuất video"
+        index = self.pages.currentIndex()
         if index == _RUN_INDEX:
             # Nguồn «Tiếp tục dang dở» = chạy tiếp dự án cũ, không tạo mới.
             if self.step_video.source.current_key() == "resume":
@@ -332,13 +331,21 @@ class NewProjectPage(BasePage):
         self.btn_next.setText(self._next_label())
 
     def _refresh_footer(self) -> None:
+        # `finished_ok` fires before QThread.finished. Ready path must win,
+        # otherwise navigating to step 2 immediately locks this button again.
+        prefetch_ready = bool(
+            self._prefetched_path and os.path.isfile(self._prefetched_path))
+        if prefetch_ready or (
+            self._prefetch_worker is None
+            or not self._prefetch_worker.isRunning()):
+            self.btn_next.setEnabled(True)
         self.btn_next.setText(self._next_label())
 
     def _on_form_changed(self) -> None:
         self._draft_timer.start()
         self._refresh_preview()
-        if self.stepper.current_step() == _RUN_INDEX:
-            self.step_run.set_summary(self._summary_rows())
+        if self.pages.currentIndex() == _RUN_INDEX:
+            self.step_summary.set_summary(self._summary_rows())
 
     def _refresh_preview(self) -> None:
         """Nhắc lại nguồn video đang chọn ở cột trái cho dễ đối chiếu."""
@@ -350,7 +357,7 @@ class NewProjectPage(BasePage):
                   "resume": data["resume_dir"]}.get(data["source"], "")
         if source:
             self.preview.set_message(
-                source, "Đi hết sáu bước rồi bấm Bắt đầu lồng tiếng. "
+                source, "Chọn video, đặt tùy chọn nhanh rồi bấm Bắt đầu lồng tiếng. "
                         "Tiến trình từng bước sẽ hiện ngay tại đây.")
         else:
             self.preview.set_message(
@@ -363,6 +370,13 @@ class NewProjectPage(BasePage):
         data: dict = {}
         for step in self._steps:
             data.update(step.values())
+        source = self.step_video.values()
+        for key in (
+            "logo_path", "intro_path", "outro_path", "logo_region",
+            "vision_enabled", "vision_model", "logo_opacity", "logo_scale",
+        ):
+            if not data.get(key) and source.get(key):
+                data[key] = source[key]
         return data
 
     def _source_lang_label(self) -> str:
@@ -420,9 +434,47 @@ class NewProjectPage(BasePage):
     def _draft_path(self) -> str:
         return os.path.join(cache_dir(), DRAFT_FILE)
 
-    def _save_draft(self) -> None:
+    def _defaults_path(self) -> str:
+        return os.path.join(cache_dir(), PIPELINE_DEFAULTS_FILE)
+
+    def _save_pipeline_defaults(self) -> None:
+        """Remember pipeline choices without retaining previous video source."""
         try:
             data = self.values()
+            for key in ("source", "url", "file_path", "resume_dir"):
+                data.pop(key, None)
+            data["subtitle_style_custom"] = self._subtitle_style
+            data["blur_regions"] = self._blur_regions
+            with open(self._defaults_path(), "w", encoding="utf-8") as handle:
+                json.dump(data, handle, ensure_ascii=False)
+        except OSError:
+            pass
+
+    def _load_pipeline_defaults(self) -> None:
+        try:
+            with open(self._defaults_path(), encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, ValueError):
+            return
+        if not isinstance(data, dict):
+            return
+        for step in self._steps:
+            step.load(data)
+        style = data.get("subtitle_style_custom")
+        self._subtitle_style = (
+            dict(style) if isinstance(style, dict) else self._subtitle_style)
+        regions = data.get("blur_regions")
+        if isinstance(regions, list):
+            self._blur_regions = list(regions)
+        if self._subtitle_style or self._blur_regions:
+            self._update_style_summary()
+
+    def _save_draft(self) -> None:
+        try:
+            self._save_pipeline_defaults()
+            data = self.values()
+            data["subtitle_style_custom"] = self._subtitle_style
+            data["blur_regions"] = self._blur_regions
             # Kèm dự án đang dở (nếu có) để mở lại app vẫn mời chạy tiếp.
             if self._active_work_dir:
                 data["active_work_dir"] = self._active_work_dir
@@ -443,8 +495,17 @@ class NewProjectPage(BasePage):
         if data:
             for step in self._steps:
                 step.load(data)
+            style = data.get("subtitle_style_custom")
+            self._subtitle_style = (
+                dict(style) if isinstance(style, dict) else None)
+            regions = data.get("blur_regions")
+            self._blur_regions = (
+                list(regions) if isinstance(regions, list) else [])
+            if self._subtitle_style or self._blur_regions:
+                self._update_style_summary()
         else:
             self._apply_defaults_from_settings()
+            self._load_pipeline_defaults()
         self._restore_active_session(data)
         self._go_to_step(0)
 
@@ -463,10 +524,26 @@ class NewProjectPage(BasePage):
         self._active_work_dir = work_dir
         self._active_status = status or "running"
         self.step_video.set_resume(work_dir)
+        try:
+            from autodub.pipeline_state import load_pipeline_state
+            state = load_pipeline_state(work_dir)
+            pipeline = state.get("pipeline") or {}
+            if pipeline.get("status") == "completed":
+                self._active_work_dir = ""
+                self._active_status = ""
+                return
+            settings = state.get("settings") or {}
+            self._resume_request_snapshot = (
+                settings.get("request") if isinstance(settings, dict)
+                else {}) or {}
+            self._resume_settings_snapshot = (
+                settings.get("runtime") if isinstance(settings, dict)
+                else {}) or {}
+        except Exception:  # noqa: BLE001 — manifest hỏng không chặn mở app
+            self._resume_request_snapshot = {}
+            self._resume_settings_snapshot = {}
         hints = {
             "translate_pending": "đang chờ bản dịch tiếng Việt",
-            "credit_blocked": "dừng vì không đủ Vox",
-            "export_pending": "đã lồng tiếng xong, chờ bấm Xuất video",
             "failed": "dừng vì gặp lỗi",
         }
         hint = hints.get(self._active_status, "dừng giữa chừng")
@@ -475,6 +552,19 @@ class NewProjectPage(BasePage):
         QTimer.singleShot(0, lambda: TOASTS.info(
             f"Có dự án làm dở lần trước ({hint}). Bước 1 đã trỏ sẵn "
             "vào dự án đó — bấm chạy sẽ đi tiếp, không tạo dự án mới."))
+        if self._active_status != "translate_pending":
+            self._auto_resume_scheduled = True
+            QTimer.singleShot(0, self._auto_resume_project)
+
+    def _auto_resume_project(self) -> None:
+        if (not self._auto_resume_scheduled
+                or self.is_running()
+                or not self._active_work_dir):
+            return
+        self._auto_resume_scheduled = False
+        if REGISTRY.is_busy():
+            return
+        self._start()
 
     def _apply_defaults_from_settings(self) -> None:
         """Lần đầu mở thì lấy giá trị mặc định từ tệp cấu hình."""
@@ -484,19 +574,70 @@ class NewProjectPage(BasePage):
             return
         self.step_recognize.engine.set_key(settings.asr_engine)
         self.step_recognize.model.set_key(settings.whisper_model)
+        self.step_recognize.quality.set_key(settings.quality_preset)
+        self.step_recognize.language.set_key(settings.default_source_lang)
+        self.step_recognize.asr_threads.set_value(settings.asr_num_threads)
+        self.step_recognize.beam_size.set_value(settings.whisper_beam_size)
+        self.step_recognize.sample_rate.set_key(
+            str(settings.audio_sample_rate))
+        self.step_video.ocr_enabled.setChecked(settings.ocr_enabled)
+        self.step_video.ocr_device.set_key(settings.ocr_device)
+        self.step_video.ocr_confidence.set_value(settings.ocr_min_confidence)
+        self.step_video.ocr_region_area.set_value(settings.ocr_max_region_area)
+        self.step_video.ocr_y_min.set_value(settings.ocr_subtitle_y_min)
+        self.step_video.ocr_interval.set_value(settings.ocr_sample_interval)
+        self.step_video.logo_edit.set_text(settings.branding_logo_path)
+        self.step_video.intro_edit.set_text(settings.branding_intro_path)
+        self.step_video.outro_edit.set_text(settings.branding_outro_path)
+        self.step_video.logo_region.set_text(settings.branding_logo_region)
+        self.step_video.vision_enabled.setChecked(settings.branding_vision_enabled)
+        self.step_video.vision_model.set_text(settings.branding_vision_model)
+        self.step_video.logo_opacity.set_value(settings.branding_logo_opacity)
+        self.step_video.logo_scale.set_value(settings.branding_logo_scale)
         self.step_translate.auto_translate.setChecked(settings.translate_enabled)
         self.step_translate.metadata.setChecked(settings.generate_metadata)
+        self.step_translate.domain.set_text(settings.translate_domain)
+        self.step_translate.video_title.set_text(settings.translate_video_title)
+        self.step_translate.context.set_text(settings.translate_context)
+        self.step_translate.pronouns.set_text(settings.translate_pronouns)
+        self.step_translate.glossary.set_text(settings.translate_glossary)
+        self.step_translate.cps_budget.set_value(settings.translate_cps_budget)
+        self.step_translate.batch_size.set_value(settings.translate_batch_size)
         self.step_voice.picker.reload(settings)
         self.step_voice.picker.set_voice(settings.vieneu_voice)
         self.step_voice.speed.set_value(settings.voice_speed)
-        self.step_voice.mode.set_key(settings.subtitle_mode)
-        self.step_voice.preset.set_key(settings.subtitle_preset)
+        self.step_voice.voice_style.set_key(settings.vieneu_style)
         self.step_voice.clone_voice.setChecked(settings.vieneu_clone_enabled)
         self.step_voice.clone_source.set_key(settings.vieneu_clone_source)
         self.step_voice.clone_reference_audio.set_text(
             settings.vieneu_clone_reference_audio)
         self.step_voice._on_clone_toggled(
             self.step_voice.clone_voice.isChecked())
+        self.step_voice.clone_min_seconds.set_value(
+            settings.vieneu_clone_min_seconds)
+        self.step_voice.clone_max_seconds.set_value(
+            settings.vieneu_clone_max_seconds)
+        self.step_voice.clone_workers.set_value(settings.vieneu_max_workers)
+        self.step_run.background.set_key(settings.bg_mode
+                                         if hasattr(settings, "bg_mode")
+                                         else "demucs")
+        self.step_run.duck.set_value(getattr(settings, "bg_duck_db", -12.0))
+        self.step_run.hq_background.setChecked(settings.hq_background)
+        self.step_run.video_speed.set_value(settings.video_speed)
+        self.step_run.soft_timing.setChecked(settings.soft_timing_fit)
+        self.step_run.timing_drift.set_value(settings.timing_max_drift_s)
+        self.step_run.timing_gap.set_value(settings.timing_min_gap_s)
+        self.step_run.timing_atempo.set_value(settings.timing_max_atempo)
+        self.step_run.voice_postprocess.setChecked(settings.voice_postprocess)
+        self.step_run.voice_target_lufs.set_value(settings.voice_target_lufs)
+        self.step_run.bg_duck_voice_db.set_value(settings.bg_duck_voice_db)
+        self.step_run.parallel_workers.set_value(settings.parallel_workers)
+        self.step_summary.output_dir.set_text(settings.output_dir)
+        self.step_summary.auto_clean.setChecked(settings.auto_clean_intermediates)
+        self.step_summary.subtitle_mode.set_key(settings.subtitle_mode)
+        self.step_summary.subtitle_preset.set_key(settings.subtitle_preset)
+        self.step_summary.karaoke_alignment.setChecked(
+            settings.karaoke_alignment)
 
     def _clear_draft(self) -> None:
         confirmed, _ = ConfirmDialog.ask(
@@ -551,7 +692,7 @@ class NewProjectPage(BasePage):
         # Chưa tự chỉnh gì thì mở ra với đúng bộ kiểu đang chọn ở bước này,
         # để cửa sổ xem trước khớp với thứ người dùng vừa chọn.
         style = self._subtitle_style or self._base_style(
-            self.step_voice.preset.current_key())
+            self.step_summary.subtitle_preset.current_key())
         try:
             dialog = StyleDialog(video, style, self._blur_regions, self)
         except Exception as e:  # noqa: BLE001 — thường do thiếu ffmpeg
@@ -565,15 +706,17 @@ class NewProjectPage(BasePage):
             return
         self._subtitle_style = dict(dialog.style(), preset="custom")
         # Ô chọn bộ kiểu nhảy về "Tự chỉnh" cho khớp với kiểu vừa sửa.
-        self.step_voice.preset.set_key("custom")
+        self.step_translate.subtitle_style_summary.setText(
+            self._style_summary_text())
+        self.step_summary.subtitle_preset.set_key("custom")
         # Lưu vùng che kể cả khi nguồn là liên kết (chưa có tệp trên máy):
         # tọa độ đã chuẩn hóa 0..1 nên áp đúng lên video sau khi tải về.
         self._blur_regions = dialog.regions()
         self._update_style_summary()
 
-    def _update_style_summary(self) -> None:
-        parts: list[str] = []
+    def _style_summary_text(self) -> str:
         style = self._subtitle_style
+        parts: list[str] = []
         if style:
             position = {"bottom": "dưới", "middle": "giữa",
                         "top": "trên"}.get(style.get("position", "bottom"), "dưới")
@@ -584,9 +727,14 @@ class NewProjectPage(BasePage):
             parts.append("kiểu mặc định")
         count = len(self._blur_regions)
         parts.append(f"che {count} vùng" if count else "chưa che vùng nào")
-        self.step_voice.set_summary(", ".join(parts).capitalize())
-        if style and self.step_voice.mode.current_key() != "burn":
-            self.step_voice.mode.set_key("burn")
+        return ", ".join(parts).capitalize()
+
+    def _update_style_summary(self) -> None:
+        summary = self._style_summary_text()
+        self.step_translate.subtitle_style_summary.setText(summary)
+        self.step_summary.set_style_summary(summary)
+        if style and self.step_summary.subtitle_mode.current_key() != "burn":
+            self.step_summary.subtitle_mode.set_key("burn")
             TOASTS.info("Kiểu chữ tự chỉnh cần ghi thẳng vào hình, nên phụ đề "
                         "đã chuyển sang Ghi thẳng vào hình.")
 
@@ -615,6 +763,12 @@ class NewProjectPage(BasePage):
             return None
 
         data = self.values()
+        snapshot = (self._resume_request_snapshot
+                    if data["source"] == "resume"
+                    else {})
+        if snapshot:
+            data = {**data, **snapshot, "source": "resume",
+                    "resume_dir": self._active_work_dir or data["resume_dir"]}
         source = data["source"]
 
         # Nếu nguồn là URL nhưng file đã tải sẵn, truyền file_path trực tiếp
@@ -630,6 +784,7 @@ class NewProjectPage(BasePage):
             file_path=(prefetched if prefetched
                        else data["file_path"] if source in ("file", "resume")
                        else None),
+            output_dir=data["output_dir"] or None,
             source_lang=("" if data["auto_detect"] else data["source_lang"]),
             voice=data["voice"] or None,
             bg_mode=data["bg_mode"],
@@ -645,9 +800,24 @@ class NewProjectPage(BasePage):
              clone_voice=data["clone_voice"],
              clone_source=data["clone_source"],
              clone_reference_audio=data["clone_reference_audio"] or None,
-            # Luồng wizard: dừng ở ranh giới Xuất video, chờ người dùng chốt.
-            defer_export=True,
+            logo_path=data["logo_path"] or None,
+            intro_path=data["intro_path"] or None,
+            outro_path=data["outro_path"] or None,
+            logo_region=self._parse_logo_region(data["logo_region"]),
+            logo_opacity=float(data["logo_opacity"]),
+            logo_scale=float(data["logo_scale"]),
+            vision_enabled=bool(data["vision_enabled"]),
         )
+
+    @staticmethod
+    def _parse_logo_region(value: str) -> dict | None:
+        if not value.strip():
+            return None
+        try:
+            parsed = json.loads(value)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return None
+        return parsed if isinstance(parsed, dict) else None
 
     def _run_settings(self):
         """Cấu hình cho lần chạy này, đã ghép phong cách dịch và tốc độ đọc.
@@ -658,14 +828,74 @@ class NewProjectPage(BasePage):
         """
         data = self.values()
         settings = self._settings_provider()
+        if self._resume_settings_snapshot and data["source"] == "resume":
+            allowed = {field.name for field in fields(settings)}
+            saved = {
+                key: value for key, value in self._resume_settings_snapshot.items()
+                if key in allowed and key not in {
+                    "translation_api_key", "bilibili_cookies_file",
+                }
+            }
+            if saved:
+                settings = replace(settings, **saved)
         note = consts.style_note(data["translate_style"])
         extra = data["translate_note"].strip()
         merged = "\n".join(
             part for part in (settings.translate_style_notes, note, extra)
             if part).strip()
-        changes = {"voice_speed": data["voice_speed"],
-                   "translate_enabled": bool(data["auto_translate"]),
-                   "generate_metadata": bool(data["generate_metadata"])}
+        changes = {
+            "voice_speed": data["voice_speed"],
+            "vieneu_style": data["voice_style"],
+            "quality_preset": data["quality_preset"],
+            "video_speed": data["video_speed"],
+            "soft_timing_fit": bool(data["soft_timing_fit"]),
+            "timing_max_drift_s": data["timing_max_drift_s"],
+            "timing_min_gap_s": data["timing_min_gap_s"],
+            "timing_max_atempo": data["timing_max_atempo"],
+            "hq_background": bool(data["hq_background"]),
+            "voice_postprocess": bool(data["voice_postprocess"]),
+            "voice_target_lufs": data["voice_target_lufs"],
+            "bg_duck_voice_db": data["bg_duck_voice_db"],
+            "parallel_workers": int(data["parallel_workers"]),
+            "ocr_enabled": bool(data["ocr_enabled"]),
+            "ocr_device": data["ocr_device"],
+            "ocr_min_confidence": data["ocr_min_confidence"],
+            "ocr_max_region_area": data["ocr_max_region_area"],
+            "ocr_subtitle_y_min": data["ocr_subtitle_y_min"],
+            "ocr_sample_interval": data["ocr_sample_interval"],
+            "asr_num_threads": int(data["asr_threads"]),
+            "whisper_beam_size": int(data["beam_size"]),
+            "audio_sample_rate": int(data["audio_sample_rate"]),
+            "translate_cps_budget": data["translate_cps_budget"],
+            "translate_batch_size": int(data["translate_batch_size"]),
+            "translate_enabled": bool(data["auto_translate"]),
+            "generate_metadata": bool(data["generate_metadata"]),
+            "auto_clean_intermediates": bool(data["auto_clean_intermediates"]),
+            "translate_domain": data["translate_domain"],
+            "translate_video_title": data["translate_video_title"],
+            "translate_context": data["translate_context"],
+            "translate_pronouns": data["translate_pronouns"],
+            "translate_glossary": data["translate_glossary"],
+            "branding_logo_path": data["logo_path"],
+            "branding_intro_path": data["intro_path"],
+            "branding_outro_path": data["outro_path"],
+            "branding_logo_region": data["logo_region"],
+            "branding_logo_opacity": data["logo_opacity"],
+            "branding_logo_scale": data["logo_scale"],
+            "branding_vision_enabled": bool(data["vision_enabled"]),
+            "branding_vision_model": data["vision_model"],
+            "vieneu_clone_min_seconds": data["clone_min_seconds"],
+            "vieneu_clone_max_seconds": data["clone_max_seconds"],
+            "vieneu_max_workers": int(data["clone_workers"]),
+            "vieneu_clone_enabled": bool(data["clone_voice"]),
+            "vieneu_clone_source": data["clone_source"],
+            "vieneu_clone_reference_audio": data["clone_reference_audio"],
+            "karaoke_alignment": bool(data["karaoke_alignment"]),
+            "subtitle_mode": data["subtitle_mode"],
+            "subtitle_preset": data["subtitle_preset"],
+            "output_dir": data["output_dir"],
+            "auto_clean_intermediates": bool(data["auto_clean_intermediates"]),
+        }
         if merged != settings.translate_style_notes:
             changes["translate_style_notes"] = merged
         if data["asr_engine"]:
@@ -693,6 +923,12 @@ class NewProjectPage(BasePage):
             pass   # không ghi được cấu hình thì lần chạy này vẫn đúng lựa chọn
 
     def _start(self) -> None:
+        for index, step in enumerate(self._steps):
+            ok, reason = step.is_complete()
+            if not ok:
+                TOASTS.warn(reason)
+                self._go_to_step(index)
+                return
         request = self._build_request()
         if request is not None:
             self._launch(request)
@@ -778,18 +1014,6 @@ class NewProjectPage(BasePage):
             worker = self._worker
             # Dừng giữa chừng thì phần AI đã chạy không hoàn Vox — nói rõ
             # trước khi dừng để người dùng không bất ngờ.
-            from autodub.text.translate_common import HOLD
-            if HOLD.active:
-                confirmed, _ = ConfirmDialog.ask(
-                    self, "Dừng lồng tiếng?",
-                    "Phần đã dịch sẽ không hoàn Vox (giữ chỗ tự chốt sau 48 "
-                    "giờ). Chạy lại cùng video sẽ dùng tiếp phần đã dịch, "
-                    "không tính phí lần hai.",
-                    kind="warning", confirm_label="Dừng")
-                if not confirmed or not worker.isRunning():
-                    return
-        elif self._export_worker is not None and self._export_worker.isRunning():
-            worker = self._export_worker
         if worker is None:
             return
         worker.cancel()
@@ -813,8 +1037,11 @@ class NewProjectPage(BasePage):
         self.btn_stop.setText("Dừng")
         self.stepper.set_live_mode(running)
         if not running:
+            self.stepper.set_interactive(True)
             self.stepper.set_current(self.pages.currentIndex())
             self._refresh_footer()
+        else:
+            self.stepper.set_interactive(False)
 
     def _sync_live_stepper(self) -> None:
         """Đưa tiến độ thật lên thanh sáu bước khi đang chạy."""
@@ -847,12 +1074,16 @@ class NewProjectPage(BasePage):
         """Dự án đã xong: dọn phiên làm việc để lần bấm sau là dự án MỚI."""
         self._active_work_dir = ""
         self._active_status = ""
+        self._resume_request_snapshot = {}
+        self._resume_settings_snapshot = {}
+        self._auto_resume_scheduled = False
         self._prefetched_path = ""
         self._blur_regions = []
         self._subtitle_style = None
         for step in self._steps:
             step.load({})
         self._apply_defaults_from_settings()
+        self._load_pipeline_defaults()
         self._update_style_summary()
         try:
             os.remove(self._draft_path())
@@ -862,6 +1093,7 @@ class NewProjectPage(BasePage):
         # bản nháp vừa xóa bằng dữ liệu của dự án đã xong.
         self._draft_timer.stop()
         self.stepper.set_max_reached(0)
+        self.stepper.set_current(0)
         self._go_to_step(0)
 
     def _on_finished(self, result: DubResult) -> None:
@@ -870,16 +1102,6 @@ class NewProjectPage(BasePage):
             self._mark_interrupted("translate_pending", result.work_dir)
             self._show_pending(result)
             REGISTRY.finish_job(False, "đang chờ bản dịch tiếng Việt")
-            return
-        if result.status == "credit_blocked":
-            self._mark_interrupted("credit_blocked", result.work_dir)
-            self._show_credit_blocked(result)
-            REGISTRY.finish_job(False, "không đủ Vox")
-            return
-        if result.status == "export_pending":
-            self._mark_interrupted("export_pending", result.work_dir)
-            self._show_export_pending(result)
-            REGISTRY.finish_job(True, "chờ bấm Xuất video")
             return
         self._show_completed(result)
 
@@ -899,100 +1121,6 @@ class NewProjectPage(BasePage):
         self._reset_session()
         TOASTS.success("Đã lồng tiếng xong.", action_label="Mở video",
                        on_action=self._open_result_video)
-
-    def _show_export_pending(self, result: DubResult) -> None:
-        """Chạy xong phần lồng tiếng — sang bước Xuất video chờ chốt Vox."""
-        report = result.report or {}
-        self.step_summary.set_stats(
-            int(report.get("sentences") or 0),
-            float(report.get("duration_s") or 0.0),
-            report.get("usage"),
-            report.get("hold"))   # chi tiết từng khoản, pipeline lấy sẵn
-        self.stepper.set_max_reached(_RUN_INDEX)
-        self._go_to_step(_EXPORT_INDEX)
-        TOASTS.success("Đã lồng tiếng xong. Bấm Xuất video để nhận video "
-                       "hoàn chỉnh.")
-
-    def _show_credit_blocked(self, result: DubResult) -> None:
-        report = result.report or {}
-        balance = int(report.get("balance") or 0)
-        required = int(report.get("required") or 0)
-        sentences = int(report.get("sentences") or 0)
-        ConfirmDialog.show_error(
-            self, "Không đủ Vox cho video này",
-            f"Video có {sentences:,} câu thoại, cần giữ chỗ {required:,} Vox "
-            f"nhưng ví chỉ còn {balance:,} Vox. Nạp thêm rồi chạy lại — phần "
-            "đã nghe-chép được dùng lại, không mất công chờ.")
-
-    # -- Xuất video (chốt hold) ----------------------------------------
-    def _export(self) -> None:
-        if self._result is None or self._result.status != "export_pending":
-            TOASTS.warn("Chưa có lần chạy nào chờ xuất. Hãy chạy lồng tiếng "
-                        "trước đã.")
-            return
-        if self.is_running():
-            TOASTS.warn("Đang có việc chạy dở. Hãy đợi xong hoặc bấm Dừng.")
-            return
-        if REGISTRY.is_busy():
-            job = REGISTRY.current()
-            TOASTS.warn(f"Đang chạy «{job.title}» ở trang khác. "
-                        "Hãy đợi xong hoặc dừng việc đó trước.")
-            return
-        self.steps.reset()
-        # Pha xuất chỉ chạy ghép video + viết mô tả — chỉ bày hai bước đó,
-        # đừng dựng lại cả danh sách bước đã xong ở lượt lồng tiếng.
-        self.steps.show_only(("merge_video", "content"))
-        self._narrator.reset()
-        self.log.append_log(
-            "── Xuất video ──────────", logging.INFO)
-        self._set_running(True)
-        self.run_stats.setVisible(False)   # số liệu đã nằm ở thẻ tổng kết
-
-        worker = ExportWorker(self._settings_provider(), self._result.work_dir)
-        worker.progress.connect(self.steps.apply_event)
-        worker.progress.connect(REGISTRY.update_job)
-        worker.progress.connect(self._on_progress_log)
-        worker.log.connect(self.log.append_log)
-        worker.finished_ok.connect(self._on_export_finished)
-        worker.failed.connect(self._on_export_failed)
-        worker.cancelled.connect(self._on_cancelled)
-        worker.finished.connect(lambda: self._set_running(False))
-        self._export_worker = worker
-        REGISTRY.start_job(
-            ActiveJob(kind="export",
-                      title=os.path.basename(
-                          self._result.work_dir.rstrip("\\/")),
-                      work_dir=self._result.work_dir),
-            on_cancel=self._cancel)
-        worker.start()
-
-    def _on_export_finished(self, result: DubResult) -> None:
-        self._result = result
-        # Ví đã phản ánh phần hoàn giữ chỗ thừa — cập nhật thanh Vox.
-        try:
-            from autodub.saas_client import get_client
-            balance = int(get_client().device.get("balance") or 0)
-            if balance:
-                self.balance_changed.emit(balance)
-        except Exception:  # noqa: BLE001
-            pass
-        self._show_completed(result)
-
-    def _on_export_failed(self, message: str) -> None:
-        import logging as _log
-        text, level = error_line(message)
-        self.log.append_log(text, level)
-        REGISTRY.finish_job(False, message[:120])
-        self.step_summary.set_error(message[:200])
-        friendly = consts.friendly_error(message)
-        if friendly is not None:
-            title, advice = friendly
-            ConfirmDialog.show_error(self, title, advice, detail=message)
-            return
-        ConfirmDialog.show_error(
-            self, "Chưa xuất được video",
-            "Vox chưa bị trừ và dữ liệu vẫn được khóa an toàn. Kiểm tra mạng "
-            "rồi bấm Xuất video lần nữa.", detail=message)
 
     def _show_pending(self, result: DubResult) -> None:
         self.pending_banner.set_text(
@@ -1083,17 +1211,15 @@ class NewProjectPage(BasePage):
 
     # -- Vòng đời ------------------------------------------------------
     def is_running(self) -> bool:
-        return any(w is not None and w.isRunning()
-                   for w in (self._worker, self._export_worker))
+        return self._worker is not None and self._worker.isRunning()
 
     def shutdown(self) -> None:
         if self._prefetch_worker is not None and self._prefetch_worker.isRunning():
             self._prefetch_worker.cancel()
             self._prefetch_worker.wait(3000)
-        for worker in (self._worker, self._export_worker):
-            if worker is not None and worker.isRunning():
-                worker.cancel()
-                worker.wait(5000)
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.cancel()
+            self._worker.wait(5000)
 
     def cleanup(self) -> None:
         self._save_draft()

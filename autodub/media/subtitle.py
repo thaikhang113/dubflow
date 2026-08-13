@@ -413,6 +413,8 @@ def build_filter_complex(
     video_h: int,
     srt_path: str | None = None,
     style: dict | None = None,
+    logo_region: dict | None = None,
+    logo_opacity: float = 1.0,
 ) -> str | None:
     """Dựng chuỗi ``-filter_complex``, hoặc None khi không cần lọc gì.
 
@@ -421,7 +423,7 @@ def build_filter_complex(
     vẽ sau cùng nên luôn nằm trên vùng đã che. Chuỗi luôn kết ở ``[vout]``.
     """
     regions = compact_blur_regions(blur_regions)
-    if not regions and not srt_path:
+    if not regions and not srt_path and logo_region is None:
         return None
 
     parts: list[str] = []
@@ -475,9 +477,27 @@ def build_filter_complex(
             subs += f":fontsdir='{escape_subtitles_path(fonts_dir())}'"
         if not srt_path.lower().endswith(".ass"):
             subs += f":force_style='{build_force_style(style)}'"
-        parts.append(f"[{current}]{subs}[vout]")
+        output_label = "vbase" if logo_region is not None else "vout"
+        parts.append(f"[{current}]{subs}[{output_label}]")
+        current = output_label
     else:
         # Không còn gì để vẽ — đặt tên đầu ra cho bước làm mờ cuối cùng.
-        parts.append(f"[{current}]null[vout]")
+        output_label = "vbase" if logo_region is not None else "vout"
+        parts.append(f"[{current}]null[{output_label}]")
+        current = output_label
+
+    if logo_region is not None:
+        from autodub.media.video import branding_region
+        logo = branding_region(logo_region)
+        x = int(round(logo["x"] * video_w))
+        y = int(round(logo["y"] * video_h))
+        w = max(2, int(round(logo["w"] * video_w)))
+        h = max(2, int(round(logo["h"] * video_h)))
+        opacity = max(0.0, min(1.0, float(logo_opacity)))
+        parts.append(
+            f"[2:v]format=rgba,colorchannelmixer=aa={opacity:.3f},"
+            f"scale={w}:{h}[logo]"
+        )
+        parts.append(f"[{current}][logo]overlay={x}:{y}[vout]")
 
     return ";".join(parts)

@@ -6,9 +6,6 @@ Chạy từ project root với Python chính (đã cài đủ requirements + pyi
     py scripts/build_exe.py --no-test  # chỉ build
 
 Các bước:
-  1. Đọc VOXDUB_API_URL từ .env của máy build → sinh
-     autodub_gui/_embedded.py (địa chỉ máy chủ nhúng TRONG exe, không lộ ra
-     file .env của người dùng). Khôi phục file rỗng sau khi build.
   2. PyInstaller onedir theo autodub.spec → build/, dist/VoxDub/
   3. Lắp ráp thư mục phân phối dist/VoxDub/:
        - scripts/setup_*.py + các file .bat cài đặt (VieNeu, Paraformer, Douyin)
@@ -35,20 +32,6 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EMBEDDED_PY = os.path.join(PROJECT_ROOT, "autodub_gui", "_embedded.py")
 DIST_DIR = os.path.join(PROJECT_ROOT, "dist", "VoxDub")
 
-EMBEDDED_TEMPLATE = '''"""Giá trị nhúng cứng vào bản đóng gói (exe).
-
-File này trong repo LUÔN rỗng. Khi build exe, ``scripts/build_exe.py`` sinh
-lại nó với VOXDUB_API_URL đọc từ .env của máy build, rồi khôi phục về rỗng
-sau khi build xong — địa chỉ máy chủ nằm TRONG exe, không lộ ra .env của
-người dùng và người dùng không chỉnh được.
-"""
-
-# Rỗng = không nhúng; saas_client rơi về địa chỉ cố định trong mã, rồi tới
-# biến môi trường VOXDUB_API_URL (chỉ khi chạy từ mã nguồn).
-VOXDUB_API_URL = {url!r}
-'''
-
-
 def log(msg: str) -> None:
     print(f"[build] {msg}", flush=True)
 
@@ -68,36 +51,6 @@ def run(cmd: list[str], **kw) -> None:
 
 
 # ------------------------------------------------------------------ steps --
-
-def read_env_value(key: str) -> str:
-    """Đọc 1 khóa từ .env của máy build (không dùng python-dotenv để script
-    chạy được cả khi thiếu package)."""
-    env_path = os.path.join(PROJECT_ROOT, ".env")
-    if not os.path.isfile(env_path):
-        return ""
-    with open(env_path, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line.startswith(f"{key}=") and not line.startswith("#"):
-                return line.partition("=")[2].strip()
-    return ""
-
-
-def write_embedded(url: str) -> None:
-    with open(EMBEDDED_PY, "w", encoding="utf-8") as f:
-        f.write(EMBEDDED_TEMPLATE.format(url=url))
-
-
-def step_embed_api_url() -> str:
-    url = read_env_value("VOXDUB_API_URL")
-    if url:
-        log(f"nhúng VOXDUB_API_URL vào exe: {url}")
-    else:
-        log("(.env không có VOXDUB_API_URL — exe dùng địa chỉ cố định "
-            "trong autodub/saas_client.py)")
-    write_embedded(url)
-    return url
-
 
 def step_pyinstaller() -> None:
     # Xóa dist cũ để không lẫn file rác từ lần build trước.
@@ -185,11 +138,6 @@ def step_assemble() -> None:
     if os.path.isfile(stray):
         os.remove(stray)
         log("!! đã xóa .env lọt vào dist")
-
-
-def step_restore_embedded() -> None:
-    write_embedded("")
-    log("khôi phục autodub_gui/_embedded.py về rỗng")
 
 
 def step_smoke_test() -> bool:
@@ -461,13 +409,7 @@ def main() -> int:
 
     _force_utf8_stdio()
     start = time.time()
-    step_embed_api_url()
-    try:
-        step_pyinstaller()
-    finally:
-        # Kill-switch URL không được nằm lại trong source tree.
-        step_restore_embedded()
-
+    step_pyinstaller()
     step_assemble()
 
     ok = True

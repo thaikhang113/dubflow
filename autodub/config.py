@@ -90,24 +90,18 @@ _PRESETS: dict[str, dict[str, str]] = {
     "fast": {
         "whisper_model": "medium",
         "hq_background": "false",
-        "translate_analysis": "false",
-        "translate_review": "false",
         "karaoke_alignment": "false",
     },
     # Cân bằng (mặc định): mọi cải tiến chất lượng chính, chi phí vừa phải.
     "balanced": {
         "whisper_model": "auto",
         "hq_background": "true",
-        "translate_analysis": "true",
-        "translate_review": "true",
         "karaoke_alignment": "true",
     },
     # Chất lượng cao: chấp nhận chậm — ASR lớn, đủ mọi lượt kiểm tra.
     "quality": {
         "whisper_model": "auto",
         "hq_background": "true",
-        "translate_analysis": "true",
-        "translate_review": "true",
         "karaoke_alignment": "true",
     },
 }
@@ -218,10 +212,8 @@ class Settings:
     # Lượt 0 "hiểu video": trước khi dịch, gửi toàn bộ lời thoại gốc để rút ra
     # tóm tắt + nhân vật/xưng hô + thuật ngữ, rồi tự bơm vào ngữ cảnh dịch
     # (mục người dùng điền tay luôn được ưu tiên hơn).
-    translate_analysis: bool = True
     # Lượt rà soát: sau khi dịch, soát các câu nghi vấn (vượt ngân sách nhiều,
     # còn ký tự CJK, quá ngắn so với câu gốc) rồi dịch lại đúng các câu đó.
-    translate_review: bool = True
 
     # --- Chung ------------------------------------------------------------
     default_source_lang: str = "zh-CN"
@@ -233,10 +225,8 @@ class Settings:
     auto_clean_intermediates: bool = False
 
     # --- Cập nhật và hỗ trợ -----------------------------------------------
-    # Kho GitHub chứa bản phát hành (dạng "chủ/kho") — dùng để báo bản mới.
-    update_repo: str = "ttthanh2044/voxdub"
-    # Đường dẫn biểu mẫu nhận báo lỗi và góp ý từ người dùng.
-    support_url: str = "https://github.com/ttthanh2044/voxdub/issues"
+    update_repo: str = ""
+    support_url: str = ""
 
     # Liên kết video mặc định (dùng khi giao diện/chạy hàng loạt không đưa nguồn)
     video_url: str = ""
@@ -257,6 +247,14 @@ class Settings:
     translation_api_key: str = ""
     translation_model: str = ""
     bilibili_cookies_file: str = ""
+    branding_logo_path: str = ""
+    branding_intro_path: str = ""
+    branding_outro_path: str = ""
+    branding_logo_region: str = ""
+    branding_logo_opacity: float = 1.0
+    branding_logo_scale: float = 0.2
+    branding_vision_enabled: bool = True
+    branding_vision_model: str = "deepseek-vl"
 
     # --- Phụ đề -----------------------------------------------------------
     # Kiểu mặc định: "none" | "soft" (tệp rời) | "burn" (ghi thẳng vào hình)
@@ -408,10 +406,6 @@ class Settings:
                 env_float("TIMING_MIN_GAP_S", "0.12"))),
             timing_max_atempo=min(1.3, max(1.0,
                 env_float("TIMING_MAX_ATEMPO", "1.1"))),
-            translate_analysis=env_bool("TRANSLATE_ANALYSIS",
-                                        _p["translate_analysis"]),
-            translate_review=env_bool("TRANSLATE_REVIEW",
-                                      _p["translate_review"]),
             translate_domain=env("TRANSLATE_DOMAIN").strip(),
             translate_context=env_multiline("TRANSLATE_CONTEXT"),
             translate_pronouns=env("TRANSLATE_PRONOUNS").strip(),
@@ -423,10 +417,8 @@ class Settings:
             vietnamese_output_dir=env_dir("VIETNAMESE_OUTPUT_DIR", ""),
             auto_clean_intermediates=env_bool("AUTO_CLEAN_INTERMEDIATES",
                                               "false"),
-            update_repo=env("UPDATE_REPO",
-                            "ttthanh2044/voxdub").strip(),
-            support_url=env("SUPPORT_URL",
-                            "https://github.com/ttthanh2044/voxdub/issues").strip(),
+            update_repo=env("UPDATE_REPO").strip(),
+            support_url=env("SUPPORT_URL").strip(),
             video_url=env("VIDEO_URL"),
             generate_metadata=env("GENERATE_METADATA", "true").strip().lower()
                               not in ("0", "false", "no"),
@@ -438,6 +430,16 @@ class Settings:
             translation_api_key=env("TRANSLATION_API_KEY").strip(),
             translation_model=env("TRANSLATION_MODEL").strip(),
             bilibili_cookies_file=env("BILIBILI_COOKIES_FILE").strip(),
+            branding_logo_path=env("BRANDING_LOGO_PATH").strip(),
+            branding_intro_path=env("BRANDING_INTRO_PATH").strip(),
+            branding_outro_path=env("BRANDING_OUTRO_PATH").strip(),
+            branding_logo_region=env("BRANDING_LOGO_REGION").strip(),
+            branding_logo_opacity=min(1.0, max(0.0,
+                env_float("BRANDING_LOGO_OPACITY", "1.0"))),
+            branding_logo_scale=min(1.0, max(0.01,
+                env_float("BRANDING_LOGO_SCALE", "0.2"))),
+            branding_vision_enabled=env_bool("BRANDING_VISION_ENABLED", "true"),
+            branding_vision_model=env("BRANDING_VISION_MODEL", "deepseek-vl").strip(),
             subtitle_mode=_one_of(env("SUBTITLE_MODE", "none"),
                                   ("none", "soft", "burn"), "none"),
             subtitle_preset=env("SUBTITLE_PRESET", "clean").strip() or "clean",

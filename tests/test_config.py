@@ -52,7 +52,6 @@ def test_quality_presets(monkeypatch):
     s = Settings.load()
     assert s.whisper_model == "medium"
     assert s.hq_background is False
-    assert s.translate_analysis is False
     monkeypatch.setenv("QUALITY_PRESET", "quality")
     s = Settings.load()
     assert s.whisper_model == "auto"

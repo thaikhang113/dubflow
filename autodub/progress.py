@@ -59,16 +59,19 @@ class ProgressReporter:
         self,
         callback: ProgressFn | None = None,
         cancel_event: threading.Event | None = None,
+        state_work_dir: str = "",
     ):
         self._callback = callback
         self._cancel_event = cancel_event
         self._last_progress: dict[str, float] = {}
         self._throttle_lock = threading.Lock()
+        self._state_work_dir = state_work_dir
+
+    def set_state_work_dir(self, work_dir: str) -> None:
+        self._state_work_dir = work_dir
 
     def emit(self, step: str, status: str, detail: str = "",
              current: int = 0, total: int = 0) -> None:
-        if not self._callback:
-            return
         if status == "progress" and not (total and current >= total):
             now = time.monotonic()
             with self._throttle_lock:
@@ -76,12 +79,21 @@ class ProgressReporter:
                 if now - last < _PROGRESS_MIN_INTERVAL_S:
                     return
                 self._last_progress[step] = now
-        try:
-            self._callback(ProgressEvent(step, status, detail, current, total))
-        except Exception:
-            # Progress là quan sát, không phải điều khiển — một handler GUI
-            # lỗi không được phép giết cả pipeline đang chạy.
-            pass
+        event = ProgressEvent(step, status, detail, current, total)
+        if self._callback:
+            try:
+                self._callback(event)
+            except Exception:
+                # Progress là quan sát, không phải điều khiển — một handler GUI
+                # lỗi không được phép giết cả pipeline đang chạy.
+                pass
+        if (self._state_work_dir
+                and (status != "progress" or (total and current >= total))):
+            from autodub.pipeline_state import record_event
+            try:
+                record_event(self._state_work_dir, event)
+            except OSError:
+                pass
 
     def check_cancelled(self) -> None:
         if self._cancel_event is not None and self._cancel_event.is_set():

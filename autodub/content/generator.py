@@ -83,31 +83,9 @@ def generate_social_metadata(script_original: str, script_translated: str,
     mọi lỗi đều được nuốt và ghi log, trừ khi hết Vox — trường hợp đó lớp
     trên cần biết để hiện lời mời nạp thêm.
     """
-    from autodub.saas_client import (
-        InsufficientCreditError, SaasError, get_client, is_configured,
-        new_job_id)
-    from autodub.text.translate_common import HOLD
-
-    if not is_configured():
-        # Chạy thuần trên máy — không có máy chủ để nhờ viết. Video vẫn xong.
-        logger.info("Chưa cấu hình máy chủ — bỏ qua phần nội dung đăng bài")
-        return {}
-
-    try:
-        metadata = get_client().generate_post(
-            script_original, script_translated,
-            job_id=job_id or new_job_id(), video_title=video_title,
-            hold_id=HOLD.hold_id)
-    except InsufficientCreditError:
-        raise
-    except SaasError as e:
-        logger.error(f"Viết nội dung đăng bài lỗi ({str(e)[:120]}) — bỏ qua "
-                     "phần đăng bài (không ảnh hưởng video)")
-        return {}
-    if metadata:
-        logger.info("Đã viết xong nội dung đăng bài: "
-                    f"«{str(metadata.get('title', ''))[:50]}»")
-    return metadata or {}
+    del script_original, script_translated, video_title, job_id
+    logger.info("Bỏ qua tạo metadata AI trong chế độ desktop local")
+    return {}
 
 
 # ------------------------------------------------------------- ghi ra tệp -- #

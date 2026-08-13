@@ -15,6 +15,7 @@ from PySide6.QtCore import QObject, QRunnable, QThread, Signal
 from autodub.config import Settings
 from autodub.pipeline import DubPipeline, DubRequest, DubResult
 from autodub.progress import PipelineCancelled
+from autodub.cancel import cancel_processes, clear_cancel_request, run_registered
 
 
 # --- Lọc log cho người dùng --------------------------------------------------
@@ -75,8 +76,10 @@ class DubWorker(QThread):
 
     def cancel(self) -> None:
         self._cancel_event.set()
+        cancel_processes()
 
     def run(self) -> None:
+        clear_cancel_request()
         handler = attach_gui_logging(self.log)
         try:
             pipeline = DubPipeline(
@@ -85,48 +88,6 @@ class DubWorker(QThread):
                 cancel_event=self._cancel_event,
             )
             result: DubResult = pipeline.run(self._request)
-            self.finished_ok.emit(result)
-        except PipelineCancelled:
-            self.cancelled.emit()
-        except Exception as e:  # noqa: BLE001 — surfaced to the user verbatim
-            self.failed.emit(str(e))
-        finally:
-            detach_gui_logging(handler)
-
-
-class ExportWorker(QThread):
-    """Chốt hold Vox rồi xuất video cho dự án đang chờ (luồng wizard).
-
-    Gọi :func:`autodub.pipeline.export_committed_project`: commit hold (trừ
-    Vox theo thực dùng, hoàn phần giữ chỗ thừa), giải mã file trung gian,
-    rồi chạy phase Xuất video. Mất mạng ở bước commit → failed, Vox chưa
-    trừ, bấm lại là chạy tiếp.
-    """
-
-    progress = Signal(object)          # ProgressEvent
-    log = Signal(str, int)
-    finished_ok = Signal(object)       # DubResult
-    failed = Signal(str)
-    cancelled = Signal()
-
-    def __init__(self, settings: Settings, work_dir: str, parent=None):
-        super().__init__(parent)
-        self._settings = settings
-        self._work_dir = work_dir
-        self._cancel_event = threading.Event()
-
-    def cancel(self) -> None:
-        self._cancel_event.set()
-
-    def run(self) -> None:
-        from autodub.pipeline import export_committed_project
-
-        handler = attach_gui_logging(self.log)
-        try:
-            result: DubResult = export_committed_project(
-                self._work_dir, self._settings,
-                progress=self.progress.emit,
-                cancel_event=self._cancel_event)
             self.finished_ok.emit(result)
         except PipelineCancelled:
             self.cancelled.emit()
@@ -367,10 +328,12 @@ class BatchWorker(QThread):
 
     def cancel(self) -> None:
         self._cancel_event.set()
+        cancel_processes()
 
     def run(self) -> None:
         from autodub.batch import run_batch
 
+        clear_cancel_request()
         handler = attach_gui_logging(self.log)
 
         def observer(i, total, item, status, detail):
@@ -581,18 +544,14 @@ class SystemStatusWorker(QThread):
         """
         if not settings.translate_enabled:
             return ("đang tắt", None)
-        from autodub.saas_client import SaasError, get_client, is_configured
-
-        if not is_configured():
-            return ("chạy thuần trên máy — bước dịch làm tay", True)
-        try:
-            device = get_client().ensure_session()
-        except SaasError as e:
-            return (f"chưa kết nối được ({str(e)[:60]})", False)
-        if not device.get("creditEnabled", True):
-            return ("VoxDub Cloud (đang miễn phí)", True)
-        balance = int(device.get("balance", 0))
-        return (f"VoxDub Cloud — còn {balance:,} Vox", balance > 0)
+        configured = all(
+            str(getattr(settings, key, "") or "").strip()
+            for key in ("translation_endpoint", "translation_api_key",
+                        "translation_model")
+        )
+        if not configured:
+            return ("dịch tay qua TRANSLATE_PENDING.txt", True)
+        return (f"API dịch sẵn sàng: {settings.translation_model}", True)
 
 
 class DownloadWorker(QThread):
@@ -672,6 +631,7 @@ class TimelineThumbnailWorker(QThread):
     def cancel(self) -> None:
         """Bỏ dở phần khung còn lại — teardown không phải đợi hết 12 lệnh ffmpeg."""
         self._cancel_event.set()
+        cancel_processes()
 
     def run(self) -> None:
         import subprocess
@@ -703,7 +663,7 @@ class TimelineThumbnailWorker(QThread):
                 ]
                 flags = (subprocess.CREATE_NO_WINDOW
                          if __import__("os").name == "nt" else 0)
-                subprocess.run(cmd, capture_output=True, timeout=10,
+                run_registered(cmd, capture_output=True, timeout=10,
                                creationflags=flags)
                 if __import__("os").path.isfile(dst):
                     results.append((t, dst))
@@ -731,6 +691,7 @@ class ExportAudioWorker(QThread):
 
     def cancel(self) -> None:
         self._cancel_event.set()
+        cancel_processes()
 
     def run(self) -> None:
         import subprocess
@@ -739,6 +700,7 @@ class ExportAudioWorker(QThread):
         from autodub.utils import ffmpeg_timeout_s
         from autodub.workdir import data_path
 
+        clear_cancel_request()
         handler = attach_gui_logging(self.log)
         try:
             src = data_path(self._work_dir, "audio_vi_full.wav")
@@ -754,7 +716,7 @@ class ExportAudioWorker(QThread):
                 self._output_path,
             ]
             try:
-                result = subprocess.run(
+                result = run_registered(
                     cmd, capture_output=True, text=True,
                     encoding="utf-8", errors="replace",
                     timeout=ffmpeg_timeout_s(wav_duration_s(src)))

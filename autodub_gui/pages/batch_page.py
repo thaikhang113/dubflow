@@ -609,41 +609,7 @@ class BatchPage(BasePage):
         self._launch([item])
 
     def _warn_if_low_credit(self, count: int) -> bool:
-        """Cảnh báo khi ví không đủ cho một lượt chạy hàng loạt.
-
-        Không gọi mạng: đọc số dư đã lấy về lúc khởi động và cập nhật sau mỗi
-        video. Chạy 30 video rồi hết Vox ở video thứ 8 là kiểu hỏng tệ nhất —
-        mất thời gian tách nhạc và nghe chép của 22 video còn lại. Chặn trước
-        thì người dùng nạp thêm rồi chạy một lần cho xong.
-
-        Trả về True nếu người dùng vẫn muốn chạy tiếp.
-        """
-        from autodub.saas_client import get_client
-
-        client = get_client()
-        device = client.device
-        if not device or not device.get("creditEnabled", True):
-            return True
-        balance = int(device.get("balance", 0))
-        # Giá theo segment: 10 Vox nền (+2 nếu bật dịch tự động, +20 cho gói
-        # đăng bài). Một video chừng 150-400 câu; lấy 150 câu × 10 Vox làm
-        # mốc dè dặt để không dọa người dùng khi họ thật sự đủ Vox.
-        needed = count * 150 * 10
-        if balance >= needed:
-            return True
-
-        confirmed, _ = ConfirmDialog.ask(
-            self, "Có thể không đủ Vox",
-            (f"Bạn còn {balance:,} Vox. Chạy {count} video thường tốn khoảng "
-             f"{needed:,} Vox trở lên (tính theo số câu thoại của từng "
-             "video), nên lượt chạy có thể dừng giữa chừng vì hết Vox."
-             "\n\nVideo đã xong vẫn giữ nguyên; các video sau dừng ngay sau "
-             "bước nghe-chép (chưa bị trừ Vox) và chạy tiếp được sau khi "
-             "bạn nạp thêm."
-             ).replace(",", "."),
-            kind="warning", confirm_label="Vẫn chạy",
-            cancel_label="Để tôi nạp thêm")
-        return confirmed
+        return True
 
     def _launch(self, items: list[BatchItem]) -> None:
         if self.is_running():

@@ -43,6 +43,21 @@ def test_valid_translation_loads(pipeline, target_vi, tmp_path):
     # Slots annotated: real window until the next line starts.
     assert result[0]["slot"] == 2.0
 
+def test_translation_load_preserves_detected_speaker_voice(
+    pipeline, target_vi, tmp_path
+):
+    original = [
+        {**SEGMENTS[0], "speaker_id": "speaker_01", "voice": "Clone A"},
+        SEGMENTS[1],
+    ]
+    translated = [{**s, "text_vi": f"vi {s['text']}"} for s in SEGMENTS]
+    path = _write(tmp_path, translated)
+
+    result = pipeline._load_translation(path, original, target_vi)
+
+    assert result[0]["speaker_id"] == "speaker_01"
+    assert result[0]["voice"] == "Clone A"
+
 
 def test_invalid_json_raises(pipeline, target_vi, tmp_path):
     path = _write(tmp_path, None, raw='```json\n[{"id": 1}]\n```')

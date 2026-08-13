@@ -274,7 +274,6 @@ class RunStatsPanel(QFrame):
     """Dải số liệu của lần chạy: số câu thoại và Vox tạm tính.
 
     Số câu lấy từ sự kiện ``asr done`` (detail "N segments"); Vox tích lũy
-    đọc từ ``USAGE`` mỗi giây trong lúc dịch — đúng con số máy chủ báo về
     sau từng lô, nên khớp với thẻ tổng kết ở bước Xuất video.
     """
 
@@ -318,11 +317,7 @@ class RunStatsPanel(QFrame):
             self._poll()
 
     def _poll(self) -> None:
-        from autodub.text.translate_common import USAGE
-
-        vox = USAGE.snapshot()["vox"]
-        if vox:
-            self._vox.setText(f"Vox tạm tính: {vox:,}")
+        self._vox.clear()
 
     def hideEvent(self, event) -> None:  # noqa: N802 — Qt API
         self._timer.stop()

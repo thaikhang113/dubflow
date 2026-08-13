@@ -204,6 +204,7 @@ class ProcessingCard(Card):
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent, padding=tokens.SP_3, spacing=tokens.SP_2)
+        self._stopping = False
         self.add_header("Dự án đang xử lý")
 
         # Hai khối này nằm TRONG thẻ nên phải trong suốt: bảng kiểu chung đặt
@@ -286,8 +287,20 @@ class ProcessingCard(Card):
 
     def show_idle(self) -> None:
         """Không có việc nào đang chạy."""
+        self._stopping = False
+        self._btn_stop.setEnabled(False)
+        self._btn_stop.setText("Dừng")
         self._busy.setVisible(False)
         self._idle.setVisible(True)
+
+    def show_stopping(self) -> None:
+        """Hiện trạng thái đã gửi yêu cầu dừng, chờ worker kết thúc."""
+        self._stopping = True
+        self._btn_stop.setEnabled(False)
+        self._btn_stop.setText("Đang dừng…")
+
+    def is_stopping(self) -> bool:
+        return self._stopping
 
     def show_job(self, title: str, step_label: str, percent: int,
                  eta_text: str, thumbnail: QPixmap | None = None) -> None:
@@ -299,6 +312,9 @@ class ProcessingCard(Card):
         self._percent.setText(f"{percent}%")
         self._bar.setValue(max(0, min(100, percent)))
         self._eta.setText(f"Thời gian còn lại: {eta_text}" if eta_text else "")
+        if not self._stopping:
+            self._btn_stop.setEnabled(True)
+            self._btn_stop.setText("Dừng")
         if thumbnail is not None:
             self._thumb.set_thumbnail(thumbnail)
 

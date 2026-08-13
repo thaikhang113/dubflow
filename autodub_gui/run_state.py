@@ -125,7 +125,7 @@ class RunRegistry(QObject):
         self._cancel_callback = None
 
     # -- Việc đang chạy ------------------------------------------------
-    def start_job(self, job: ActiveJob, on_cancel=None) -> None:
+    def start_job(self, job: ActiveJob, on_cancel=None) -> bool:
         """Ghi nhận một việc vừa bắt đầu, kèm hàm dừng để Trang chủ gọi lại."""
         if self._job is not None:
             # Không được đè việc đang chạy — mất luôn nút Dừng của nó.
@@ -133,12 +133,14 @@ class RunRegistry(QObject):
             self.add_activity(
                 LEVEL_WARNING,
                 f"Bắt đầu «{job.title}» khi «{self._job.title}» chưa xong")
+            return False
         job.started_at = job.started_at or time.time()
         job.step_started_at = time.monotonic()
         job.done_steps = set()
         self._job = job
         self._cancel_callback = on_cancel
         self.job_changed.emit()
+        return True
 
     def update_job(self, event) -> None:
         """Cập nhật tiến độ từ một ProgressEvent của lõi xử lý."""

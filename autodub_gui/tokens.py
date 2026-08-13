@@ -48,7 +48,7 @@ ACCENT_PURPLE_HOVER = "#9b6ef8"
 # -- Chữ --------------------------------------------------------------
 TEXT_PRIMARY    = "#e8e8f0"   # trắng xanh nhẹ — dễ đọc trên nền tối
 TEXT_SECONDARY  = "#9090a8"   # xám tím vừa
-TEXT_MUTED      = "#606078"   # xám tối — hint, meta
+TEXT_MUTED      = "#82829a"   # xám phụ đủ tương phản trên nền tối
 TEXT_DISABLED   = "#3e3e54"
 TEXT_ON_ACCENT  = "#ffffff"
 

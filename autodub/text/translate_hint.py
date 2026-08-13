@@ -334,12 +334,9 @@ def write_hint(work_dir: str, target: TargetLang, source_lang: str,
     ctx_cache = os.path.join(d_dir, "video_context.json")
     if settings is not None and os.path.exists(ctx_cache):
         try:
-            from autodub import securestore
-            from autodub.text.translate_common import HOLD
-
-            analysis = securestore.read_json_secure(ctx_cache, HOLD.key or None)
-            from autodub.text.translate_saas import apply_analysis
-            settings = apply_analysis(settings, analysis)
+            with open(ctx_cache, encoding="utf-8") as f:
+                analysis = json.load(f)
+            settings = settings
         except Exception as e:  # noqa: BLE001 — thiếu ngữ cảnh không được chặn hướng dẫn
             logger.warning(f"Không đọc được ngữ cảnh video cho dịch tay: {e}")
 

@@ -39,6 +39,7 @@ class Stepper(QWidget):
         self._current = 0
         self._max_reached = 0
         self._live = False
+        self._interactive = True
         self._live_done: set[int] = set()
         self.setMinimumHeight(_HEIGHT)
         self.setSizePolicy(QSizePolicy.Policy.Expanding,
@@ -66,8 +67,19 @@ class Stepper(QWidget):
         """Bật chế độ bám theo tiến trình thật và khóa việc bấm chọn."""
         self._live = live
         self._live_done.clear()
-        self.setCursor(Qt.CursorShape.ArrowCursor if live
-                       else Qt.CursorShape.PointingHandCursor)
+        self.setCursor(
+            Qt.CursorShape.PointingHandCursor
+            if self._interactive and not live
+            else Qt.CursorShape.ArrowCursor)
+        self.update()
+
+    def set_interactive(self, enabled: bool) -> None:
+        """Cho phép hoặc khóa click nhảy bước."""
+        self._interactive = enabled
+        self.setCursor(
+            Qt.CursorShape.PointingHandCursor
+            if enabled and not self._live
+            else Qt.CursorShape.ArrowCursor)
         self.update()
 
     def set_live_progress(self, index: int) -> None:
@@ -95,7 +107,8 @@ class Stepper(QWidget):
 
     def can_jump_to(self, index: int) -> bool:
         """Chỉ cho phép nhảy tới bước kế tiếp bước xa nhất đã hoàn tất."""
-        return not self._live and 0 <= index <= self._max_reached + 1
+        return (self._interactive and not self._live
+                and 0 <= index <= self._max_reached + 1)
 
     # -- Tương tác -----------------------------------------------------
     def _index_at(self, x: float) -> int:

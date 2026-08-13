@@ -178,7 +178,7 @@ class TranslateToolPage(ToolPage):
     def _set_translation_model(self, model: str) -> None:
         widget = self._widget_of("TRANSLATION_MODEL")
         if widget is not None:
-            widget.setText(model)
+            widget.set_text(model)
             self._mark_dirty()
 
     def load_extra(self, env: dict[str, str]) -> None:

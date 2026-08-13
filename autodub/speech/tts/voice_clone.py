@@ -127,9 +127,11 @@ def enroll_reference_audio(
         "--style", settings.vieneu_style,
         "--enroll-reference-hash", ref_hash,
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True,
-                          encoding="utf-8", errors="replace",
-                          timeout=600)
+    from autodub.cancel import run_registered
+    proc = run_registered(
+        cmd, capture_output=True, text=True, encoding="utf-8",
+        errors="replace", timeout=600,
+    )
     responses = []
     for line in (proc.stdout or "").splitlines():
         try:
@@ -143,6 +145,70 @@ def enroll_reference_audio(
     from autodub.speech.tts.voices import invalidate_catalog_cache
     invalidate_catalog_cache()
     return voice_name
+
+def enroll_reference_audio_batch(settings, items: list[dict]) -> dict[str, str]:
+    """Enroll several references in one VieNeu worker startup."""
+    if not items:
+        return {}
+    if not settings.vieneu_configured():
+        raise RuntimeError("VieNeu chưa được cài")
+
+    from autodub.utils import bundled_file
+
+    custom_path = settings.vieneu_custom_voices_path()
+    batch_path = os.path.join(
+        os.path.dirname(os.path.abspath(custom_path)),
+        "speaker_enroll_batch.json",
+    )
+    payload = []
+    names: dict[str, str] = {}
+    for item in items:
+        name = str(item["name"])
+        names[str(item["speaker_id"])] = name
+        payload.append({
+            "wav": item["wav"],
+            "name": name,
+            "description": item.get("description", "Voice clone từ video"),
+            "style": settings.vieneu_style,
+            "source": "custom",
+            "reference_hash": item.get("reference_hash", ""),
+        })
+    with open(batch_path, "w", encoding="utf-8") as stream:
+        json.dump(payload, stream, ensure_ascii=False)
+    try:
+        from autodub.cancel import run_registered
+        cmd = [
+            settings.vieneu_venv_python_path(),
+            bundled_file("autodub", "speech", "tts", "vieneu_worker.py"),
+            "--model-dir", settings.vieneu_model_dir_path(),
+            "--custom-voices", custom_path,
+            "--enroll-batch", batch_path,
+            "--style", settings.vieneu_style,
+        ]
+        proc = run_registered(
+            cmd, capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=600,
+        )
+        responses = []
+        for line in (proc.stdout or "").splitlines():
+            try:
+                responses.append(json.loads(line))
+            except ValueError:
+                continue
+        result = responses[-1] if responses else {}
+        if proc.returncode != 0 or not result.get("ok"):
+            raise RuntimeError(
+                result.get("error") or
+                (proc.stderr or "VieNeu enroll batch thất bại")[-500:]
+            )
+    finally:
+        try:
+            os.remove(batch_path)
+        except OSError:
+            pass
+    from autodub.speech.tts.voices import invalidate_catalog_cache
+    invalidate_catalog_cache()
+    return names
 
 def custom_voice_names(path: str) -> set[str]:
     if not path or not os.path.isfile(path):

@@ -86,6 +86,18 @@ def test_soft_subs_language_tag(paths, captured):
         srt_path=paths["srt"], subtitle_mode="soft", subtitle_lang="vie")
     assert "language=vie" in captured[0]
 
+def test_logo_and_soft_subs_map_separate_inputs(paths, captured):
+    logo = paths["video"].replace("in.mp4", "logo.png")
+    from pathlib import Path
+    Path(logo).write_bytes(b"png")
+    video_mod.merge_video(
+        paths["video"], paths["audio"], paths["out"],
+        srt_path=paths["srt"], subtitle_mode="soft", logo_path=logo,
+    )
+    cmd = captured[0]
+    assert cmd.count("-i") == 4
+    assert "3:0" in cmd
+
 
 # --------------------------- burn subs --------------------------- #
 
@@ -127,6 +139,41 @@ def test_blur_skipped_when_regions_empty(paths, captured):
     video_mod.merge_video(
         paths["video"], paths["audio"], paths["out"], blur_regions=[])
     assert get_opt(captured[0], "-c:v") == "copy"
+
+def test_logo_overlay_uses_second_video_input_and_fixed_region(paths, captured):
+    logo = paths["video"].replace("in.mp4", "logo.png")
+    from pathlib import Path
+    Path(logo).write_bytes(b"png")
+    video_mod.merge_video(
+        paths["video"], paths["audio"], paths["out"],
+        blur_regions=[BAND], logo_path=logo,
+        logo_region={"x": 0.75, "y": 0.05, "w": 0.18, "h": 0.1},
+    )
+    cmd = captured[0]
+    assert cmd.count("-i") == 3
+    graph = get_opt(cmd, "-filter_complex")
+    assert "[2:v]" in graph
+    assert "overlay=" in graph
+
+def test_branding_assets_validate_paths(paths):
+    with pytest.raises(FileNotFoundError):
+        video_mod.merge_video(
+            paths["video"], paths["audio"], paths["out"],
+            logo_path=paths["out"] + ".missing",
+        )
+
+
+def test_compose_intro_outro_uses_concat_filter(paths, captured):
+    intro = paths["video"].replace("in.mp4", "intro.mp4")
+    outro = paths["video"].replace("in.mp4", "outro.mp4")
+    from pathlib import Path
+    Path(intro).write_bytes(b"intro")
+    Path(outro).write_bytes(b"outro")
+    video_mod.compose_video(
+        paths["video"], paths["out"], intro_path=intro, outro_path=outro)
+    cmd = captured[-1]
+    assert cmd.count("-i") == 3
+    assert "concat=n=3:v=1:a=1" in " ".join(cmd)
 
 
 def test_reencode_uses_nvenc_when_available(paths, captured, monkeypatch):
