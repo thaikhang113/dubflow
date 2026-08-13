@@ -20,7 +20,7 @@ jobs:
       - name: Install Qt runtime libraries
         run: |
           sudo apt-get update
-          sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0
+          sudo apt-get install -y ffmpeg libegl1 libgl1 libxkbcommon-x11-0
       - name: Configure headless Qt
         run: echo "QT_QPA_PLATFORM=offscreen" >> "$GITHUB_ENV"
       - name: Install test dependencies
