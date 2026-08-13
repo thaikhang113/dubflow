@@ -12,3 +12,10 @@ def test_all_installers_exist_and_call_all_setup_steps():
                        "setup_paraformer.py", "setup_douyin.py"):
             assert script in content
         assert "requirements.txt" in content
+
+
+def test_release_builders_bundle_setup_support_helper():
+    windows = (ROOT / "scripts" / "build_exe.py").read_text(encoding="utf-8")
+    linux = (ROOT / "scripts" / "build_linux.py").read_text(encoding="utf-8")
+    assert '"setup_support.py"' in windows
+    assert '"setup_support.py"' in linux

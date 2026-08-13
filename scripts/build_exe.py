@@ -77,8 +77,9 @@ def step_assemble() -> None:
     # máy người dùng — exe chỉ chứa phần lõi.
     scripts_dst = os.path.join(DIST_DIR, "scripts")
     os.makedirs(scripts_dst, exist_ok=True)
-    for script in ("setup_vieneu.py", "setup_paraformer.py",
-                   "setup_whisper.py", "setup_douyin.py"):
+    for script in ("setup_support.py", "setup_vieneu.py",
+                   "setup_paraformer.py", "setup_whisper.py",
+                   "setup_douyin.py"):
         shutil.copy2(os.path.join(PROJECT_ROOT, "scripts", script),
                      scripts_dst)
 

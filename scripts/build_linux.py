@@ -25,8 +25,9 @@ def run(command: list[str]) -> None:
 
 def assemble() -> None:
     os.makedirs(os.path.join(DIST, "scripts"), exist_ok=True)
-    for name in ("setup_vieneu.py", "setup_paraformer.py",
-                 "setup_whisper.py", "setup_douyin.py"):
+    for name in ("setup_support.py", "setup_vieneu.py",
+                 "setup_paraformer.py", "setup_whisper.py",
+                 "setup_douyin.py"):
         shutil.copy2(
             os.path.join(ROOT, "scripts", name),
             os.path.join(DIST, "scripts", name),
