@@ -1,0 +1,123 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version without the v prefix"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    name: Build Linux release
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version="${{ inputs.version }}"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libegl1 libgl1 libxkbcommon-x11-0
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install pyinstaller
+      - name: Build Linux bundle
+        run: python scripts/build_linux.py --no-test --version "${{ steps.version.outputs.value }}"
+      - name: Create checksum
+        run: sha256sum dist/DubFlow-v*-linux-x86_64.tar.gz > dist/SHA256SUMS-linux.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-linux
+          path: |
+            dist/DubFlow-v*-linux-x86_64.tar.gz
+            dist/SHA256SUMS-linux.txt
+
+  build-windows:
+    name: Build Windows release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $version = "${{ inputs.version }}"
+          } else {
+            $version = "${env:GITHUB_REF_NAME}".TrimStart("v")
+          }
+          if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$') {
+            throw "Invalid release version: $version"
+          }
+          "value=$version" >> $env:GITHUB_OUTPUT
+      - name: Install build dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install pyinstaller
+      - name: Build Windows bundle
+        shell: pwsh
+        run: python scripts/build_exe.py --no-test --version "${{ steps.version.outputs.value }}"
+      - name: Create checksum
+        shell: pwsh
+        run: |
+          $archive = Get-ChildItem dist/DubFlow-v*-windows-x64.zip
+          (Get-FileHash $archive.FullName -Algorithm SHA256).Hash.ToLower() + "  " + $archive.Name |
+            Set-Content dist/SHA256SUMS-windows.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: |
+            dist/DubFlow-v*-windows-x64.zip
+            dist/SHA256SUMS-windows.txt
+
+  publish:
+    name: Publish GitHub release
+    runs-on: ubuntu-22.04
+    needs: [build-linux, build-windows]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          version="${{ inputs.version }}"
+          if [ -z "$version" ]; then
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          tag="v$version"
+          gh release create "$tag" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "DubFlow $tag" \
+            --generate-notes

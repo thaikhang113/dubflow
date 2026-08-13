@@ -27,7 +27,7 @@ from autodub_gui.ui.modal import ConfirmDialog
 from autodub_gui.ui.style import panel_background
 from autodub_gui.ui.toast import TOASTS
 
-APP_NAME = "VoxDub Studio"
+APP_NAME = "DubFlow"
 APP_TAGLINE = "Lồng tiếng video bằng AI"
 APP_VERSION = "3.0.0"
 
@@ -466,7 +466,8 @@ class MainWindow(QMainWindow):
         from autodub_gui.workers import UpdateCheckWorker
 
         try:
-            repo = Settings.load(override=True).update_repo
+            repo = (Settings.load(override=True).update_repo
+                    or "thaikhang113/dubflow")
         except Exception:  # noqa: BLE001 — cấu hình hỏng thì bỏ qua lượt này
             return
         if not repo:
@@ -480,7 +481,7 @@ class MainWindow(QMainWindow):
         from autodub_gui.system_open import open_url
 
         TOASTS.info(
-            f"Có bản VoxDub mới v{info.version} (bạn đang dùng v{APP_VERSION}).",
+            f"Có bản DubFlow mới v{info.version} (bạn đang dùng v{APP_VERSION}).",
             action_label="Tải bản mới",
             on_action=lambda url=info.url: open_url(url))
 

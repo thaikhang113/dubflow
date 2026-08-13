@@ -507,7 +507,7 @@ class MaintenancePanel(CollapsibleSection):
         except Exception as e:  # noqa: BLE001 — vẫn ghi được phần còn lại
             ready, output_dir, voice_count = {}, f"không đọc được ({e})", 0
         lines = [
-            "Nhật ký chẩn đoán VoxDub Studio",
+            "Nhật ký chẩn đoán DubFlow",
             f"Hệ điều hành: {platform.platform()}",
             f"Phiên bản Python: {sys.version.split()[0]}",
             f"Thư mục ứng dụng: {app_root()}",

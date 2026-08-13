@@ -401,14 +401,16 @@ VoxDub Studio/
 
 
 def main() -> int:
+    _force_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--no-test", action="store_true",
                         help="bỏ qua smoke test sau khi build")
     parser.add_argument("--no-zip", action="store_true",
                         help="bỏ qua bước nén .zip phát hành")
+    parser.add_argument("--version", default=None,
+                        help="version dùng cho tên artifact (mặc định lấy APP_VERSION)")
     args = parser.parse_args()
 
-    _force_utf8_stdio()
     start = time.time()
     step_pyinstaller()
     step_assemble()
@@ -431,7 +433,7 @@ def main() -> int:
         src = open(os.path.join(PROJECT_ROOT, "autodub_gui", "app.py"),
                    encoding="utf-8").read()
         m = re.search(r'^APP_VERSION\s*=\s*"([^"]+)"', src, re.M)
-        version = m.group(1) if m else "0.0"
+        version = args.version or (m.group(1) if m else "0.0")
         zip_path = os.path.join(PROJECT_ROOT, "dist",
                                 f"DubFlow-v{version}-windows-x64.zip")
         log(f"đang nén gói phát hành: {os.path.basename(zip_path)} ...")
@@ -442,7 +444,7 @@ def main() -> int:
                 for f in fs:
                     full = os.path.join(dp, f)
                     rel = os.path.relpath(full, DIST_DIR)
-                    zf.write(full, os.path.join("VoxDub Studio", rel))
+                    zf.write(full, os.path.join("DubFlow", rel))
         zsize = os.path.getsize(zip_path)
         log(f"gói phát hành sẵn sàng: {zip_path} ({zsize >> 20} MB)")
     elif not ok:

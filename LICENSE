@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 VoxDub Studio contributors
+Copyright (c) 2026 DubFlow contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -22,7 +22,7 @@ SOFTWARE.
 
 ---
 
-Note: this MIT license covers the VoxDub Studio source code only. Models and
+Note: this MIT license covers the DubFlow source code only. Models and
 data downloaded by the scripts in scripts/ carry their own licenses — check
 each upstream project before commercial use, in particular:
 

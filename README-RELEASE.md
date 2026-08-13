@@ -32,6 +32,12 @@ python3 scripts/build_linux.py --version 0.1.0
 Linux build needs system FFmpeg and Qt runtime libraries. The build does not
 include ASR/TTS models, CUDA, or user credentials.
 
+## Release workflow
+
+Push a semantic-version tag such as `v0.1.0`. GitHub Actions builds both
+platforms, writes SHA256 checksum files, and publishes one GitHub Release.
+Do not publish artifacts from `main` manually.
+
 ## Release rules
 
 - Never commit `.env`, cookies, models, voices, or generated project data.

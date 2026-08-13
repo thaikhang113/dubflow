@@ -65,7 +65,7 @@ class FirstRunDialog(QDialog):
 
     def __init__(self, settings, parent: QWidget | None = None):
         super().__init__(parent)
-        self.setWindowTitle("Chào mừng đến VoxDub Studio")
+        self.setWindowTitle("Chào mừng đến DubFlow")
         self.setModal(True)
         self.setMinimumWidth(_MIN_W)
 
@@ -74,7 +74,7 @@ class FirstRunDialog(QDialog):
                                 tokens.SP_6, tokens.SP_5)
         root.setSpacing(tokens.SP_4)
 
-        title = QLabel("Chào mừng đến VoxDub Studio")
+        title = QLabel("Chào mừng đến DubFlow")
         title.setStyleSheet(
             f"color: {tokens.TEXT_PRIMARY}; font-size: {tokens.FS_SECTION}px; "
             f"font-weight: 700; background: transparent;")

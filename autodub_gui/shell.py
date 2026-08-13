@@ -25,7 +25,7 @@ from autodub_gui.ui.effects import soft_shadow
 from autodub_gui.ui.labels import ElidedLabel
 from autodub_gui.ui.style import clear_background, scoped_style
 
-BRAND_NAME = "VoxDub Studio"
+BRAND_NAME = "DubFlow"
 
 _LOGO_PX = 32
 _NAV_ICON_PX = 18
