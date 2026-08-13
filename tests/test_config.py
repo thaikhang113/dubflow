@@ -143,8 +143,12 @@ def test_ocr_defaults_and_paths(monkeypatch):
     assert s.ocr_max_region_area == 0.25
     assert s.ocr_subtitle_y_min == 0.65
     assert s.ocr_sample_interval == 1.0
-    assert s.ocr_venv_python_path().replace("\\", "/").endswith(
-        ".venv-ocr/Scripts/python.exe")
+    expected_suffix = (
+        ".venv-ocr/Scripts/python.exe"
+        if os.name == "nt"
+        else ".venv-ocr/bin/python"
+    )
+    assert s.ocr_venv_python_path().replace("\\", "/").endswith(expected_suffix)
 
 
 def test_clone_defaults(monkeypatch):
