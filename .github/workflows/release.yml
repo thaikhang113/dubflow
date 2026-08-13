@@ -45,7 +45,7 @@ jobs:
       - name: Build Linux bundle
         run: python scripts/build_linux.py --no-test --version "${{ steps.version.outputs.value }}"
       - name: Create checksum
-        run: sha256sum dist/DubFlow-v*-linux-x86_64.tar.gz > dist/SHA256SUMS-linux.txt
+        run: (cd dist && sha256sum DubFlow-v*-linux-x86_64.tar.gz) > dist/SHA256SUMS-linux.txt
       - uses: actions/upload-artifact@v4
         with:
           name: release-linux
@@ -117,7 +117,13 @@ jobs:
             version="${GITHUB_REF_NAME#v}"
           fi
           tag="v$version"
-          gh release create "$tag" dist/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "DubFlow $tag" \
-            --generate-notes
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          else
+            gh release create "$tag" dist/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "DubFlow $tag" \
+              --generate-notes
+          fi
