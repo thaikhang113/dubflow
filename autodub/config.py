@@ -71,6 +71,19 @@ def _log_governor_once(workers: int, avail: float | None, cores: int) -> None:
         f"để không tràn bộ nhớ. Đặt VIENEU_MAX_WORKERS trong .env nếu muốn khác."
     )
 
+def effective_vieneu_workers(configured: int) -> int:
+    """Cap saved worker settings when current free RAM cannot support them."""
+    from autodub.sysinfo import available_ram_gb
+
+    avail = available_ram_gb()
+    if avail is None:
+        return max(1, int(configured))
+    if avail < 3.0:
+        return 1
+    if avail < 5.0:
+        return min(2, max(1, int(configured)))
+    return max(1, int(configured))
+
 
 
 
@@ -161,6 +174,7 @@ class Settings:
     # Số tiến trình con chạy song song (~1.5 GB RAM mỗi cái). Chạy trên CPU
     # nên tăng số luồng là nhanh lên gần như tuyến tính, tới khi hết nhân.
     vieneu_max_workers: int = 3
+    worker_mode: str = "auto"
 
     # Hiệu năng: số luồng cho các bước nặng (gửi việc cho bộ giọng, nhóm
     # ffmpeg atempo, dịch qua mạng). Tự tính theo CPU lúc nạp cấu hình;
@@ -385,6 +399,8 @@ class Settings:
                 env_float("VIENEU_CLONE_MAX_SECONDS", "8.0"))),
             # Người dùng đặt tay thì tôn trọng; chưa đặt thì tự tính theo
             # RAM trống + số nhân (xem _auto_vieneu_workers).
+            worker_mode=_one_of(env("WORKER_MODE", "auto"),
+                                ("auto", "manual"), "auto"),
             vieneu_max_workers=max(1, min(8, env_int(
                 "VIENEU_MAX_WORKERS",
                 "3" if env("VIENEU_MAX_WORKERS")

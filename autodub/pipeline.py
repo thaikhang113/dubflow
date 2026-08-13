@@ -25,6 +25,7 @@ import threading
 import time
 from dataclasses import asdict
 from dataclasses import dataclass, field
+from dataclasses import replace
 from datetime import datetime
 
 from autodub.config import Settings
@@ -231,6 +232,7 @@ class DubPipeline:
         self._active_synth = None
         self._active_bg_future = None
         self._bg_executor = None
+        original_settings = self.settings
         # Xoá dấu vết lượt trước — lỡ lượt này đổ TRƯỚC khi chọn xong thư mục
         # thì batch không nhầm sang thư mục của video trước đó.
         self.last_work_dir = ""
@@ -273,32 +275,50 @@ class DubPipeline:
             self._active_synth = None
             self._active_bg_future = None
             self._bg_executor = None
+            self.settings = original_settings
             if executor is not None:
                 executor.shutdown(wait=bg_fut is None or bg_fut.done())
 
     @staticmethod
-    def _log_machine_info(settings: Settings) -> None:
+    def _log_machine_info(settings: Settings) -> dict:
         """Một dòng cấu hình máy đầu mỗi lượt chạy — để đọc log là biết ngay
         video chậm vì máy yếu hay vì lỗi, không phải hỏi lại người dùng."""
         from autodub.sysinfo import available_ram_gb, total_ram_gb
         from autodub.media.vocal_separator import gpu_venv_python
         from autodub.media.video import video_encoder_name
+        from autodub.worker_plan import build_worker_plan
 
         total = total_ram_gb()
         avail = available_ram_gb()
         ram_txt = (f"RAM {avail:.1f}/{total:.1f} GB trống"
                    if total is not None and avail is not None else "RAM ?")
         gpu_txt = "có" if gpu_venv_python() else "không"
+        plan = build_worker_plan(
+            mode=getattr(settings, "worker_mode", "auto"),
+            cpu_count=os.cpu_count(),
+            available_ram_gb=avail,
+            gpu_available=bool(gpu_venv_python()),
+            configured={
+                "tts": settings.vieneu_max_workers,
+                "parallel": settings.parallel_workers,
+                "asr": settings.asr_num_threads,
+            },
+        )
         logger.info(
             f"Máy: {os.cpu_count() or '?'} nhân, {ram_txt}, GPU (venv) {gpu_txt} — "
-            f"TTS {settings.vieneu_max_workers} luồng, "
-            f"parallel {settings.parallel_workers}")
+            f"worker mode {getattr(settings, 'worker_mode', 'auto')}")
+        for name in ("asr", "ocr", "translate", "tts", "demucs", "merge"):
+            item = plan[name]
+            logger.info(
+                f"Worker {name}: {item['effective']} "
+                f"(yêu cầu {item['requested']}, {item['reason']})")
         # Xuất video bằng card đồ họa nhanh gấp nhiều lần CPU. Ghi rõ ở đây để
         # người dùng máy yếu biết ngay mình đang chạy đường nào.
         try:
             logger.info(f"Xuất video bằng: {video_encoder_name()}")
         except Exception as exc:      # ffmpeg lạ — không đáng làm hỏng lượt chạy
             logger.debug(f"Không dò được encoder: {exc}")
+        return plan
 
     def _run_impl(self, req: DubRequest) -> DubResult:
         start_time = time.time()
@@ -317,7 +337,15 @@ class DubPipeline:
         target = get_target(req.target)
         lang_code = resolve_source_lang(req.source_lang)
         logger.info(f"Source language: {lang_code} → {target.name}")
-        self._log_machine_info(settings)
+        requested_settings = settings
+        worker_plan = self._log_machine_info(settings)
+        settings = replace(
+            settings,
+            asr_num_threads=worker_plan["asr"]["effective"],
+            parallel_workers=worker_plan["parallel"]["effective"],
+            vieneu_max_workers=worker_plan["tts"]["effective"],
+        )
+        self.settings = settings
 
         # Resume an existing work_dir or create a new timestamped one
         if req.resume_dir:
@@ -342,7 +370,7 @@ class DubPipeline:
             "file_path": req.file_path or "",
             "source_lang": req.source_lang or settings.default_source_lang,
         }
-        runtime = asdict(settings)
+        runtime = asdict(requested_settings)
         for secret in ("translation_api_key", "bilibili_cookies_file"):
             runtime.pop(secret, None)
         from autodub.pipeline_state import grouped_settings
@@ -351,6 +379,7 @@ class DubPipeline:
             "runtime": runtime,
             "stages": grouped_settings(asdict(req), runtime),
         }
+        state["pipeline"]["worker_plan"] = worker_plan
         state["pipeline"]["status"] = "running"
         state["pipeline"]["last_error"] = ""
         save_pipeline_state(work_dir, state)
@@ -560,6 +589,7 @@ class DubPipeline:
         # batch/legacy chốt ngay sau khi xuất xong (xem cuối hàm).
         video_duration_s = max(float(s.get("end", 0) or 0) for s in segments)
         effective_voice = req.voice
+        clone_report: dict = {}
         clone_enabled = bool(req.clone_voice or settings.vieneu_clone_enabled)
         if clone_enabled:
             bg_future.result()
@@ -567,7 +597,7 @@ class DubPipeline:
                      detail="Dang nhan dien va clone giong tung nhan vat")
             try:
                 effective_voice, segments = self._resolve_clone_voices(
-                    req, segments, work_dir)
+                    req, segments, work_dir, clone_report)
                 logger.info(
                     f"Đã dùng voice clone VieNeu: {effective_voice}"
                     + (" theo từng nhân vật"
@@ -580,6 +610,14 @@ class DubPipeline:
                 rep.emit("tts", "done",
                          detail=f"Da tao {speaker_count or 1} ho so giong")
             except Exception as exc:
+                clone_report = {
+                    "enabled": True,
+                    "status": "fallback_all",
+                    "error": str(exc),
+                }
+                with open(data_path(work_dir, "clone_report.json",
+                                    create_dir=True), "w", encoding="utf-8") as f:
+                    json.dump(clone_report, f, ensure_ascii=False, indent=2)
                 logger.warning(
                     f"Clone giọng không khả dụng ({exc}) — dùng preset voice")
                 rep.emit("tts", "warning", detail=f"Clone fallback: {exc}")
@@ -819,6 +857,8 @@ class DubPipeline:
                 if req.vision_enabled is not None
                 else getattr(settings, "branding_vision_enabled", True)),
             "voice": effective_voice,
+            "clone_report": clone_report,
+            "worker_plan": worker_plan,
             "elapsed_before": round(time.time() - start_time, 1),
         }
 
@@ -836,6 +876,18 @@ class DubPipeline:
         settings, rep = self.settings, self._reporter
         phase_start = time.time()
         from autodub.text.subtitles import refresh_subtitles
+
+        clone_report = state.get("clone_report") or {}
+        worker_plan = state.get("worker_plan") or {}
+        if not clone_report:
+            try:
+                with open(data_path(work_dir, "clone_report.json"),
+                          encoding="utf-8") as handle:
+                    loaded_clone_report = json.load(handle)
+                if isinstance(loaded_clone_report, dict):
+                    clone_report = loaded_clone_report
+            except (OSError, ValueError, TypeError):
+                pass
 
         segments = state["segments"]
         merge_dir = state["merge_dir"]
@@ -974,7 +1026,9 @@ class DubPipeline:
         # trước khi quyết định đăng.
         quality = self._build_quality_report(target, segments,
                                              state.get("timing") or {},
-                                             settings)
+                                             settings,
+                                             clone_report,
+                                             worker_plan)
         quality_path = data_path(work_dir, "quality_report.json")
         with open(quality_path, "w", encoding="utf-8") as f:
             json.dump(quality, f, ensure_ascii=False, indent=2)
@@ -1142,7 +1196,9 @@ class DubPipeline:
             item
             for batch in TranslationQueue(
                 tasks,
-                worker_count=min(settings.parallel_workers, len(tasks)),
+                # Public/rate-limited endpoints need one request at a time.
+                worker_count=1 if settings.translation_endpoint else
+                             min(settings.parallel_workers, len(tasks)),
                 handler=handle,
                 on_state=on_state,
                 cancel_event=rep.cancel_event,
@@ -1353,7 +1409,8 @@ class DubPipeline:
         return None, 0.0
 
     def _resolve_clone_voices(
-        self, req: DubRequest, segments: list[dict], work_dir: str
+        self, req: DubRequest, segments: list[dict], work_dir: str,
+        clone_report: dict | None = None,
     ) -> tuple[str, list[dict]]:
         """Clone one voice per detected speaker, with a one-voice fallback."""
         if req.clone_source == "file":
@@ -1361,7 +1418,7 @@ class DubPipeline:
             return voice, segments
 
         from autodub.speech.diarization import (
-            assign_voice_names, diarize_segments,
+            assign_voice_names_with_fallback, diarize_segments,
             load_diarization_cache, save_diarization_cache,
             select_reference_segments,
         )
@@ -1384,12 +1441,27 @@ class DubPipeline:
                 if item.get("speaker_id") and item.get("voice")
             }
             if voice_names:
+                fallback_voice = self._resolve_fallback_voice(req)
+                cached_segments, fallback_speakers = (
+                    assign_voice_names_with_fallback(
+                        cached.get("segments", segments), voice_names,
+                        fallback_voice=fallback_voice,
+                        cancel_event=self._reporter.cancel_event))
+                if clone_report is not None:
+                    clone_report.update({
+                        "enabled": True,
+                        "status": "cached",
+                        "speakers_detected": sorted({
+                            str(item.get("speaker_id"))
+                            for item in cached_segments
+                            if item.get("speaker_id")
+                        }),
+                        "cloned_speakers": sorted(voice_names),
+                        "fallback_speakers": fallback_speakers,
+                    })
                 return (
                     next(iter(voice_names.values())),
-                    assign_voice_names(
-                        cached.get("segments", segments), voice_names,
-                        cancel_event=self._reporter.cancel_event,
-                    ),
+                    cached_segments,
                 )
 
         source = data_path(work_dir, "vocals.wav")
@@ -1516,8 +1588,21 @@ class DubPipeline:
         if not enroll_items:
             raise RuntimeError("Không tạo được hồ sơ giọng nhân vật")
         voice_names = enroll_reference_audio_batch(self.settings, enroll_items)
-        enriched = assign_voice_names(
-            enriched, voice_names, cancel_event=self._reporter.cancel_event)
+        fallback_voice = self._resolve_fallback_voice(req)
+        enriched, fallback_speakers = assign_voice_names_with_fallback(
+            enriched, voice_names, fallback_voice=fallback_voice,
+            cancel_event=self._reporter.cancel_event)
+        if clone_report is not None:
+            clone_report.update({
+                "enabled": True,
+                "status": "completed",
+                "speakers_detected": sorted({
+                    str(item.get("speaker_id"))
+                    for item in enriched if item.get("speaker_id")
+                }),
+                "cloned_speakers": sorted(voice_names),
+                "fallback_speakers": fallback_speakers,
+            })
         profiles = [
             {"speaker_id": item["speaker_id"], "voice": voice_names[item["speaker_id"]],
              "reference_hash": item["reference_hash"]}
@@ -1531,6 +1616,11 @@ class DubPipeline:
             "profiles": profiles,
         })
         return voice_names.get(fallback_speaker, next(iter(voice_names.values()))), enriched
+
+    def _resolve_fallback_voice(self, req: DubRequest) -> str:
+        from autodub.speech.tts import voices as voice_catalog
+
+        return voice_catalog.resolve(self.settings, req.voice)
 
     def _resolve_clone_voice(
         self, req: DubRequest, segments: list[dict], work_dir: str
@@ -1875,7 +1965,9 @@ class DubPipeline:
 
     @staticmethod
     def _build_quality_report(target: TargetLang, segments: list[dict],
-                              timing_report, settings=None) -> dict:
+                              timing_report, settings=None,
+                              clone_report: dict | None = None,
+                              worker_plan: dict | None = None) -> dict:
         """quality_report.json — tổng hợp mọi vấn đề còn lại sau render.
 
         Nguồn: TimingReport của bước đặt timeline mềm + kiểm tra budget dịch.
@@ -1944,7 +2036,10 @@ class DubPipeline:
             # Token đã tiêu cho video này (phân tích + dịch + rà soát) —
             # người dùng trả tiền theo con số này nhưng không thấy nó ở đâu
             # khác. Video dịch tay hoặc chạy lại từ cache thì toàn số 0.
-            "translate_usage": _usage_snapshot(),
+            # Local desktop mode may not expose provider token usage.
+            "translate_usage": {},
+            "voice_clone": clone_report or {},
+            "worker_plan": worker_plan or {},
             "hint": ("Câu 'overlap_prev_s' là chồng tiếng còn lại — rút gọn "
                      "bản dịch câu đó trong tab Chỉnh sửa, hoặc hạ "
                      "VIDEO_SPEED rồi chạy lại. Câu 'over_budget_chars' nên "

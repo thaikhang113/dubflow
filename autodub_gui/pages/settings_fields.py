@@ -214,6 +214,10 @@ FIELDS: tuple[Field, ...] = (
           "Báº­t Ä‘á»ƒ tá»«ng chá»¯ sÃ¡ng lÃªn Ä‘Ãºng lÃºc Ä‘Æ°á»£c Ä‘á»c."),
 
     # -- Tháº» Hiá»‡u suáº¥t ------------------------------------------------
+    Field("WORKER_MODE", COMBO, "CÃ¡ch cháº¡y worker", TAB_PERF,
+          "Hiá»‡u nÄƒng", "auto",
+          "Tá»± Ä‘á»™ng tÃ­nh theo CPU/RAM/GPU. Thá»§ cÃ´ng váº«n chá»‹u tráº§n an toÃ n.",
+          options=[("Tá»± Ä‘á»™ng", "auto"), ("Thá»§ cÃ´ng", "manual")]),
     Field("PARALLEL_WORKERS", NUMBER, "Sá»‘ viá»‡c cháº¡y cÃ¹ng lÃºc", TAB_PERF,
           "Hiá»‡u nÄƒng", "0",
           "Äáº·t 0 Ä‘á»ƒ á»©ng dá»¥ng tá»± chá»n theo cáº¥u hÃ¬nh mÃ¡y. Chá»‰ Ä‘á»•i khi báº¡n biáº¿t "

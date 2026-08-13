@@ -89,3 +89,12 @@ def test_count_mismatch_warns_but_loads(pipeline, target_vi, tmp_path):
     path = _write(tmp_path, translated)
     result = pipeline._load_translation(path, SEGMENTS, target_vi)
     assert len(result) == 1
+
+def test_quality_report_does_not_require_missing_usage_snapshot() -> None:
+    report = DubPipeline._build_quality_report(
+        get_target("vi"),
+        SEGMENTS,
+        {},
+        Settings(),
+    )
+    assert report["translate_usage"] == {}

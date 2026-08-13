@@ -83,8 +83,11 @@ def get_synthesizer(
 
     from autodub.speech.tts.vieneu_vi import VieNeuSynthesizer
 
-    workers = num_workers or min(settings.parallel_workers,
-                                 settings.vieneu_max_workers)
+    from autodub.config import effective_vieneu_workers
+    workers = num_workers or min(
+        settings.parallel_workers,
+        effective_vieneu_workers(settings.vieneu_max_workers),
+    )
     logger.info(f"Dùng giọng VieNeu «{voice_name}» ({workers} luồng, CPU)")
     return VieNeuSynthesizer(settings, voice_name=voice_name,
                              num_workers=workers)

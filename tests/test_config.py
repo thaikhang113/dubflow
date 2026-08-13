@@ -123,6 +123,13 @@ def test_translate_defaults(monkeypatch):
     assert s.translation_endpoint == ""
     assert s.translation_model == ""
 
+def test_worker_mode_defaults_to_auto_and_accepts_manual(monkeypatch):
+    monkeypatch.setattr("autodub.config.load_dotenv", lambda *a, **kw: None)
+    monkeypatch.delenv("WORKER_MODE", raising=False)
+    assert Settings.load().worker_mode == "auto"
+    monkeypatch.setenv("WORKER_MODE", "manual")
+    assert Settings.load().worker_mode == "manual"
+
 
 def test_ocr_defaults_and_paths(monkeypatch):
     monkeypatch.setattr("autodub.config.load_dotenv", lambda *a, **kw: None)
@@ -260,3 +267,12 @@ def test_vieneu_workers_capped_by_cores(monkeypatch):
     # 4 nhân → tối đa 2 tiến trình dù RAM dư
     monkeypatch.setattr("autodub.config.os.cpu_count", lambda: 4)
     assert Settings.load().vieneu_max_workers == 2
+
+def test_effective_vieneu_workers_caps_saved_setting_by_free_ram(monkeypatch):
+    from autodub.config import effective_vieneu_workers
+
+    monkeypatch.setattr("autodub.sysinfo.available_ram_gb", lambda: 2.0)
+    assert effective_vieneu_workers(7) == 1
+
+    monkeypatch.setattr("autodub.sysinfo.available_ram_gb", lambda: 4.0)
+    assert effective_vieneu_workers(7) == 2

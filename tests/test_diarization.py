@@ -8,6 +8,7 @@ from autodub.progress import PipelineCancelled
 from autodub.speech.diarization import (
     assign_speakers,
     assign_voice_names,
+    assign_voice_names_with_fallback,
     cluster_embeddings,
     load_diarization_cache,
     save_diarization_cache,
@@ -109,3 +110,21 @@ def test_assign_voice_names_maps_every_segment():
     })
 
     assert [item["voice"] for item in result] == ["Clone A", "Clone B", "Clone A"]
+
+def test_assign_voice_names_falls_back_per_missing_speaker():
+    segments = [
+        {"id": 1, "speaker_id": "speaker_01"},
+        {"id": 2, "speaker_id": "speaker_02"},
+        {"id": 3, "speaker_id": "speaker_03"},
+    ]
+
+    result, fallback_speakers = assign_voice_names_with_fallback(
+        segments,
+        {"speaker_01": "Clone A"},
+        fallback_voice="Preset",
+    )
+
+    assert [item["voice"] for item in result] == [
+        "Clone A", "Preset", "Preset"
+    ]
+    assert fallback_speakers == ["speaker_02", "speaker_03"]

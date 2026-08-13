@@ -87,6 +87,10 @@ class VoiceAndExportMixin:
                 and self._resynth_worker.isRunning()):
             TOASTS.warn("Đang đọc lại giọng, hãy đợi xong đã.")
             return True
+        if (getattr(self, "_quality_repair_worker", None) is not None
+                and self._quality_repair_worker.isRunning()):
+            TOASTS.warn("Đang tự sửa chất lượng, hãy đợi xong đã.")
+            return True
         if (self._rebuild_worker is not None
                 and self._rebuild_worker.isRunning()):
             TOASTS.warn("Đang xuất video, hãy đợi xong đã.")

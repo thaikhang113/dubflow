@@ -884,10 +884,24 @@ class RunStep(_StepPanel):
             "Số luồng ghép và xử lý", 1, 16, 1,
             "Tăng tốc xử lý hậu kỳ; giảm nếu máy thiếu RAM.",
             " luồng", decimals=0)
+        self.worker_mode = LabeledCombo(
+            "Điều phối worker",
+            [("Tự động theo máy", "auto"), ("Thủ công", "manual")],
+            "Tự động tính theo CPU/RAM/GPU. Số thủ công vẫn chịu trần an toàn.")
         self.body.addWidget(self.voice_postprocess)
         self.body.addWidget(self.voice_target_lufs)
         self.body.addWidget(self.bg_duck_voice_db)
+        self.body.addWidget(self.worker_mode)
         self.body.addWidget(self.parallel_workers)
+        self.worker_summary = QLabel("")
+        self.worker_summary.setWordWrap(True)
+        self.worker_summary.setTextFormat(Qt.TextFormat.RichText)
+        self.worker_summary.setStyleSheet(
+            f"color: {tokens.TEXT_SECONDARY}; font-size: {tokens.FS_META}px; "
+            f"background: {tokens.BG_INPUT}; border-radius: 8px; "
+            f"padding: 10px 12px;")
+        self.body.addWidget(
+            LabeledWidget("Worker du kien", self.worker_summary))
         self.voice_postprocess.toggled.connect(
             lambda _checked: self.changed.emit())
         self.voice_target_lufs.changed.connect(
@@ -896,6 +910,9 @@ class RunStep(_StepPanel):
             lambda _value: self.changed.emit())
         self.parallel_workers.changed.connect(
             lambda _value: self.changed.emit())
+        self.worker_mode.changed.connect(lambda: self._update_worker_summary())
+        self.parallel_workers.changed.connect(
+            lambda _value: self._update_worker_summary())
 
         self.summary = QLabel("")
         self.summary.setWordWrap(True)
@@ -920,7 +937,34 @@ class RunStep(_StepPanel):
 
     def _on_background(self) -> None:
         self.duck.setEnabled(self.background.current_key() == "duck")
+        self._update_worker_summary()
         self.changed.emit()
+
+    def _update_worker_summary(self) -> None:
+        import os
+
+        from autodub.sysinfo import available_ram_gb
+        from autodub.worker_plan import build_worker_plan
+
+        plan = build_worker_plan(
+            mode=self.worker_mode.current_key(),
+            cpu_count=os.cpu_count(),
+            available_ram_gb=available_ram_gb(),
+            gpu_available=False,
+            configured={
+                "tts": 3,
+                "parallel": int(self.parallel_workers.value()),
+                "asr": 4,
+            },
+        )
+        labels = (
+            ("ASR", "asr"), ("OCR", "ocr"), ("Dich", "translate"),
+            ("TTS", "tts"), ("Demucs", "demucs"), ("Ghep", "merge"),
+        )
+        self.worker_summary.setText(" | ".join(
+            f"<b>{label}:</b> {plan[key]['effective']} luong"
+            for label, key in labels
+        ))
 
     def set_summary(self, rows: list[tuple[str, str]]) -> None:
         """Đổ bảng tóm tắt hai cột."""
@@ -941,6 +985,7 @@ class RunStep(_StepPanel):
             "voice_postprocess": self.voice_postprocess.isChecked(),
             "voice_target_lufs": self.voice_target_lufs.value(),
             "bg_duck_voice_db": self.bg_duck_voice_db.value(),
+            "worker_mode": self.worker_mode.current_key(),
             "parallel_workers": int(self.parallel_workers.value()),
         }
 
@@ -960,8 +1005,10 @@ class RunStep(_StepPanel):
             float(data.get("voice_target_lufs", -16.0)))
         self.bg_duck_voice_db.set_value(
             float(data.get("bg_duck_voice_db", -7.0)))
+        self.worker_mode.set_key(data.get("worker_mode", "auto"))
         self.parallel_workers.set_value(
             float(data.get("parallel_workers", 4)))
+        self._update_worker_summary()
         self._on_background()
 
 

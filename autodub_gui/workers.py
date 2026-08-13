@@ -160,6 +160,48 @@ class SaveAllWorker(QThread):
             detach_gui_logging(handler)
 
 
+class QualityRepairWorker(QThread):
+    """Shorten over-budget lines, then re-synthesize changed lines."""
+
+    log = Signal(str, int)
+    finished_ok = Signal(object)
+    failed = Signal(str)
+    cancelled = Signal()
+
+    def __init__(self, settings: Settings, work_dir: str, target_key: str,
+                 voice: str | None, parent=None):
+        super().__init__(parent)
+        self._settings = settings
+        self._work_dir = work_dir
+        self._target_key = target_key
+        self._voice = voice
+        self._cancel_event = threading.Event()
+
+    def cancel(self) -> None:
+        self._cancel_event.set()
+
+    def run(self) -> None:
+        from autodub.editor import repair_over_budget_translations, resynth_segments
+        from autodub.progress import ProgressReporter
+
+        handler = attach_gui_logging(self.log)
+        try:
+            result = repair_over_budget_translations(
+                self._work_dir, self._settings, self._target_key)
+            changed = result["changed_ids"]
+            if changed:
+                reporter = ProgressReporter(lambda _e: None, self._cancel_event)
+                resynth_segments(
+                    self._work_dir, changed, self._settings,
+                    self._target_key, self._voice, reporter)
+            self.finished_ok.emit(result)
+        except PipelineCancelled:
+            self.cancelled.emit()
+        except Exception as e:  # noqa: BLE001 — surfaced to the user
+            self.failed.emit(str(e))
+        finally:
+            detach_gui_logging(handler)
+
 class RebuildWorker(QThread):
     """Rebuild the final audio + video from edited segments off the UI thread."""
 

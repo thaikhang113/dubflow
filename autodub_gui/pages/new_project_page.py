@@ -631,6 +631,7 @@ class NewProjectPage(BasePage):
         self.step_run.voice_postprocess.setChecked(settings.voice_postprocess)
         self.step_run.voice_target_lufs.set_value(settings.voice_target_lufs)
         self.step_run.bg_duck_voice_db.set_value(settings.bg_duck_voice_db)
+        self.step_run.worker_mode.set_key(getattr(settings, "worker_mode", "auto"))
         self.step_run.parallel_workers.set_value(settings.parallel_workers)
         self.step_summary.output_dir.set_text(settings.output_dir)
         self.step_summary.auto_clean.setChecked(settings.auto_clean_intermediates)
@@ -811,11 +812,15 @@ class NewProjectPage(BasePage):
         )
 
     @staticmethod
-    def _parse_logo_region(value: str) -> dict | None:
-        if not value.strip():
+    def _parse_logo_region(value: str | dict | None) -> dict | None:
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            return value
+        if not str(value).strip():
             return None
         try:
-            parsed = json.loads(value)
+            parsed = json.loads(str(value))
         except (TypeError, ValueError, json.JSONDecodeError):
             return None
         return parsed if isinstance(parsed, dict) else None
@@ -858,6 +863,7 @@ class NewProjectPage(BasePage):
             "voice_target_lufs": data["voice_target_lufs"],
             "bg_duck_voice_db": data["bg_duck_voice_db"],
             "parallel_workers": int(data["parallel_workers"]),
+            "worker_mode": data.get("worker_mode", "auto"),
             "ocr_enabled": bool(data["ocr_enabled"]),
             "ocr_device": data["ocr_device"],
             "ocr_min_confidence": data["ocr_min_confidence"],

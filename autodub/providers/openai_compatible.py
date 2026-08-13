@@ -18,6 +18,13 @@ from autodub.text.translate_common import TranslateError, parse_response_segment
 class OpenAICompatibleError(RuntimeError):
     """Provider failure with secrets removed from its public message."""
 
+def _retry_after_seconds(response: Any, fallback: float) -> float:
+    value = getattr(response, "headers", {}).get("Retry-After")
+    try:
+        return max(0.0, min(120.0, float(value)))
+    except (TypeError, ValueError):
+        return fallback
+
 
 def normalize_endpoint(endpoint: str) -> str:
     value = str(endpoint or "").strip().rstrip("/")
@@ -181,7 +188,7 @@ class OpenAICompatibleProvider:
             ],
         }
         last: Exception | None = None
-        for attempt in range(3):
+        for attempt in range(4):
             try:
                 response = self.session.post(
                     f"{self.endpoint}/chat/completions",
@@ -195,8 +202,53 @@ class OpenAICompatibleProvider:
                 return parse_response_segments(str(content))
             except Exception as exc:
                 last = exc
-                if attempt < 2:
-                    time.sleep(2**attempt)
+                if attempt < 3:
+                    if "response" in locals() and getattr(response, "status_code", None) == 429:
+                        delay = _retry_after_seconds(response, (5, 15, 30)[attempt])
+                    else:
+                        delay = 2 ** attempt
+                    time.sleep(delay)
         raise OpenAICompatibleError(
-            _redact(f"Dịch thất bại sau 3 lần thử: {last}", self.api_key)
+            _redact(f"Dịch thất bại sau 4 lần thử: {last}", self.api_key)
         ) from last
+
+    def shorten_translations(self, segments: list[dict]) -> list[dict]:
+        """Shorten translated lines without changing their meaning."""
+        if not self.endpoint or not self.model:
+            raise OpenAICompatibleError("Thiếu endpoint hoặc model dịch.")
+        payload = {
+            "model": self.model,
+            "temperature": 0.1,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "Chỉ trả JSON hợp lệ. Không dùng markdown fence.",
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "Rút gọn bản dịch tiếng Việt để đọc lồng tiếng. "
+                        "Giữ nguyên ý, tên riêng, xưng hô và sắc thái. "
+                        "Mỗi câu phải ngắn hơn hoặc bằng max_chars. "
+                        "Không bỏ câu. Trả đúng JSON dạng "
+                        '{"segments":[{"id":number,"text_vi":"..."}]}.\n\n'
+                        f"Các câu cần sửa: {json.dumps(segments, ensure_ascii=False)}"
+                    ),
+                },
+            ],
+        }
+        try:
+            response = self.session.post(
+                f"{self.endpoint}/chat/completions",
+                headers={**self._headers(), "Content-Type": "application/json"},
+                json=payload,
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            body = response.json()
+            content = body["choices"][0]["message"]["content"]
+            return parse_response_segments(str(content))
+        except Exception as exc:
+            raise OpenAICompatibleError(
+                _redact(f"Rút gọn bản dịch thất bại: {exc}", self.api_key)
+            ) from exc

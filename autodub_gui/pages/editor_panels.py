@@ -425,6 +425,7 @@ class OverviewPanel(QScrollArea):
     open_other = Signal()
     issue_clicked = Signal(int)          # id câu trong báo cáo chất lượng
     context_saved = Signal(dict)         # ngữ cảnh dịch người dùng vừa sửa
+    quality_repair_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -476,6 +477,14 @@ class OverviewPanel(QScrollArea):
             f"background: transparent;")
         self.usage_label.setVisible(False)
         self.quality.add_widget(self.usage_label)
+        self.repair_quality = GhostButton("Tự rút gọn câu quá dài")
+        self.repair_quality.setToolTip(
+            "Dùng model dịch đã cấu hình để rút gọn câu vượt giới hạn, "
+            "sau đó đọc lại riêng những câu đã đổi.")
+        self.repair_quality.clicked.connect(
+            self.quality_repair_requested.emit)
+        self.repair_quality.setVisible(False)
+        self.quality.add_widget(self.repair_quality)
         self._layout.addWidget(self.quality)
 
         actions = CollapsibleSection("Mở nhanh", expanded=True)
@@ -605,6 +614,9 @@ class OverviewPanel(QScrollArea):
         for key, text in values.items():
             self._rows[key].setText(text)
         self.quality_label.setText(_quality_text(quality))
+        summary = (quality or {}).get("summary") or {}
+        self.repair_quality.setVisible(
+            bool(summary.get("segments_over_budget")))
         self._fill_issues(quality)
 
     def _fill_issues(self, quality: dict) -> None:

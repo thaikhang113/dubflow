@@ -304,6 +304,40 @@ def test_resynth_segments_reports_progress(work_dir, monkeypatch):
     assert len(results) == 2
     assert progress == [(1, 2, 1), (2, 2, 2)]
 
+def test_repair_over_budget_translations_updates_only_shortened_lines(
+    tmp_path,
+):
+    from autodub.editor import repair_over_budget_translations
+
+    data = tmp_path / "data"
+    data.mkdir()
+    transcript = [
+        {
+            "id": 1, "text": "a", "start": 0.0, "end": 2.0,
+            "duration": 2.0, "text_vi": "Câu này dài quá nhiều."
+        },
+        {
+            "id": 2, "text": "b", "start": 0.5, "end": 2.5,
+            "duration": 2.0, "text_vi": "Ổn."
+        },
+    ]
+    (data / "transcript_vi.json").write_text(
+        json.dumps(transcript, ensure_ascii=False), encoding="utf-8")
+
+    class FakeProvider:
+        def shorten_translations(self, segments):
+            assert [item["id"] for item in segments] == [1]
+            return [{"id": 1, "text_vi": "Ngắn."}]
+
+    result = repair_over_budget_translations(
+        str(tmp_path), Settings(), provider=FakeProvider())
+
+    assert result["changed_ids"] == [1]
+    saved = json.loads((data / "transcript_vi.json").read_text(encoding="utf-8"))
+    assert saved[0]["text_vi"] == "Ngắn."
+    assert saved[1]["text_vi"] == "Ổn."
+    assert (data / "transcript_vi.before_quality_repair.json").is_file()
+
 
 def test_resynth_segments_removes_locked_file_after_retry(work_dir, monkeypatch):
     """WinError 32 regression: a briefly locked wav must not fail the save."""

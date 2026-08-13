@@ -322,6 +322,13 @@ def test_new_project_runtime_round_trips_detailed_six_step_values(
     page.deleteLater()
     app.processEvents()
 
+def test_logo_region_parser_accepts_empty_values() -> None:
+    from autodub_gui.pages.new_project_page import NewProjectPage
+
+    assert NewProjectPage._parse_logo_region(None) is None
+    assert NewProjectPage._parse_logo_region("") is None
+    assert NewProjectPage._parse_logo_region({"x": 0.1}) == {"x": 0.1}
+
 def test_new_project_has_separate_persistent_pipeline_defaults() -> None:
     source = _source("autodub_gui/pages/new_project_page.py")
     assert 'PIPELINE_DEFAULTS_FILE = "pipeline_defaults.json"' in source

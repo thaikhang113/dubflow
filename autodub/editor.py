@@ -189,6 +189,80 @@ def _save_field(work_dir: str, edits: dict[int, str], target_key: str,
     logger.info(f"Đã lưu {len(changed)} câu vào {target.transcript_name}")
     return sorted(changed)
 
+def repair_over_budget_translations(
+    work_dir: str,
+    settings: Settings,
+    *,
+    target_key: str = "vi",
+    provider=None,
+) -> dict:
+    """Shorten over-budget translations and return changed segment IDs."""
+    from autodub.text.translate_hint import (
+        annotate_slots, effective_cps, ensure_terminal_punct, payload_segment,
+    )
+    from autodub.providers.openai_compatible import OpenAICompatibleProvider
+
+    target = get_target(target_key)
+    path = _transcript_path(work_dir, target)
+    if not os.path.exists(path):
+        raise EditorError(f"Chưa có bản dịch trong dự án này "
+                          f"({target.transcript_name})")
+    with open(path, encoding="utf-8") as f:
+        segments = json.load(f)
+    if not isinstance(segments, list) or not segments:
+        raise EditorError("Transcript dịch không hợp lệ")
+
+    original_segments = json.loads(json.dumps(segments, ensure_ascii=False))
+    annotate_slots(segments)
+    cps = effective_cps(settings)
+    candidates = []
+    for seg in segments:
+        budget = payload_segment(seg, cps).get("max_chars")
+        text = str(seg.get(target.text_field, "")).strip()
+        if budget and len(text) > budget:
+            candidates.append({
+                **payload_segment(seg, cps),
+                target.text_field: text,
+            })
+    if not candidates:
+        return {"changed_ids": [], "candidate_ids": [], "rejected_ids": []}
+
+    if provider is None:
+        provider = OpenAICompatibleProvider(
+            settings.translation_endpoint,
+            settings.translation_api_key,
+            settings.translation_model,
+        )
+    returned = provider.shorten_translations(candidates)
+    by_id = {
+        int(item["id"]): ensure_terminal_punct(
+            str(item.get(target.text_field, "")).strip())
+        for item in returned
+        if item.get("id") is not None and str(item.get(target.text_field, "")).strip()
+    }
+    budgets = {int(item["id"]): int(item["max_chars"]) for item in candidates}
+    changed = []
+    rejected = []
+    original_by_id = {int(seg["id"]): seg for seg in segments}
+    for seg_id, text in by_id.items():
+        if seg_id not in original_by_id or len(text) > budgets.get(seg_id, 0):
+            rejected.append(seg_id)
+            continue
+        if text != str(original_by_id[seg_id].get(target.text_field, "")):
+            original_by_id[seg_id][target.text_field] = text
+            changed.append(seg_id)
+    if changed:
+        backup = path.replace(
+            ".json", ".before_quality_repair.json")
+        if not os.path.exists(backup):
+            save_json_atomic(original_segments, backup)
+        save_json_atomic(segments, path)
+    return {
+        "changed_ids": sorted(changed),
+        "candidate_ids": sorted(int(item["id"]) for item in candidates),
+        "rejected_ids": sorted(set(rejected)),
+    }
+
 
 def set_segment_voice(work_dir: str, seg_id: int, voice: str,
                       target_key: str = "vi") -> bool:

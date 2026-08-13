@@ -11,6 +11,7 @@ installed in (or bundled with) the main app.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import threading
 from collections import deque
@@ -30,22 +31,58 @@ def transcribe_paraformer(audio_path: str, settings: Settings) -> list[dict]:
     Raises :class:`RuntimeError` on any failure — the caller falls back to
     Whisper.
     """
+    normalized_path = audio_path
+    cleanup = False
+    try:
+        import wave
+
+        with wave.open(audio_path, "rb") as wav:
+            needs_normalize = (
+                wav.getframerate() != 16000
+                or wav.getnchannels() != 1
+                or wav.getsampwidth() != 2
+            )
+    except (OSError, wave.Error):
+        needs_normalize = True
+
+    if needs_normalize:
+        normalized_path = f"{audio_path}.paraformer_16k_mono.wav"
+        proc = subprocess.run(
+            ["ffmpeg", "-v", "error", "-i", audio_path,
+             "-ar", "16000", "-ac", "1", "-sample_fmt", "s16",
+             "-y", normalized_path],
+            capture_output=True, text=True, timeout=300,
+        )
+        if proc.returncode != 0 or not os.path.isfile(normalized_path):
+            raise RuntimeError(
+                "Không chuẩn hóa được audio về 16 kHz mono cho Paraformer: "
+                + (proc.stderr or "")[-300:])
+        cleanup = True
+
     cmd = [
         settings.asr_venv_python_path(),
         _WORKER_SCRIPT,
-        "--audio", audio_path,
+        "--audio", normalized_path,
         "--model-dir", settings.paraformer_model_dir_path(),
         "--num-threads", str(settings.asr_num_threads),
     ]
     logger.info("Nhận dạng tiếng Trung bằng Paraformer (sherpa-onnx, CPU)...")
 
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        encoding="utf-8",
-        errors="replace",
-    )
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except Exception:
+        if cleanup:
+            try:
+                os.remove(normalized_path)
+            except OSError:
+                pass
+        raise
 
     stderr_tail: deque[str] = deque(maxlen=20)
 
@@ -99,6 +136,11 @@ def transcribe_paraformer(audio_path: str, settings: Settings) -> list[dict]:
                     s.close()
                 except Exception:
                     pass
+        if cleanup:
+            try:
+                os.remove(normalized_path)
+            except OSError:
+                pass
 
     tail = "\n".join(stderr_tail)
     if not done:

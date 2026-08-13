@@ -89,6 +89,7 @@ class EditorPage(VoiceAndExportMixin, BasePage):
         self._narrator = Narrator()
         self._save_worker = None
         self._resynth_worker = None
+        self._quality_repair_worker = None
         self._rebuild_worker = None
         self._preview_seg_worker = None
         self._wave_worker = None
@@ -219,6 +220,8 @@ class EditorPage(VoiceAndExportMixin, BasePage):
         self.overview.open_other.connect(self._open_other_folder)
         self.overview.issue_clicked.connect(self._jump_to_issue)
         self.overview.context_saved.connect(self._save_context)
+        self.overview.quality_repair_requested.connect(
+            self._start_quality_repair)
 
         self.subtitles = SubtitleListPanel()
         self.subtitles.text_edited.connect(self._on_text_edited)
@@ -694,6 +697,58 @@ class EditorPage(VoiceAndExportMixin, BasePage):
                               self._dirty_ids,
                               self._state.target.text_field)
 
+    def _start_quality_repair(self) -> None:
+        from autodub_gui.workers import QualityRepairWorker
+
+        if self._busy_warn():
+            return
+        settings = self._settings_provider()
+        voice = self.voice_panel.project_voice()
+        worker = QualityRepairWorker(
+            settings, self._work_dir, self.target_key(), voice, self)
+        worker.log.connect(self.log.append_log)
+        worker.finished_ok.connect(self._on_quality_repair_done)
+        worker.failed.connect(self.report_error)
+        worker.cancelled.connect(
+            lambda: TOASTS.info("Đã dừng sửa chất lượng."))
+        worker.finished.connect(
+            lambda: setattr(self, "_quality_repair_worker", None))
+        self._quality_repair_worker = worker
+        self.log.setVisible(True)
+        TOASTS.info("Đang rút gọn các câu dịch quá dài...")
+        self._quality_repair_resume_pos = self.release_video()
+        worker.start()
+
+    def _on_quality_repair_done(self, result: dict) -> None:
+        changed = [int(i) for i in result.get("changed_ids", [])]
+        if changed:
+            from autodub.editor import load_work_dir
+
+            self._state = load_work_dir(self._work_dir)
+            self._segments = self._state.segments
+            self.subtitles.set_segments(
+                self._segments, self._state.target.text_field)
+            self.timeline.set_segments(self._segments)
+            self.player.set_segments(
+                self._segments, self._state.target.text_field)
+            self.overview.set_project(
+                self._project, len(self._segments), self._read_quality())
+            self._refresh_qc()
+            self._sync_overlay(self._state.video_path or "")
+            self.restore_video(getattr(self, "_quality_repair_resume_pos", None))
+            self._quality_repair_resume_pos = None
+            self._structural_edit = False
+            self._refresh_banner()
+            TOASTS.success(
+                f"Đã rút gọn và đọc lại {len(changed)} câu. "
+                "Bấm Xuất video để ghép bản mới.")
+        else:
+            rejected = len(result.get("rejected_ids", []))
+            message = "Không có câu nào được rút gọn."
+            if rejected:
+                message += f" {rejected} câu model trả về vẫn còn dài."
+            TOASTS.warn(message)
+
     def has_unsaved_changes(self) -> bool:
         return bool(self._pending_edits or self._pending_subs)
 
@@ -944,13 +999,15 @@ class EditorPage(VoiceAndExportMixin, BasePage):
 
     def is_running(self) -> bool:
         return any(w is not None and w.isRunning()
-                   for w in (self._resynth_worker, self._rebuild_worker,
+                   for w in (self._resynth_worker, self._quality_repair_worker,
+                             self._rebuild_worker,
                              self._preview_seg_worker,
                              self._export_subs_file_worker,
                              self._export_audio_worker))
 
     def shutdown(self) -> None:
         for worker in (self._resynth_worker, self._rebuild_worker,
+                       self._quality_repair_worker,
                        self._preview_seg_worker,
                        self._export_subs_file_worker,
                        self._export_audio_worker):

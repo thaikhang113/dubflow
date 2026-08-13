@@ -94,6 +94,28 @@ def assign_voice_names(
         result.append(item)
     return result
 
+def assign_voice_names_with_fallback(
+    segments: list[dict],
+    voice_names: dict[str, str],
+    *,
+    fallback_voice: str,
+    cancel_event=None,
+) -> tuple[list[dict], list[str]]:
+    """Assign cloned voices and record speakers that used preset fallback."""
+    result = []
+    fallback_speakers: list[str] = []
+    for segment in segments:
+        _check_cancelled(cancel_event)
+        item = dict(segment)
+        speaker = str(item.get("speaker_id", "")).strip()
+        voice = voice_names.get(speaker) or fallback_voice
+        if speaker and speaker not in voice_names and speaker not in fallback_speakers:
+            fallback_speakers.append(speaker)
+        if voice:
+            item["voice"] = voice
+        result.append(item)
+    return result, fallback_speakers
+
 
 def select_reference_segments(
     segments: list[dict],
