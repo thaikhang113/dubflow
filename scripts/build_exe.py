@@ -1,4 +1,4 @@
-"""Đóng gói VoxDub Studio thành thư mục exe phân phối được.
+"""Đóng gói DubFlow thành thư mục exe phân phối được.
 
 Chạy từ project root với Python chính (đã cài đủ requirements + pyinstaller):
 
@@ -12,7 +12,7 @@ Các bước:
      - HUONG_DAN_CAI_DAT.md (sinh từ script này)
        - .env.example (KHÔNG kèm .env thật)
        - models/ rỗng (điểm đến khi người dùng cài model)
-  4. Smoke test: chạy VoxDub.exe với AUTODUB_SMOKE=1, đọc
+  4. Smoke test: chạy DubFlow.exe với AUTODUB_SMOKE=1, đọc
      smoke_test_result.json, in kết quả từng mục.
 
 Bản phân phối KHÔNG chứa: model, các venv phụ, ffmpeg — người dùng
@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -132,7 +133,7 @@ def step_assemble() -> None:
 
     with open(os.path.join(DIST_DIR, "HUONG_DAN_CAI_DAT.md"), "w",
               encoding="utf-8") as f:
-        f.write(GUIDE_MD)
+        f.write(release_guide())
 
     # Đảm bảo không có .env nào lọt vào dist.
     stray = os.path.join(DIST_DIR, ".env")
@@ -184,7 +185,7 @@ def step_smoke_test() -> bool:
 
 SETUP_VIENEU_BAT = r"""@echo off
 chcp 65001 >nul
-title Cai dat giong doc VieNeu cho VoxDub Studio
+title Cai dat giong doc VieNeu cho DubFlow
 echo.
 echo  Script nay cai giong doc VieNeu (chay CPU, ~300 MB, 14 giong).
 echo  Yeu cau: da cai Python 3.10-3.12 (xem HUONG_DAN_CAI_DAT.md, Buoc 2).
@@ -202,7 +203,7 @@ pause
 
 SETUP_WHISPER_BAT = r"""@echo off
 chcp 65001 >nul
-title Cai dat Whisper ASR cho VoxDub Studio
+title Cai dat Whisper ASR cho DubFlow
 echo.
 echo  Script nay cai faster-whisper vao venv rieng (.venv-whisper).
 echo  Whisper se chay ngoai exe — giam ~112 MB kich thuoc ban phan phoi.
@@ -221,7 +222,7 @@ pause
 
 SETUP_PARAFORMER_BAT = r"""@echo off
 chcp 65001 >nul
-title Cai dat ASR tieng Trung (Paraformer) cho VoxDub Studio
+title Cai dat ASR tieng Trung (Paraformer) cho DubFlow
 echo.
 echo  Script nay cai bo nhan dang tieng Trung Paraformer (~520 MB, chay CPU)
 echo  — chinh xac hon Whisper voi video tieng Trung.
@@ -240,7 +241,7 @@ pause
 
 SETUP_DOUYIN_BAT = r"""@echo off
 chcp 65001 >nul
-title Cai dat tinh nang tai video Douyin cho VoxDub Studio
+title Cai dat tinh nang tai video Douyin cho DubFlow
 echo.
 echo  Script nay cai thu vien playwright (~40 MB) va trinh duyet Chromium
 echo  (~170 MB) de tai video Douyin. YouTube va link truc tiep KHONG can.
@@ -258,9 +259,9 @@ echo.
 pause
 """
 
-GUIDE_MD = """# Hướng dẫn cài đặt VoxDub Studio
+GUIDE_MD = """# Hướng dẫn cài đặt DubFlow
 
-VoxDub Studio lồng tiếng video tự động sang tiếng Việt: tải video → nhận dạng
+DubFlow lồng tiếng video tự động sang tiếng Việt: tải video → nhận dạng
 giọng nói → dịch → đọc giọng Việt (clone giọng) → ghép lại thành video.
 
 Nhận dạng giọng nói, đọc giọng Việt và ghép video đều chạy **trên máy của
@@ -290,7 +291,7 @@ bản là được.
 *Không dùng được winget?* Tải bản "release full" tại
 <https://www.gyan.dev/ffmpeg/builds/>, giải nén, rồi chép 2 file
 `ffmpeg.exe` và `ffprobe.exe` trong thư mục `bin` vào **cùng thư mục với
-VoxDub.exe** — app sẽ tự nhận, không cần chỉnh PATH.
+DubFlow.exe** — app sẽ tự nhận, không cần chỉnh PATH.
 
 ## Bước 2 — Cài Python (để cài giọng đọc VieNeu)
 
@@ -306,7 +307,7 @@ winget install Python.Python.3.12
 
 ## Bước 3 — Cài giọng đọc VieNeu (bắt buộc, ~300 MB, chạy CPU)
 
-Đúp chuột vào file **`Cai dat giong VieNeu.bat`** trong thư mục VoxDub Studio.
+Đúp chuột vào file **`Cai dat giong VieNeu.bat`** trong thư mục DubFlow.
 
 Script tự tạo môi trường riêng (`.venv-vieneu`), tải model (~300 MB) và
 chạy thử. Chỉ mất vài phút, **không cần card đồ họa** — đây là bộ giọng
@@ -332,9 +333,9 @@ Hết Vox thì mua thêm:
 > không mất Vox. Đổi máy thì liên hệ hỗ trợ kèm mã máy (xem ở trang Tài
 > khoản) để được chuyển sang.
 
-## Bước 5 — Mở VoxDub Studio và kiểm tra
+## Bước 5 — Mở DubFlow và kiểm tra
 
-1. Đúp chuột **VoxDub.exe**.
+1. Đúp chuột **DubFlow.exe**.
 2. Kiểm tra nhanh:
    - Trang **Tài khoản**: xem số Vox còn lại.
    - Trang **Giọng đọc AI**: chọn giọng bạn thích, bấm **Nghe thử**.
@@ -343,7 +344,7 @@ Hết Vox thì mua thêm:
 3. Về tab **Lồng tiếng**, dán link video YouTube, bấm chạy. Lần chạy đầu
    app tự tải model nhận dạng giọng nói (~1.5 GB, một lần duy nhất).
 
-Video kết quả nằm trong thư mục `output` cạnh VoxDub.exe.
+Video kết quả nằm trong thư mục `output` cạnh DubFlow.exe.
 
 ## Tùy chọn
 
@@ -369,20 +370,20 @@ Video kết quả nằm trong thư mục `output` cạnh VoxDub.exe.
 
 | Hiện tượng | Cách xử lý |
 |---|---|
-| `ffmpeg` không nhận sau khi cài | Đóng mở lại PowerShell/app; hoặc chép `ffmpeg.exe`+`ffprobe.exe` vào cạnh `VoxDub.exe` |
+| `ffmpeg` không nhận sau khi cài | Đóng mở lại PowerShell/app; hoặc chép `ffmpeg.exe`+`ffprobe.exe` vào cạnh `DubFlow.exe` |
 | `py` không nhận | Cài lại Python bằng winget (Bước 2), nhớ mở PowerShell mới |
 | App báo hết Vox | Mở trang Tài khoản để nạp thêm, rồi chạy tiếp dự án đang dở — phần đã dịch xong không bị tính tiền lại |
 | Mã kích hoạt báo "đã dùng trên máy khác" | Mỗi mã chỉ dùng cho một máy. Nếu bạn chưa từng dùng mã này, liên hệ hỗ trợ kèm mã đơn hàng |
 | App báo không kết nối được máy chủ | Kiểm tra mạng. Các bước chạy trên máy (nghe chép, giọng đọc, xuất video) vẫn dùng bình thường |
 | App báo chưa cài bộ giọng VieNeu | Chạy `Cai dat giong VieNeu.bat` (Bước 3) |
 | Chạy chậm, GPU không dùng | Cần card NVIDIA + driver mới (`nvidia-smi` trong PowerShell phải chạy được) |
-| Antivirus chặn VoxDub.exe | Thêm thư mục VoxDub Studio vào danh sách loại trừ — app không có mã độc, exe đóng gói bằng PyInstaller hay bị nhận nhầm |
+| Antivirus chặn DubFlow.exe | Kiểm tra checksum release trước khi chạy; PyInstaller đôi khi bị nhận nhầm |
 
 ## Cấu trúc thư mục sau khi cài đủ
 
 ```
-VoxDub Studio/
-├── VoxDub.exe             ← mở app tại đây
+DubFlow/
+├── DubFlow.exe             ← mở app tại đây
 ├── _internal/             ← thư viện của app (không đụng vào)
 ├── Cai dat giong VieNeu.bat            ← Bước 3 (giọng đọc, bắt buộc)
 ├── Cai dat ASR tieng Trung (Paraformer).bat ← tùy chọn, nghe tiếng Trung chuẩn hơn
@@ -398,6 +399,33 @@ VoxDub Studio/
 └── output/                ← video kết quả
 ```
 """
+
+
+def release_guide() -> str:
+    guide = GUIDE_MD.replace("VoxDub Studio", "DubFlow")
+    guide = guide.replace("VoxDub.exe", "DubFlow.exe")
+    guide = guide.replace("VoxDub", "DubFlow")
+    guide = re.sub(
+        r"## Bước 4 .*?(?=\n## Bước 5)",
+        (
+            "## Bước 4 — Cấu hình dịch\n\n"
+            "DubFlow không kèm máy chủ, tài khoản hoặc khóa API. Để dịch tự động, "
+            "cấu hình provider tương thích trong `.env` hoặc trang Cài đặt. Có thể "
+            "bỏ qua bước này và dịch thủ công qua tệp trung gian.\n"
+        ),
+        guide,
+        count=1,
+        flags=re.S,
+    )
+    guide = guide.replace(
+        "Trang **Tài khoản**: xem số Vox còn lại.",
+        "Trang **Cài đặt**: kiểm tra trạng thái engine và provider.",
+    )
+    guide = guide.replace(
+        'Tốn thêm một khoản Vox nhỏ mỗi video.',
+        "Provider bên ngoài có thể tính phí theo chính sách riêng.",
+    )
+    return re.sub(r"^.*\bVox\b.*(?:\n|$)", "", guide, flags=re.M)
 
 
 def main() -> int:
@@ -424,7 +452,7 @@ def main() -> int:
     log(f"xong sau {time.time() - start:.0f}s — dist/DubFlow ({size >> 20} MB)")
 
     # Nén sẵn gói phát hành: dist/DubFlow-v<ver>-windows-x64.zip, giải nén ra
-    # thư mục gốc "VoxDub Studio/" (đúng tên trong HUONG_DAN_CAI_DAT.md).
+    # thư mục gốc "DubFlow/" (đúng tên trong HUONG_DAN_CAI_DAT.md).
     # Chỉ nén khi smoke test đạt — không bao giờ phát hành bản hỏng.
     if ok and not args.no_zip:
         # Đọc APP_VERSION bằng regex — import autodub_gui.app sẽ kéo cả Qt
