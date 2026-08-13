@@ -6,10 +6,10 @@ Chạy từ project root với Python chính (đã cài đủ requirements + pyi
     py scripts/build_exe.py --no-test  # chỉ build
 
 Các bước:
-  2. PyInstaller onedir theo autodub.spec → build/, dist/VoxDub/
-  3. Lắp ráp thư mục phân phối dist/VoxDub/:
+  2. PyInstaller onedir theo autodub.spec → build/, dist/DubFlow/
+  3. Lắp ráp thư mục phân phối dist/DubFlow/:
        - scripts/setup_*.py + các file .bat cài đặt (VieNeu, Paraformer, Douyin)
-       - HUONG_DAN_CAI_DAT.md (sinh từ script này)
+     - HUONG_DAN_CAI_DAT.md (sinh từ script này)
        - .env.example (KHÔNG kèm .env thật)
        - models/ rỗng (điểm đến khi người dùng cài model)
   4. Smoke test: chạy VoxDub.exe với AUTODUB_SMOKE=1, đọc
@@ -30,7 +30,7 @@ import time
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EMBEDDED_PY = os.path.join(PROJECT_ROOT, "autodub_gui", "_embedded.py")
-DIST_DIR = os.path.join(PROJECT_ROOT, "dist", "VoxDub")
+DIST_DIR = os.path.join(PROJECT_ROOT, "dist", "DubFlow")
 
 def log(msg: str) -> None:
     print(f"[build] {msg}", flush=True)
@@ -55,17 +55,17 @@ def run(cmd: list[str], **kw) -> None:
 def step_pyinstaller() -> None:
     # Xóa dist cũ để không lẫn file rác từ lần build trước.
     if os.path.isdir(DIST_DIR):
-        log("xóa dist/VoxDub cũ...")
+        log("xóa dist/DubFlow cũ...")
         try:
             shutil.rmtree(DIST_DIR)
         except PermissionError:
             raise SystemExit(
-                "!! Không xóa được dist/VoxDub — đóng VoxDub.exe đang chạy, "
+                "!! Không xóa được dist/DubFlow — đóng DubFlow.exe đang chạy, "
                 "cửa sổ Explorer/terminal đang mở thư mục đó, rồi build lại.")
     log("chạy PyInstaller (vài phút)...")
     run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean",
          os.path.join(PROJECT_ROOT, "autodub.spec")])
-    exe = os.path.join(DIST_DIR, "VoxDub.exe")
+    exe = os.path.join(DIST_DIR, "DubFlow.exe")
     if not os.path.isfile(exe):
         raise SystemExit(f"!! PyInstaller xong nhưng không thấy {exe}")
 
@@ -141,7 +141,7 @@ def step_assemble() -> None:
 
 
 def step_smoke_test() -> bool:
-    log("smoke test: chạy VoxDub.exe với AUTODUB_SMOKE=1 ...")
+    log("smoke test: chạy DubFlow.exe với AUTODUB_SMOKE=1 ...")
     result_json = os.path.join(DIST_DIR, "smoke_test_result.json")
     if os.path.isfile(result_json):
         os.remove(result_json)
@@ -149,7 +149,7 @@ def step_smoke_test() -> bool:
     env = dict(os.environ, AUTODUB_SMOKE="1")
     # QT_QPA_PLATFORM=offscreen nếu chạy trên máy không có màn hình:
     # env["QT_QPA_PLATFORM"] = "offscreen"
-    proc = subprocess.run([os.path.join(DIST_DIR, "VoxDub.exe")], env=env,
+    proc = subprocess.run([os.path.join(DIST_DIR, "DubFlow.exe")], env=env,
                           cwd=DIST_DIR, timeout=180)
 
     if not os.path.isfile(result_json):
@@ -418,9 +418,9 @@ def main() -> int:
 
     size = sum(os.path.getsize(os.path.join(dp, f))
                for dp, _, fs in os.walk(DIST_DIR) for f in fs)
-    log(f"xong sau {time.time() - start:.0f}s — dist/VoxDub ({size >> 20} MB)")
+    log(f"xong sau {time.time() - start:.0f}s — dist/DubFlow ({size >> 20} MB)")
 
-    # Nén sẵn gói phát hành: dist/VoxDub-Studio-v<ver>.zip, giải nén ra
+    # Nén sẵn gói phát hành: dist/DubFlow-v<ver>-windows-x64.zip, giải nén ra
     # thư mục gốc "VoxDub Studio/" (đúng tên trong HUONG_DAN_CAI_DAT.md).
     # Chỉ nén khi smoke test đạt — không bao giờ phát hành bản hỏng.
     if ok and not args.no_zip:
@@ -432,7 +432,7 @@ def main() -> int:
         m = re.search(r'^APP_VERSION\s*=\s*"([^"]+)"', src, re.M)
         version = m.group(1) if m else "0.0"
         zip_path = os.path.join(PROJECT_ROOT, "dist",
-                                f"VoxDub-Studio-v{version}.zip")
+                                f"DubFlow-v{version}-windows-x64.zip")
         log(f"đang nén gói phát hành: {os.path.basename(zip_path)} ...")
         import zipfile
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED,

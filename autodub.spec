@@ -165,7 +165,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="VoxDub",
+    name="DubFlow",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -180,6 +180,6 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=False,
-    name="VoxDub",
+    name="DubFlow",
     contents_directory="data",   # _internal → data: gọn hơn, dễ đọc hơn
 )

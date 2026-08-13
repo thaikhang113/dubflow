@@ -17,6 +17,7 @@ venv/
 # Ket qua chay pipeline
 output/
 downloads/
+VN/
 batch_state.json
 logs/
 
@@ -43,6 +44,8 @@ bilibili-cookies.txt
 
 # Build exe
 *.spec.bak
+build/
+dist/
 pw-browsers/
 smoke_test_result.json
 smoke_err.txt
