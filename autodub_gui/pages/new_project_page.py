@@ -733,7 +733,8 @@ class NewProjectPage(BasePage):
         summary = self._style_summary_text()
         self.step_translate.subtitle_style_summary.setText(summary)
         self.step_summary.set_style_summary(summary)
-        if style and self.step_summary.subtitle_mode.current_key() != "burn":
+        if (self._subtitle_style
+                and self.step_summary.subtitle_mode.current_key() != "burn"):
             self.step_summary.subtitle_mode.set_key("burn")
             TOASTS.info("Kiểu chữ tự chỉnh cần ghi thẳng vào hình, nên phụ đề "
                         "đã chuyển sang Ghi thẳng vào hình.")

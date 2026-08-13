@@ -173,6 +173,14 @@ def test_subtitle_editor_is_available_during_translation_step() -> None:
     assert "Tùy chỉnh phụ đề và vùng che" in translate_block
     assert "self.step_translate.style_requested.connect(self._open_style_dialog)" in page
 
+def test_style_summary_uses_instance_style_after_summary_refactor() -> None:
+    source = _source("autodub_gui/pages/new_project_page.py")
+    start = source.index("    def _update_style_summary")
+    end = source.index("    def _current_video_path", start)
+    block = source[start:end]
+    assert "self._subtitle_style" in block
+    assert "if style and" not in block
+
 def test_new_project_refreshes_next_button_after_step_navigation() -> None:
     source = _source("autodub_gui/pages/new_project_page.py")
     assert "self.btn_next.setEnabled(True)" in source
