@@ -111,8 +111,9 @@ class VideoStep(_StepPanel):
             "Diện tích vùng OCR tối đa", 0.02, 0.8, 0.05,
             "Bỏ qua vùng nhận diện quá lớn để tránh làm mờ nhầm.", decimals=2)
         self.ocr_y_min = LabeledSlider(
-            "Vị trí bắt đầu phụ đề", 0.0, 0.95, 0.05,
-            "Chỉ nhận chữ từ vị trí này xuống đáy khung hình.", decimals=2)
+            "Vị trí bắt đầu phụ đề (mặc định 35% dưới)", 0.0, 0.95, 0.05,
+            "OCR chỉ tìm chữ Trung trong vùng dưới màn hình; 0.65 nghĩa là "
+            "35% phía dưới.", decimals=2)
         self.ocr_interval = LabeledSlider(
             "Khoảng quét OCR", 0.5, 5.0, 0.5,
             "Khoảng thời gian giữa hai lần quét.", " giây", decimals=1)
@@ -243,9 +244,9 @@ class VideoStep(_StepPanel):
     def set_resume(self, work_dir: str) -> None:
         """Chuyển bước 1 sang «Tiếp tục dang dở» trỏ vào một dự án có sẵn.
 
-        Trang cha gọi khi một lượt chạy dừng giữa chừng (lỗi, hết Vox, chờ
+        Trang cha gọi khi một lượt chạy dừng giữa chừng (lỗi, hết tín dụng, chờ
         dịch tay) — bấm chạy lại sẽ đi tiếp đúng dự án cũ thay vì tạo dự án
-        mới và bị trừ Vox lần nữa.
+        mới và bị trừ tín dụng lần nữa.
         """
         self.source.set_key("resume")
         self._on_source("resume")
@@ -433,7 +434,7 @@ class TranslateStep(_StepPanel):
         self.auto_translate.toggled.connect(self._on_auto_translate)
         self.body.addWidget(self.auto_translate)
 
-        self.metadata = QCheckBox("Tạo tiêu đề + mô tả đăng bài (+20 Vox)")
+        self.metadata = QCheckBox("Tạo tiêu đề + mô tả đăng bài (+20 tín dụng)")
         self.metadata.setToolTip(
             "Máy chủ viết sẵn tiêu đề, mô tả và thẻ cho mạng xã hội, lưu vào "
             "tệp youtube_post.txt trong thư mục dự án. Tắt đi nếu bạn tự viết.")
@@ -925,8 +926,8 @@ class RunStep(_StepPanel):
 
         note = QLabel(
             "Giá của video chốt ngay sau bước nghe-chép, theo số câu thoại "
-            "(10 Vox/câu, 12 nếu bật dịch tự động, +20 cho gói tiêu đề + mô "
-            "tả) và không đổi nữa — ứng dụng báo tổng Vox trước khi trừ ví.")
+            "(10 tín dụng/câu, 12 nếu bật dịch tự động, +20 cho gói tiêu đề + mô "
+            "tả) và không đổi nữa — ứng dụng báo tổng tín dụng trước khi trừ ví.")
         note.setWordWrap(True)
         note.setStyleSheet(
             f"color: {tokens.TEXT_MUTED}; font-size: {tokens.FS_META}px; "
@@ -1084,7 +1085,7 @@ class ExportSummaryStep(_StepPanel):
         self.notice = QLabel(
             "Chưa xuất thì chưa xem được bản dịch hay âm thanh — dữ liệu "
             "đang được khóa. Bỏ qua bước này thì dự án tự mở khóa sau 48 "
-            "giờ, không tốn thêm Vox.")
+            "giờ, không tốn thêm tín dụng.")
         self.notice.setWordWrap(True)
         self.notice.setStyleSheet(
             f"color: {tokens.TEXT_MUTED}; font-size: {tokens.FS_META}px; "
@@ -1118,18 +1119,18 @@ class ExportSummaryStep(_StepPanel):
         rows = [
             ("Thời lượng video", self._fmt_duration(duration_s)),
             ("Số câu thoại", f"{sentences:,}"),
-            ("Tổng Vox của video", f"<b>{total:,} Vox</b>"),
+            ("Tổng tín dụng của video", f"<b>{total:,} tín dụng</b>"),
         ]
         balance = int((usage or {}).get("balance_after") or 0)
         if balance:
-            rows.append(("Số dư còn lại", f"{balance:,} Vox"))
+            rows.append(("Số dư còn lại", f"{balance:,} tín dụng"))
         self.summary.setText(
             "<br>".join(f"<b>{name}:</b> {value}" for name, value in rows))
 
     def set_error(self, message: str) -> None:
         """Xuất trượt (thường do mất mạng) — nói rõ không tốn thêm Vox."""
         self.notice.setText(
-            f"Chưa xuất được: {message}\nKhông tốn thêm Vox nào và dữ liệu "
+            f"Chưa xuất được: {message}\nKhông tốn thêm tín dụng nào và dữ liệu "
             "vẫn được khóa an toàn. Kiểm tra mạng rồi bấm Xuất video lần nữa.")
 
     def values(self) -> dict:

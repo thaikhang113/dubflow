@@ -155,6 +155,19 @@ def test_logo_overlay_uses_second_video_input_and_fixed_region(paths, captured):
     assert "[2:v]" in graph
     assert "overlay=" in graph
 
+def test_logo_overlay_uses_default_region_when_position_is_not_set(
+    paths, captured
+):
+    logo = paths["video"].replace("in.mp4", "logo.png")
+    from pathlib import Path
+    Path(logo).write_bytes(b"png")
+    video_mod.merge_video(
+        paths["video"], paths["audio"], paths["out"], logo_path=logo,
+    )
+    graph = get_opt(captured[0], "-filter_complex")
+    assert "[2:v]" in graph
+    assert "overlay=1459:43" in graph
+
 def test_branding_assets_validate_paths(paths):
     with pytest.raises(FileNotFoundError):
         video_mod.merge_video(

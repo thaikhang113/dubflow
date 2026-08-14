@@ -56,12 +56,29 @@ INSTALL_ITEMS = (
     ("Paraformer", "Nghe tiếng Trung chính xác hơn Whisper, chạy trên CPU.",
      MODEL_SIZES["paraformer"], "py scripts/setup_paraformer.py",
      "paraformer_configured"),
+    ("Whisper ASR",
+     "Nhận dạng lời nói cho ngôn ngữ khác tiếng Trung. Cài riêng để không làm "
+     "phình bản DubFlow.",
+     MODEL_SIZES["medium"], "py scripts/setup_whisper.py",
+     "whisper_venv_configured"),
+    ("PaddleOCR",
+     "Tự tìm chữ Trung trong vùng phụ đề để làm mờ. Chỉ cần khi muốn tự động "
+     "che phụ đề gốc; logo gốc có thể tự dò bằng Vision hoặc chọn vùng riêng "
+     "trong Trình chỉnh sửa.",
+     "khoảng 2–3 GB (GPU)", "py scripts/setup_ocr.py", "ocr_configured"),
 )
 
 EXTRA_PROBLEMS = (
     ("Máy chưa có FFmpeg",
-     "FFmpeg là công cụ ghép hình và tiếng. Hãy tải bản đầy đủ, giải nén rồi "
-     "thêm thư mục bin vào đường dẫn hệ thống, sau đó mở lại ứng dụng."),
+     "Bản Debian dùng FFmpeg của hệ thống và đã khai báo gói cần thiết. Bản "
+     "portable Linux không tự tải FFmpeg; hãy cài ffmpeg và ffprobe bằng trình "
+     "quản lý gói của hệ điều hành rồi mở lại ứng dụng. Windows sẽ tự tải bản "
+     "FFmpeg phù hợp khi cần."),
+    ("Làm mờ phụ đề hoặc logo gốc",
+     "Trong Trình chỉnh sửa, mở Tùy chỉnh phụ đề và vùng che. Bật OCR để tự "
+     "tìm chữ Trung trong vùng 35% phía dưới; bật Tự dò logo gốc bằng Vision "
+     "hoặc bật Khoanh vùng logo gốc rồi kéo một vùng riêng để làm mờ logo "
+     "cố định suốt video."),
     ("Card đồ họa không đủ bộ nhớ",
      "Đóng bớt trò chơi hoặc trình duyệt đang mở nhiều video. Hoặc đổi Nhạc "
      "nền sang Giảm nhỏ tiếng gốc cho nhẹ hơn, rồi chạy tiếp thư mục dự án "
@@ -312,7 +329,7 @@ class HelpPage(BasePage):
     def _open_readme(self) -> None:
         from autodub.utils import app_root
 
-        for name in ("HUONG DAN.md", "README.md"):
+        for name in ("HUONG_DAN_CAI_DAT.md", "README.md"):
             path = os.path.join(app_root(), name)
             if os.path.isfile(path):
                 ok, message = open_file(path)

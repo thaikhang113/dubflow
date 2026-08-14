@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec — VoxDub Studio GUI (onedir, windowed).
+"""PyInstaller spec — DubFlow GUI (onedir, windowed).
 
 Không chạy trực tiếp: dùng  py scripts/build_exe.py  (script đó sinh
 autodub_gui/_embedded.py với địa chỉ máy chủ rồi mới gọi PyInstaller).
@@ -15,6 +15,7 @@ Nguyên tắc:
 """
 import os
 
+import PySide6
 from PyInstaller.utils.hooks import collect_all
 
 ROOT = os.path.abspath(SPECPATH)
@@ -30,6 +31,8 @@ datas = [
      os.path.join("autodub", "speech")),
     (os.path.join(ROOT, "autodub", "media", "demucs_worker.py"),
      os.path.join("autodub", "media")),
+    (os.path.join(ROOT, "autodub", "media", "ocr_worker.py"),
+     os.path.join("autodub", "media")),
     # Danh mục giọng CapCut — tài nguyên trong gói, đọc qua bundled_file.
     (os.path.join(ROOT, "autodub", "speech", "tts", "capcut_api",
                   "Voice.json"),
@@ -37,6 +40,14 @@ datas = [
     # Icon cửa sổ/taskbar (app.py nạp qua bundled_file).
     (os.path.join(ROOT, "logo.ico"), "."),
 ]
+_QT_PLUGINS = os.path.join(os.path.dirname(PySide6.__file__), "plugins")
+for _plugin_dir in ("platforms", "imageformats", "multimedia"):
+    _plugin_path = os.path.join(_QT_PLUGINS, _plugin_dir)
+    if os.path.isdir(_plugin_path):
+        datas.append((
+            _plugin_path,
+            os.path.join("PySide6", "Qt", "plugins", _plugin_dir),
+        ))
 binaries = []
 hiddenimports = [
     # Import lười (trong thân hàm) — liệt kê rõ để không bị sót khi
@@ -67,7 +78,7 @@ except Exception as e:  # noqa: BLE001 — không được làm vỡ quá trình
 
 # yt-dlp nạp extractor động theo tên; faster-whisper/ctranslate2 có DLL
 # native. Không còn SDK mô hình nào ở phía máy khách — mọi lượt gọi AI đi
-# qua HTTP tới máy chủ VoxDub (requests đã có sẵn).
+# qua HTTP tới máy chủ dịch vụ (requests đã có sẵn).
 # playwright/PIL KHÔNG đóng gói: Douyin cài qua 'Cai dat tinh nang
 # Douyin.bat' (libs/ sideload).
 for pkg in ("yt_dlp",):

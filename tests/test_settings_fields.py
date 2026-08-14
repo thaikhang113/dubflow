@@ -63,6 +63,13 @@ def test_labels_and_hints_are_accented_vietnamese() -> None:
             f"{item.key}: nhãn hoặc lời giải thích chưa viết tiếng Việt có dấu")
 
 
+def test_labels_and_hints_have_no_mojibake() -> None:
+    mojibake = ("Ã", "Ä", "Å", "Æ", "á»", "â€", "�")
+    for item in spec.FIELDS:
+        combined = item.label + " " + item.hint
+        assert not any(marker in combined for marker in mojibake), (
+            f"{item.key}: nhãn hoặc lời giải thích bị lỗi mã hóa")
+
 def test_every_field_belongs_to_a_known_tab() -> None:
     for item in spec.FIELDS:
         assert item.tab in spec.TABS, f"{item.key} thuộc thẻ lạ: {item.tab}"

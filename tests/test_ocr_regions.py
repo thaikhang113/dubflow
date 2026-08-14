@@ -2,6 +2,7 @@ import json
 
 from autodub.media.ocr_regions import (
     detections_to_regions,
+    detections_to_logo_regions,
     load_regions,
     merge_regions,
     save_regions,
@@ -40,10 +41,10 @@ def test_ocr_converts_pixel_box_to_normalized_timed_region():
     )
 
     assert regions == [{
-        "x": round(100 / 1920, 6),
-        "y": round(800 / 1080, 6),
-        "w": round(800 / 1920, 6),
-        "h": round(60 / 1080, 6),
+        "x": round(96 / 1920, 6),
+        "y": round(796 / 1080, 6),
+        "w": round(808 / 1920, 6),
+        "h": round(68 / 1080, 6),
         "t_start": 2.5,
         "t_end": 3.5,
         "source": "ocr",
@@ -51,6 +52,19 @@ def test_ocr_converts_pixel_box_to_normalized_timed_region():
         "confidence": 0.95,
     }]
 
+
+def test_ocr_accepts_two_line_subtitle_in_lower_35_percent():
+    detections = [
+        _det(box=[[100, 700], [900, 700], [900, 755], [100, 755]]),
+        _det(box=[[100, 760], [900, 760], [900, 815], [100, 815]]),
+    ]
+
+    regions = detections_to_regions(
+        detections, video_w=1920, video_h=1080, min_confidence=0.8
+    )
+
+    assert len(regions) == 2
+    assert all(region["y"] + region["h"] > 0.65 for region in regions)
 
 def test_ocr_ignores_chinese_text_outside_subtitle_band():
     detections = [
@@ -64,6 +78,22 @@ def test_ocr_ignores_chinese_text_outside_subtitle_band():
 
     assert len(regions) == 1
     assert regions[0]["y"] > 0.7
+
+def test_ocr_can_promote_stable_upper_text_to_source_logo_region():
+    detections = [
+        _det(box=[[100, 80], [420, 80], [420, 130], [100, 130]], t=1.0),
+        _det(box=[[104, 82], [424, 82], [424, 132], [104, 132]], t=2.0),
+        _det(box=[[100, 800], [900, 800], [900, 860], [100, 860]], t=2.0),
+    ]
+
+    regions = detections_to_logo_regions(
+        detections, video_w=1920, video_h=1080, min_confidence=0.8
+    )
+
+    assert len(regions) == 1
+    assert regions[0]["source"] == "logo"
+    assert regions[0]["x"] < 0.1
+    assert regions[0]["y"] < 0.2
 
 
 def test_ocr_regions_merge_across_adjacent_samples():
@@ -91,3 +121,11 @@ def test_ocr_artifact_round_trip(tmp_path):
 
     assert load_regions(str(path)) == regions
     assert json.loads(path.read_text(encoding="utf-8"))["version"] == 2
+
+def test_logo_source_region_survives_blur_compaction():
+    from autodub.media.subtitle import compact_blur_regions
+
+    logo = {"x": 0.7, "y": 0.05, "w": 0.2, "h": 0.1, "source": "logo"}
+    ocr = {"x": 0.2, "y": 0.8, "w": 0.3, "h": 0.1, "source": "ocr"}
+
+    assert compact_blur_regions([logo, ocr]) == [logo, ocr]

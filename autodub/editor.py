@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from autodub.config import Settings
 from autodub.languages import TargetLang, get_target
@@ -529,6 +529,118 @@ def _render_options(state: EditorState, settings: Settings,
     save_render_opts(state.work_dir, merged)
     return subtitle_mode, blur_regions, style
 
+def _branding_options(state: EditorState, settings: Settings) -> dict:
+    opts = state.render_opts
+    region = opts.get("branding_logo_region", settings.branding_logo_region)
+    if isinstance(region, str):
+        try:
+            region = json.loads(region) if region.strip() else None
+        except (TypeError, ValueError, json.JSONDecodeError):
+            region = None
+    return {
+        "logo_path": opts.get("branding_logo_path", settings.branding_logo_path),
+        "logo_region": region if isinstance(region, dict) else None,
+        "logo_opacity": float(opts.get(
+            "branding_logo_opacity", settings.branding_logo_opacity)),
+        "logo_scale": float(opts.get(
+            "branding_logo_scale", settings.branding_logo_scale)),
+        "vision_enabled": bool(opts.get(
+            "branding_vision_enabled", settings.branding_vision_enabled)),
+    }
+
+def _probe_ocr_video(video_path: str) -> tuple[int, int, float]:
+    from autodub.media.video import probe_dimensions, probe_duration_s
+
+    width, height = probe_dimensions(video_path)
+    return width, height, probe_duration_s(video_path) or 0.0
+
+def _refresh_ocr_regions(
+    work_dir: str,
+    settings: Settings,
+    state: EditorState,
+    blur_regions: list[dict],
+    *,
+    ocr_enabled: bool | None = None,
+    ocr_y_min: float | None = None,
+    source_logo_auto: bool | None = None,
+) -> list[dict]:
+    """Refresh OCR and optional source-logo blur boxes.
+
+    Explicit values come from the Editor and override stale project options.
+    Pipeline rebuilds omit them, so persisted project options remain the source
+    of truth there.
+    """
+    opts = load_render_opts(work_dir) or dict(state.render_opts)
+    enabled = bool(
+        opts.get("ocr_enabled", settings.ocr_enabled)
+        if ocr_enabled is None else ocr_enabled
+    )
+    y_min = float(
+        opts.get("ocr_subtitle_y_min", settings.ocr_subtitle_y_min)
+        if ocr_y_min is None else ocr_y_min
+    )
+    auto_logo = bool(
+        opts.get("branding_vision_enabled", settings.branding_vision_enabled)
+        if source_logo_auto is None else source_logo_auto
+    )
+    opts["ocr_enabled"] = enabled
+    opts["ocr_subtitle_y_min"] = y_min
+    opts["branding_vision_enabled"] = auto_logo
+    # Giữ vùng thủ công và vùng logo gốc; chỉ thay box do OCR tạo.
+    manual = [r for r in blur_regions if r.get("source") != "ocr"]
+    has_source_logo = any(
+        region.get("source") == "logo" for region in manual)
+    if not enabled and not auto_logo:
+        opts["blur_regions"] = manual
+        save_render_opts(work_dir, opts)
+        return manual
+    try:
+        video_path = state.video_path
+        if not video_path:
+            raise RuntimeError("Không tìm thấy video nguồn để chạy OCR.")
+        width, height, duration = _probe_ocr_video(video_path)
+        refreshed = manual
+        if enabled:
+            from autodub.media.ocr import detect_regions_with_logo
+            from autodub.media.ocr_regions import save_regions
+
+            ocr_settings = replace(
+                settings, ocr_enabled=True, ocr_subtitle_y_min=y_min)
+            ocr_regions, logo_regions = detect_regions_with_logo(
+                video_path, width, height, duration, ocr_settings)
+            save_regions(
+                data_path(work_dir, "ocr_regions.json", create_dir=True),
+                ocr_regions)
+            refreshed = refreshed + ocr_regions
+            if auto_logo and not has_source_logo:
+                refreshed = refreshed + logo_regions
+
+        has_source_logo = any(
+            region.get("source") == "logo" for region in refreshed)
+        if auto_logo and not has_source_logo:
+            from autodub.media.vision import detect_logo_region_video
+
+            detected = detect_logo_region_video(
+                video_path,
+                getattr(settings, "branding_vision_model", "deepseek-vl"),
+                duration=duration,
+            )
+            if detected:
+                refreshed = refreshed + [{**detected, "source": "logo"}]
+
+        opts["blur_regions"] = refreshed
+        save_render_opts(work_dir, opts)
+        return refreshed
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Không refresh được OCR khi xuất lại: %s", exc)
+        # Keep previous OCR boxes when OCR is unavailable, so an export
+        # remains usable after an installation/network/model failure.
+        existing = [r for r in blur_regions if r.get("source") == "ocr"]
+        preserved = manual + existing
+        opts["blur_regions"] = preserved
+        save_render_opts(work_dir, opts)
+        return preserved
+
 
 def _check_render_mode(work_dir: str) -> None:
     """Chặn xuất lại từ bộ giọng đọc tạo theo cơ chế gộp câu đời cũ."""
@@ -653,6 +765,8 @@ def rebuild_output(
     target, segments = state.target, state.segments
     subtitle_mode, blur_regions, style = _render_options(
         state, settings, subtitle_mode, blur_regions, subtitle_style)
+    blur_regions = _refresh_ocr_regions(
+        work_dir, settings, state, blur_regions)
 
     def emit(step, status, **kw):
         if reporter is not None:
@@ -716,6 +830,7 @@ def rebuild_output(
                           "lại được. Hãy chọn lại tệp video rồi chạy tiếp.")
     emit("merge_video", "start")
     dubbed = os.path.join(work_dir, "dubbed_video.mp4")
+    branding = _branding_options(state, settings)
     # Phụ đề luôn được sinh lại từ danh sách câu hiện tại, trên đúng timeline
     # vừa đặt — chữ trong video là chữ bạn vừa sửa, không phải bản cũ.
     _srt_path, burn_path = refresh_subtitles(
@@ -728,7 +843,10 @@ def rebuild_output(
         subtitle_style=style,
         speed=deferred_speed[0] if deferred_speed else None,
         fps=deferred_speed[1] if deferred_speed else None,
-        mirror=bool(state.render_opts.get("mirror", False)))
+        mirror=bool(state.render_opts.get("mirror", False)),
+        logo_path=branding["logo_path"] or None,
+        logo_region=branding["logo_region"],
+        logo_opacity=branding["logo_opacity"])
     emit("merge_video", "done", detail=dubbed)
     emit("done", "done", detail=work_dir)
     logger.info(f"Đã xuất xong video: {dubbed}")
@@ -755,6 +873,8 @@ def rebuild_subtitles(
     target, segments = state.target, state.segments
     subtitle_mode, blur_regions, style = _render_options(
         state, settings, subtitle_mode, blur_regions, subtitle_style)
+    blur_regions = _refresh_ocr_regions(
+        work_dir, settings, state, blur_regions)
 
     merged_audio_path = data_path(work_dir, target.audio_name)
     if not os.path.isfile(merged_audio_path):
@@ -778,6 +898,7 @@ def rebuild_subtitles(
         for_burn=subtitle_mode == "burn")
 
     dubbed = os.path.join(work_dir, "dubbed_video.mp4")
+    branding = _branding_options(state, settings)
     merge_video(
         video_path, merged_audio_path, dubbed,
         srt_path=burn_path, subtitle_mode=subtitle_mode,
@@ -785,7 +906,10 @@ def rebuild_subtitles(
         subtitle_style=style,
         speed=deferred_speed[0] if deferred_speed else None,
         fps=deferred_speed[1] if deferred_speed else None,
-        mirror=bool(state.render_opts.get("mirror", False)))
+        mirror=bool(state.render_opts.get("mirror", False)),
+        logo_path=branding["logo_path"] or None,
+        logo_region=branding["logo_region"],
+        logo_opacity=branding["logo_opacity"])
     if reporter is not None:
         reporter.emit("merge_video", "done", detail=dubbed)
         reporter.emit("done", "done", detail=work_dir)

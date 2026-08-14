@@ -6,7 +6,8 @@ import webbrowser
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QApplication, QHBoxLayout, QLabel, QPlainTextEdit, QVBoxLayout, QWidget,
+    QApplication, QHBoxLayout, QLabel, QPlainTextEdit, QScrollArea,
+    QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from autodub_gui import icons, tokens
@@ -21,6 +22,7 @@ from autodub_gui.ui.cards import Card
 from autodub_gui.ui.inputs import FilePicker, LabeledCombo
 from autodub_gui.ui.labels import ElidedLabel
 from autodub_gui.ui.modal import ConfirmDialog
+from autodub_gui.ui.style import clear_background
 from autodub_gui.ui.table import Column, DataTable
 from autodub_gui.ui.toast import TOASTS
 from autodub_gui.widgets import LogPanel
@@ -31,8 +33,8 @@ from autodub_gui.env_store import read_env, write_env
 from autodub.utils import app_root
 
 _PAGE_MARGIN = 28
-_INPUT_MIN_H = 90
-_INPUT_MAX_H = 150
+_INPUT_MIN_H = 72
+_INPUT_MAX_H = 112
 _ACTION_ICON = 28
 _STATUS_COL_W = 140
 _ACTION_COL_W = 90
@@ -77,7 +79,17 @@ class DownloadPage(BasePage):
 
     # -- Dựng giao diện ------------------------------------------------
     def _build(self) -> None:
-        root = QVBoxLayout(self)
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        clear_background(scroll)
+        clear_background(scroll.viewport())
+
+        body = QWidget()
+        clear_background(body)
+        root = QVBoxLayout(body)
         root.setContentsMargins(_PAGE_MARGIN, tokens.SP_2,
                                 _PAGE_MARGIN, tokens.SP_5)
         root.setSpacing(tokens.SP_4)
@@ -92,11 +104,20 @@ class DownloadPage(BasePage):
             empty_title="Chưa tải liên kết nào",
             empty_description="Dán liên kết vào ô phía trên rồi bấm Tải xuống. "
                               "Kết quả từng liên kết sẽ hiện ở đây.")
+        self.table.setMinimumHeight(320)
+        self.table.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.table.table.verticalHeader().setDefaultSectionSize(44)
         root.addWidget(self.table, 1)
 
         self.log = LogPanel()
-        self.log.setMaximumHeight(110)
+        self.log.setMaximumHeight(78)
         root.addWidget(self.log)
+        scroll.setWidget(body)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(scroll)
 
     def _build_bilibili_login_card(self) -> QWidget:
         card = Card(padding=tokens.SP_4)
@@ -134,7 +155,8 @@ class DownloadPage(BasePage):
             ".bilibili.com\tTRUE\t/\tFALSE\t0\tSESSDATA\t...\n"
             ".bilibili.com\tTRUE\t/\tFALSE\t0\tDedeUserID\t...\n"
             ".bilibili.com\tTRUE\t/\tFALSE\t0\tbili_jct\t...")
-        self.cookie_edit.setFixedHeight(96)
+        self.cookie_edit.setMinimumHeight(64)
+        self.cookie_edit.setMaximumHeight(80)
         card.body.addWidget(self.cookie_edit)
         self._refresh_bilibili_cookie_status()
         return card

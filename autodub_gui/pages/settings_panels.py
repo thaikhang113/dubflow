@@ -311,7 +311,7 @@ class VoiceSettingsPanel(CollapsibleSection):
 
 
 class ConnectionChecks(CollapsibleSection):
-    """Thử kết nối tới máy chủ VoxDub và hiện số Vox còn lại.
+    """Thử kết nối tới máy chủ DubFlow và hiện số Vox còn lại.
 
     Không còn API Key nào để kiểm tra: mô hình và mã đều nằm trên máy chủ.
     Thứ người dùng cần biết khi nghi ngờ chỉ còn hai điều — máy chủ có trả

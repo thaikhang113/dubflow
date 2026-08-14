@@ -67,6 +67,8 @@ def test_tokens_module_defines_core_palette() -> None:
     )
     for name in required:
         assert hasattr(tokens, name), f"tokens.py thiếu {name}"
+    assert "Noto Sans" in tokens.FONT_STACK
+    assert "DejaVu Sans" in tokens.FONT_STACK
 
 
 def _luminance(hex_color: str) -> int:

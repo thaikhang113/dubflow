@@ -11,6 +11,8 @@ from autodub import editor
 from autodub.config import Settings
 from autodub.editor import (
     EditorError,
+    _branding_options,
+    _refresh_ocr_regions,
     load_render_opts,
     load_work_dir,
     resolve_existing_background,
@@ -72,6 +74,23 @@ def test_load_without_translation(tmp_path):
     with pytest.raises(EditorError, match="No translation"):
         load_work_dir(str(tmp_path / "x"))
 
+
+def test_branding_options_reads_legacy_json_region(tmp_path):
+    settings = Settings(
+        branding_logo_path="default.png",
+        branding_logo_region='{"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.1}',
+        branding_logo_opacity=0.8,
+    )
+    state = editor.EditorState(
+        work_dir=str(tmp_path), target=None, segments=[], render_opts={})
+
+    options = _branding_options(state, settings)
+
+    assert options["logo_path"] == "default.png"
+    assert options["logo_region"] == {"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.1}
+    assert options["logo_opacity"] == 0.8
+    assert options["logo_scale"] == Settings().branding_logo_scale
+    assert options["vision_enabled"] is Settings().branding_vision_enabled
 
 # --------------------------- edit --------------------------- #
 
@@ -238,6 +257,157 @@ def test_rebuild_passes_subtitle_style(work_dir, monkeypatch):
     for key, value in style.items():
         assert captured["style"][key] == value
         assert load_render_opts(work_dir)["subtitle_style"][key] == value
+
+def test_refresh_ocr_regions_replaces_ocr_and_keeps_manual_regions(
+    work_dir, monkeypatch
+):
+    settings = Settings(ocr_enabled=True, ocr_subtitle_y_min=0.65)
+    old_manual = {"x": 0.1, "y": 0.2, "w": 0.2, "h": 0.1}
+    old_logo = {"x": 0.7, "y": 0.05, "w": 0.15, "h": 0.08, "source": "logo"}
+    old_ocr = {"x": 0.2, "y": 0.8, "w": 0.3, "h": 0.1, "source": "ocr"}
+    save_render_opts(work_dir, {
+        "ocr_enabled": True,
+        "ocr_subtitle_y_min": 0.72,
+        "blur_regions": [old_manual, old_logo, old_ocr],
+    })
+    seen = {}
+
+    def fake_detect(video, width, height, duration, detected_settings):
+        seen.update({
+            "video": video,
+            "width": width,
+            "height": height,
+            "duration": duration,
+            "y_min": detected_settings.ocr_subtitle_y_min,
+        })
+        return (
+            [{"x": 0.4, "y": 0.75, "w": 0.2, "h": 0.1, "source": "ocr"}],
+            [],
+        )
+
+    monkeypatch.setattr(editor, "_probe_ocr_video", lambda _path: (1920, 1080, 4.0))
+    monkeypatch.setattr("autodub.media.ocr.detect_regions_with_logo", fake_detect)
+
+    state = load_work_dir(work_dir)
+    result = _refresh_ocr_regions(
+        work_dir, settings, state, [old_manual, old_logo, old_ocr])
+
+    assert result == [
+        old_manual,
+        old_logo,
+        {"x": 0.4, "y": 0.75, "w": 0.2, "h": 0.1, "source": "ocr"},
+    ]
+    assert seen["y_min"] == 0.72
+    assert load_render_opts(work_dir)["blur_regions"] == result
+
+def test_refresh_ocr_regions_disabled_removes_only_ocr(work_dir):
+    settings = Settings(ocr_enabled=True, branding_vision_enabled=False)
+    manual = {"x": 0.1, "y": 0.2, "w": 0.2, "h": 0.1}
+    logo = {"x": 0.7, "y": 0.1, "w": 0.2, "h": 0.1, "source": "logo"}
+    ocr = {"x": 0.2, "y": 0.8, "w": 0.3, "h": 0.1, "source": "ocr"}
+    save_render_opts(work_dir, {"ocr_enabled": False,
+                                "blur_regions": [manual, logo, ocr]})
+
+    state = load_work_dir(work_dir)
+    result = _refresh_ocr_regions(work_dir, settings, state, [manual, logo, ocr])
+
+    assert result == [manual, logo]
+    assert load_render_opts(work_dir)["blur_regions"] == [manual, logo]
+
+def test_refresh_ocr_regions_explicit_editor_settings_override_persisted_values(
+    work_dir, monkeypatch
+):
+    settings = Settings(ocr_enabled=True, ocr_subtitle_y_min=0.65)
+    manual = {"x": 0.1, "y": 0.2, "w": 0.2, "h": 0.1}
+    old_ocr = {"x": 0.2, "y": 0.8, "w": 0.3, "h": 0.1, "source": "ocr"}
+    save_render_opts(work_dir, {
+        "ocr_enabled": True,
+        "ocr_subtitle_y_min": 0.72,
+        "blur_regions": [manual, old_ocr],
+    })
+    monkeypatch.setattr(
+        "autodub.media.ocr.detect_regions",
+        lambda *_args: pytest.fail("OCR must stay disabled by explicit editor value"),
+    )
+
+    state = load_work_dir(work_dir)
+    result = _refresh_ocr_regions(
+        work_dir, settings, state, [manual, old_ocr],
+        ocr_enabled=False, ocr_y_min=0.35, source_logo_auto=False,
+    )
+
+    assert result == [manual]
+    assert load_render_opts(work_dir)["blur_regions"] == [manual]
+    assert load_render_opts(work_dir)["ocr_enabled"] is False
+    assert load_render_opts(work_dir)["ocr_subtitle_y_min"] == 0.35
+
+def test_refresh_ocr_regions_auto_adds_source_logo(work_dir, monkeypatch):
+    settings = Settings(
+        ocr_enabled=False,
+        branding_vision_enabled=True,
+        branding_vision_model="test-model",
+    )
+    manual = {"x": 0.1, "y": 0.2, "w": 0.2, "h": 0.1}
+    save_render_opts(work_dir, {
+        "branding_vision_enabled": True,
+        "blur_regions": [manual],
+    })
+    monkeypatch.setattr(
+        editor,
+        "_probe_ocr_video",
+        lambda _path: (1920, 1080, 4.0),
+    )
+    monkeypatch.setattr(
+        "autodub.media.vision.detect_logo_region_video",
+        lambda *_args, **_kwargs: {
+            "x": 0.8, "y": 0.05, "w": 0.15, "h": 0.08,
+        },
+    )
+
+    state = load_work_dir(work_dir)
+    result = _refresh_ocr_regions(
+        work_dir, settings, state, [manual],
+        source_logo_auto=True,
+    )
+
+    assert result == [
+        manual,
+        {"x": 0.8, "y": 0.05, "w": 0.15, "h": 0.08, "source": "logo"},
+    ]
+    assert load_render_opts(work_dir)["blur_regions"] == result
+
+def test_refresh_ocr_regions_uses_ocr_for_stable_source_logo(
+    work_dir, monkeypatch
+):
+    settings = Settings(
+        ocr_enabled=True,
+        branding_vision_enabled=True,
+        branding_vision_model="test-model",
+    )
+    save_render_opts(work_dir, {"blur_regions": []})
+    monkeypatch.setattr(
+        editor,
+        "_probe_ocr_video",
+        lambda _path: (1920, 1080, 4.0),
+    )
+    monkeypatch.setattr(
+        "autodub.media.ocr.detect_regions_with_logo",
+        lambda *_args, **_kwargs: (
+            [{"x": 0.2, "y": 0.75, "w": 0.3, "h": 0.1, "source": "ocr"}],
+            [{"x": 0.8, "y": 0.05, "w": 0.15, "h": 0.08, "source": "logo"}],
+        ),
+    )
+    monkeypatch.setattr(
+        "autodub.media.vision.detect_logo_region_video",
+        lambda *_args, **_kwargs: pytest.fail("Vision is fallback only"),
+    )
+
+    state = load_work_dir(work_dir)
+    result = _refresh_ocr_regions(
+        work_dir, settings, state, [], source_logo_auto=True,
+    )
+
+    assert [region["source"] for region in result] == ["ocr", "logo"]
 
 
 # --------------------------- batch save --------------------------- #

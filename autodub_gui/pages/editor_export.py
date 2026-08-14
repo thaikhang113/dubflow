@@ -6,6 +6,7 @@ lớp trộn: nó chỉ chứa hành vi, còn mọi widget đều do trang chín
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 
 from autodub_gui.dub_constants import friendly_error
 from autodub_gui.log_text import Narrator, error_line
@@ -14,6 +15,17 @@ from autodub_gui.system_open import open_file
 from autodub_gui.ui.modal import ConfirmDialog
 from autodub_gui.ui.toast import TOASTS
 
+
+def _parse_logo_region(value: str | dict | None) -> dict | None:
+    if isinstance(value, dict):
+        return value
+    if not str(value or "").strip():
+        return None
+    try:
+        parsed = json.loads(str(value))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 class VoiceAndExportMixin:
     """Các thao tác nghe thử, đọc lại giọng và xuất video."""
@@ -198,6 +210,9 @@ class VoiceAndExportMixin:
         from autodub_gui.style_dialog import StyleDialog
 
         video = self._state.video_path if self._state else ""
+        from autodub.config import Settings
+        settings = Settings.load()
+        opts = getattr(self._state, "render_opts", {}) if self._state else {}
         style = getattr(self, "_subtitle_style", None)
         if not style:
             # Chưa có kiểu riêng cho dự án: nếu bộ đang chọn trùng với bộ
@@ -205,8 +220,6 @@ class VoiceAndExportMixin:
             # án), khác thì dùng bộ dựng sẵn.
             preset = self.export_panel.preset.current_key()
             try:
-                from autodub.config import Settings
-                settings = Settings.load()
                 style = (settings.subtitle_style()
                          if preset == settings.subtitle_preset
                          else preset_style(preset))
@@ -227,9 +240,21 @@ class VoiceAndExportMixin:
         except Exception:  # noqa: BLE001
             pass
 
-        dialog = StyleDialog(video, style,
-                             list(getattr(self, "_blur_regions", [])), self,
-                             preview_text=preview_text)
+        dialog = StyleDialog(
+            video, style, list(getattr(self, "_blur_regions", [])), self,
+            preview_text=preview_text,
+            logo_path=opts.get("branding_logo_path", settings.branding_logo_path),
+            logo_region=opts.get("branding_logo_region")
+            or _parse_logo_region(settings.branding_logo_region),
+            logo_opacity=opts.get(
+                "branding_logo_opacity", settings.branding_logo_opacity),
+            logo_scale=opts.get(
+                "branding_logo_scale", settings.branding_logo_scale),
+            ocr_y_min=opts.get(
+                "ocr_subtitle_y_min", settings.ocr_subtitle_y_min),
+            ocr_enabled=opts.get("ocr_enabled", settings.ocr_enabled),
+            source_logo_auto=opts.get(
+                "branding_vision_enabled", settings.branding_vision_enabled))
         if not dialog.exec():
             return
         self._subtitle_style = dialog.style()
@@ -238,14 +263,75 @@ class VoiceAndExportMixin:
         self.export_panel.preset.set_key("custom")
         if video:
             self._blur_regions = dialog.regions()
+        branding = dialog.branding()
+        ocr = dialog.ocr_options()
+        self._branding_options = {
+            "branding_logo_path": branding["logo_path"],
+            "branding_logo_region": branding["logo_region"],
+            "branding_logo_opacity": branding["logo_opacity"],
+            "branding_logo_scale": branding["logo_scale"],
+            "branding_vision_enabled": branding["source_logo_auto"],
+            "ocr_enabled": ocr["ocr_enabled"],
+            "ocr_subtitle_y_min": ocr["ocr_subtitle_y_min"],
+        }
         if self.export_panel.subtitle.current_key() != "burn":
             self.export_panel.subtitle.set_key("burn")
             TOASTS.info("Kiểu chữ tự chỉnh cần ghi thẳng vào hình, nên phụ đề "
                         "đã chuyển sang Ghi thẳng vào hình.")
         self._save_render_opts()
+        self._start_ocr_refresh(
+            settings, ocr["ocr_enabled"], ocr["ocr_subtitle_y_min"],
+            branding["source_logo_auto"])
         self._apply_style_to_player()
         TOASTS.info("Bấm «Ghi lại phụ đề vào video» để thấy kiểu chữ mới trên "
                     "video ngay, không cần xuất lại cả phim.")
+
+    def _start_ocr_refresh(
+        self, settings, enabled: bool, y_min: float,
+        source_logo_auto: bool | None = None,
+    ) -> None:
+        """Re-run OCR after editor region changes, off the UI thread."""
+        if not self._work_dir or not self._state or not self._state.video_path:
+            return
+        if source_logo_auto is not None:
+            settings = replace(
+                settings, branding_vision_enabled=bool(source_logo_auto))
+        current = getattr(self, "_ocr_refresh_worker", None)
+        if current is not None and current.isRunning():
+            self._ocr_refresh_pending = (
+                settings, bool(enabled), float(y_min), source_logo_auto)
+            return
+        from dataclasses import replace
+        from autodub_gui.workers import OCRRefreshWorker
+
+        ocr_settings = replace(
+            settings, ocr_enabled=bool(enabled),
+            ocr_subtitle_y_min=float(y_min))
+        worker = OCRRefreshWorker(
+            ocr_settings, self._work_dir, self.target_key(),
+            list(getattr(self, "_blur_regions", [])), self)
+        worker.finished_ok.connect(self._on_ocr_refresh_done)
+        worker.failed.connect(
+            lambda message: TOASTS.warn(
+                f"Chưa cập nhật được vùng OCR: {message}"))
+        worker.finished.connect(
+            lambda: self._on_ocr_refresh_finished())
+        self._ocr_refresh_worker = worker
+        worker.start()
+
+    def _on_ocr_refresh_finished(self) -> None:
+        self._ocr_refresh_worker = None
+        pending = getattr(self, "_ocr_refresh_pending", None)
+        self._ocr_refresh_pending = None
+        if pending is not None:
+            self._start_ocr_refresh(*pending)
+
+    def _on_ocr_refresh_done(self, regions) -> None:
+        self._blur_regions = list(regions or [])
+        self._save_render_opts()
+        ocr_count = sum(1 for region in self._blur_regions
+                        if region.get("source") == "ocr")
+        TOASTS.info(f"Đã cập nhật vùng OCR ({ocr_count} vùng).")
 
     def _export(self) -> None:
         from autodub_gui.workers import RebuildWorker

@@ -16,6 +16,29 @@ _ICON_SIZE = 20
 _STROKE = 1.5
 
 
+def brand_logo(size: int = 32) -> QPixmap:
+    """Draw the fallback DubFlow logo when logo.ico is unavailable."""
+    size = max(1, int(size))
+    px = QPixmap(size, size)
+    px.fill(Qt.GlobalColor.transparent)
+    p = QPainter(px)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    radius = size * 9 / 32
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor(tokens.BRAND_LOGO_BG))
+    p.drawRoundedRect(QRectF(0, 0, size, size), radius, radius)
+    p.setPen(QPen(QColor(tokens.ACCENT_BLUE), max(1.6, size * 0.075),
+                  Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+    ratios = (0.34, 0.66, 0.50, 0.26)
+    step = size / (len(ratios) + 1)
+    for i, ratio in enumerate(ratios):
+        x = step * (i + 1)
+        half = size * ratio / 2
+        p.drawLine(QPointF(x, size / 2 - half), QPointF(x, size / 2 + half))
+    p.end()
+    return px
+
+
 def _make_icon(draw_fn, color: str | QColor) -> QIcon:
     """Tạo QIcon từ hàm vẽ draw_fn(painter, rect, color)."""
     px = QPixmap(_ICON_SIZE, _ICON_SIZE)
@@ -883,22 +906,3 @@ def eye(color: str | None = None) -> QIcon:
 
 def eye_off(color: str | None = None) -> QIcon:
     return _make_icon(_draw_eye_off, color or tokens.TEXT_SECONDARY)
-    """Biểu trưng VoxDub: ô vuông bo góc và bốn vạch sóng âm."""
-    px = QPixmap(size, size)
-    px.fill(Qt.GlobalColor.transparent)
-    p = QPainter(px)
-    p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    radius = size * 9 / 32
-    p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(QColor(tokens.BRAND_LOGO_BG))
-    p.drawRoundedRect(QRectF(0, 0, size, size), radius, radius)
-    p.setPen(QPen(QColor(tokens.ACCENT_BLUE), max(1.6, size * 0.075),
-                  Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-    ratios = (0.34, 0.66, 0.50, 0.26)
-    step = size / (len(ratios) + 1)
-    for i, ratio in enumerate(ratios):
-        x = step * (i + 1)
-        half = size * ratio / 2
-        p.drawLine(QPointF(x, size / 2 - half), QPointF(x, size / 2 + half))
-    p.end()
-    return px

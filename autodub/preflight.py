@@ -90,12 +90,21 @@ def _check_ffmpeg(settings: Settings) -> CheckResult:
     # Kiểm tra cả thư mục bin/ cục bộ (tải bởi wizard) lẫn PATH hệ thống
     suffix = ".exe" if os.name == "nt" else ""
     local_ffmpeg = os.path.join(data_root(), "bin", f"ffmpeg{suffix}")
+    local_ffprobe = os.path.join(data_root(), "bin", f"ffprobe{suffix}")
     ffmpeg_cmd = shutil.which("ffmpeg") or (
         local_ffmpeg if os.path.isfile(local_ffmpeg) else None)
-    if not ffmpeg_cmd:
+    ffprobe_cmd = shutil.which("ffprobe") or (
+        local_ffprobe if os.path.isfile(local_ffprobe) else None)
+    if not ffmpeg_cmd or not ffprobe_cmd:
+        if sys.platform.startswith("linux"):
+            return CheckResult(
+                key="ffmpeg", title=title, level="fail",
+                message="Linux chưa có đủ FFmpeg và FFprobe.",
+                advice="Cai bang: sudo apt install ffmpeg, roi mo lai DubFlow.",
+            )
         return CheckResult(
             key="ffmpeg", title=title, level="fail",
-            message="Máy chưa có FFmpeg.",
+            message="Máy chưa có đủ FFmpeg và FFprobe.",
             advice="Tải bản đầy đủ (full build) từ gyan.dev hoặc BtbN, giải "
                    "nén rồi thêm thư mục bin vào đường dẫn hệ thống (PATH), "
                    "sau đó mở lại ứng dụng.")

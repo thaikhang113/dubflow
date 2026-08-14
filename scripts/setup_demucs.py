@@ -11,7 +11,7 @@ import subprocess
 import sys
 import wave
 
-from setup_support import retry_call
+from setup_support import find_bundled_worker, retry_call
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
@@ -26,15 +26,10 @@ VENV_PY = os.path.join(
 MODEL_DIR = os.path.join(DATA_ROOT, "models", "demucs")
 TORCH_HOME = os.path.join(MODEL_DIR, "torch")
 MARKER = os.path.join(MODEL_DIR, "installed_ok.json")
-WORKER = os.path.join(PROJECT_ROOT, "autodub", "media", "demucs_worker.py")
-if not os.path.isfile(WORKER):
-    for directory in ("data", "_internal"):
-        candidate = os.path.join(
-            PROJECT_ROOT, directory, "autodub", "media", "demucs_worker.py"
-        )
-        if os.path.isfile(candidate):
-            WORKER = candidate
-            break
+WORKER = find_bundled_worker(
+    os.path.join("autodub", "media", "demucs_worker.py"),
+    PROJECT_ROOT,
+)
 
 DEMUCS_SPEC = "demucs>=4.0.0,<5.0.0"
 

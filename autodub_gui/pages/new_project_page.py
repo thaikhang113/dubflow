@@ -401,14 +401,14 @@ class NewProjectPage(BasePage):
             ("Độ chính xác khi nghe",
              label_of(consts.WHISPER_MODELS, data["whisper_model"])),
             ("Cách dịch",
-             "tự động (12 Vox/câu)" if data["auto_translate"]
-             else "dịch tay có hướng dẫn (10 Vox/câu)"),
+            "tự động (12 tín dụng/câu)" if data["auto_translate"]
+            else "dịch tay có hướng dẫn (10 tín dụng/câu)"),
             ("Phong cách dịch",
              label_of([(a, b) for a, b, _c in consts.TRANSLATE_STYLES],
                       data["translate_style"])
              if data["auto_translate"] else "—"),
             ("Tiêu đề + mô tả đăng bài",
-             "có (+20 Vox)" if data["generate_metadata"] else "không"),
+            "có (+20 tín dụng)" if data["generate_metadata"] else "không"),
             ("Giọng đọc",
              f"{data['voice'] or 'theo cài đặt chung'} · "
             f"tốc độ {data['voice_speed']:.2f}x"),
@@ -512,10 +512,10 @@ class NewProjectPage(BasePage):
     def _restore_active_session(self, data: dict) -> None:
         """Nhớ lại dự án dở dang của phiên trước (nếu thư mục còn trên đĩa).
 
-        Phiên trước dừng giữa chừng — lỗi, hết Vox, chờ dịch tay hay app bị
+        Phiên trước dừng giữa chừng — lỗi, hết tín dụng, chờ dịch tay hay app bị
         tắt đột ngột — thì phiên này chuyển thẳng bước 1 sang «Tiếp tục dang
         dở» trỏ vào đúng thư mục cũ, để bấm chạy là đi tiếp chứ không tạo
-        dự án mới (dự án mới = trừ Vox lần nữa).
+        dự án mới (dự án mới = trừ tín dụng lần nữa).
         """
         work_dir = str(data.get("active_work_dir") or "")
         status = str(data.get("active_status") or "")
@@ -695,7 +695,15 @@ class NewProjectPage(BasePage):
         style = self._subtitle_style or self._base_style(
             self.step_summary.subtitle_preset.current_key())
         try:
-            dialog = StyleDialog(video, style, self._blur_regions, self)
+            dialog = StyleDialog(
+                video, style, self._blur_regions, self,
+                logo_path=self.step_video.logo_edit.text(),
+                logo_region=self._parse_logo_region(
+                    self.step_video.logo_region.text()),
+                logo_opacity=self.step_video.logo_opacity.value(),
+                logo_scale=self.step_video.logo_scale.value(),
+                ocr_y_min=self.step_video.ocr_y_min.value(),
+                ocr_enabled=self.step_video.ocr_enabled.isChecked())
         except Exception as e:  # noqa: BLE001 — thường do thiếu ffmpeg
             ConfirmDialog.show_error(
                 self, "Không mở được khung xem trước",
@@ -713,6 +721,16 @@ class NewProjectPage(BasePage):
         # Lưu vùng che kể cả khi nguồn là liên kết (chưa có tệp trên máy):
         # tọa độ đã chuẩn hóa 0..1 nên áp đúng lên video sau khi tải về.
         self._blur_regions = dialog.regions()
+        branding = dialog.branding()
+        ocr = dialog.ocr_options()
+        self.step_video.logo_edit.set_text(branding["logo_path"])
+        self.step_video.logo_region.set_text(
+            json.dumps(branding["logo_region"], ensure_ascii=False)
+            if branding["logo_region"] else "")
+        self.step_video.logo_opacity.set_value(branding["logo_opacity"])
+        self.step_video.logo_scale.set_value(branding["logo_scale"])
+        self.step_video.ocr_y_min.set_value(ocr["ocr_subtitle_y_min"])
+        self.step_video.ocr_enabled.setChecked(ocr["ocr_enabled"])
         self._update_style_summary()
 
     def _style_summary_text(self) -> str:
@@ -994,7 +1012,7 @@ class NewProjectPage(BasePage):
         """Ghi nhớ thư mục dự án ngay khi pipeline vừa tạo/chọn xong.
 
         Pipeline nhét work_dir vào ``detail`` của sự kiện «acquire/start» —
-        nhờ đó nếu lượt chạy đổ giữa chừng (lỗi, hết Vox, chờ dịch tay) thì
+        nhờ đó nếu lượt chạy đổ giữa chừng (lỗi, hết tín dụng, chờ dịch tay) thì
         trang này vẫn biết dự án nằm đâu để mời chạy TIẾP đúng dự án cũ.
         Lưu luôn vào bản nháp: app có sập thì mở lại vẫn nhớ.
         """
@@ -1064,7 +1082,7 @@ class NewProjectPage(BasePage):
         """Lượt chạy dừng giữa chừng: nhớ dự án + trỏ bước 1 vào «Tiếp tục».
 
         Nhờ vậy nút chạy tiếp theo đi TIẾP đúng dự án cũ — không tạo thư mục
-        mới, không nghe-chép lại từ đầu, không bị trừ Vox lần nữa. Trạng
+        mới, không nghe-chép lại từ đầu, không bị trừ tín dụng lần nữa. Trạng
         thái được lưu vào bản nháp để tắt app mở lại vẫn nhớ.
         """
         if work_dir:
@@ -1163,7 +1181,7 @@ class NewProjectPage(BasePage):
             advice = ("Có lỗi ngoài dự tính nên ứng dụng phải dừng lại. Tiến "
                       "độ đã lưu trên đĩa vẫn còn — bước 1 đã trỏ sẵn vào dự "
                       "án này, bấm Tiếp tục lồng tiếng để chạy tiếp từ chỗ "
-                      "dừng (không bị trừ Vox lần nữa).")
+                      "dừng (không bị trừ tín dụng lần nữa).")
         else:
             advice = ("Có lỗi ngoài dự tính nên ứng dụng phải dừng lại. Tiến "
                       "độ đã lưu trên đĩa vẫn còn: bạn có thể chọn Tiếp tục "

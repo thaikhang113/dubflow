@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import json
+import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -34,6 +35,34 @@ def is_nonempty_file(path: str | os.PathLike[str]) -> bool:
         return Path(path).is_file() and Path(path).stat().st_size > 0
     except OSError:
         return False
+
+def find_bundled_worker(relative: str, project_root: str) -> str:
+    """Find worker in source, PyInstaller data, or installed app layout."""
+    roots = [
+        os.environ.get("DUBFLOW_APP_ROOT", ""),
+        os.environ.get("DUBFLOW_DATA_DIR", ""),
+        project_root,
+        os.path.dirname(os.path.abspath(__file__)),
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        os.path.dirname(os.path.abspath(sys.executable)),
+        getattr(sys, "_MEIPASS", ""),
+    ]
+    suffixes = (
+        "",
+        "data",
+        "_internal",
+        os.path.join("_internal", "data"),
+        os.path.join("data", "_internal"),
+        "resources",
+    )
+    for root in dict.fromkeys(
+        os.path.abspath(path) for path in roots if path and os.path.isdir(path)
+    ):
+        for suffix in suffixes:
+            candidate = os.path.join(root, suffix, relative)
+            if os.path.isfile(candidate):
+                return candidate
+    return ""
 
 
 def smoke_request(audio_path: str) -> str:

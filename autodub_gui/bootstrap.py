@@ -56,15 +56,10 @@ def steps() -> tuple[BootstrapStep, ...]:
                       "scripts/setup_demucs.py"),
         BootstrapStep("voices", "Voice library", "voices"),
     )
-    return (BootstrapStep(
-        "python",
-        "Python runtime",
-        "python",
-    ), BootstrapStep(
-        "ffmpeg",
-        "FFmpeg",
-        "ffmpeg",
-    ),) + common
+    steps = [BootstrapStep("python", "Python runtime", "python")]
+    if not sys.platform.startswith("linux"):
+        steps.append(BootstrapStep("ffmpeg", "FFmpeg", "ffmpeg"))
+    return tuple(steps) + common
 
 
 def load_state() -> dict:
@@ -102,7 +97,17 @@ def mark_failed(key: str, message: str) -> None:
 
 def is_complete() -> bool:
     completed = load_state().get("completed", {})
-    return all(completed.get(step.key) is True for step in steps())
+    for step in steps():
+        if step.key == "ffmpeg" and sys.platform.startswith("linux"):
+            # Debian declares FFmpeg as a package dependency. Do not send
+            # installed Debian users through the download worker.
+            from autodub_gui.workers_setup import _system_ffmpeg_pair
+
+            if _system_ffmpeg_pair():
+                continue
+        if completed.get(step.key) is not True:
+            return False
+    return True
 
 
 def reset_state() -> None:

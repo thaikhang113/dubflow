@@ -13,7 +13,7 @@ from autodub_gui import _frozen
 _frozen.init()  # phải chạy trước mọi thứ khác: PATH, PLAYWRIGHT_BROWSERS_PATH, chdir
 
 from PySide6.QtCore import QEvent, QObject, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QIcon, QKeyEvent
+from PySide6.QtGui import QFont, QIcon, QKeyEvent
 from PySide6.QtWidgets import (
     QApplication, QHBoxLayout, QMainWindow, QMessageBox, QStackedWidget,
     QVBoxLayout, QWidget,
@@ -29,7 +29,7 @@ from autodub_gui.ui.toast import TOASTS
 
 APP_NAME = "DubFlow"
 APP_TAGLINE = "Lồng tiếng video bằng AI"
-APP_VERSION = "3.0.3"
+APP_VERSION = "3.0.4"
 
 def _runtime_version() -> str:
     """Read release version written into frozen bundles."""
@@ -687,6 +687,12 @@ def _smoke_report(window: MainWindow) -> int:
                        fromlist=["_WORKER_SCRIPT"])._WORKER_SCRIPT,
             __import__("autodub.media.vocal_separator",
                        fromlist=["_WORKER_SCRIPT"])._WORKER_SCRIPT,
+            __import__("autodub.utils",
+                       fromlist=["bundled_file"]).bundled_file(
+                           "autodub", "speech", "asr_whisper_worker.py"),
+            __import__("autodub.utils",
+                       fromlist=["bundled_file"]).bundled_file(
+                           "autodub", "speech", "asr_paraformer_worker.py"),
         )),
         "yt_dlp_importable": True,
         "faster_whisper_importable": True,
@@ -841,6 +847,9 @@ def main() -> int:
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
+    from autodub_gui.fonts import load_app_fonts
+    load_app_fonts()
+    app.setFont(QFont("Merriweather"))
     app.setStyle("Fusion")
     app.setStyleSheet(theme.STYLESHEET)
     nav_filter = _NavKeyFilter()
@@ -852,9 +861,6 @@ def main() -> int:
         app.setWindowIcon(QIcon(icon_path))
     else:
         app.setWindowIcon(QIcon(icons.brand_logo(64)))
-
-    from autodub_gui.fonts import load_app_fonts
-    load_app_fonts()
 
     # Ghi log ra tệp + lưới an toàn crash — trước khi dựng cửa sổ để lỗi
     # sớm nhất cũng được ghi lại.

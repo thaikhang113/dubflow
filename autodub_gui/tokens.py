@@ -152,7 +152,9 @@ RADIUS_XL = 16
 SP_1, SP_2, SP_3, SP_4, SP_5, SP_6, SP_8 = 4, 8, 12, 16, 20, 24, 32
 
 # -- Kiểu chữ ---------------------------------------------------------
-FONT_STACK = '"Segoe UI Variable", "Segoe UI", Arial, sans-serif'
+# Qt stylesheets do not reliably parse browser-style fallback lists on
+# machines without system fonts. This family ships with every release build.
+FONT_STACK = '"Merriweather", "Noto Sans", "DejaVu Sans"'
 FONT_MONO = '"Consolas", "Cascadia Mono", monospace'
 FS_PAGE_TITLE   = 25   # tiêu đề trang
 FS_SECTION      = 17   # tiêu đề mục

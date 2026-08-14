@@ -97,6 +97,36 @@ class DubWorker(QThread):
             detach_gui_logging(handler)
 
 
+class OCRRefreshWorker(QThread):
+    """Refresh editor OCR regions without blocking the GUI."""
+
+    finished_ok = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, settings: Settings, work_dir: str,
+                 target_key: str, blur_regions: list[dict], parent=None):
+        super().__init__(parent)
+        self._settings = settings
+        self._work_dir = work_dir
+        self._target_key = target_key
+        self._blur_regions = list(blur_regions)
+
+    def run(self) -> None:
+        try:
+            from autodub.editor import _refresh_ocr_regions, load_work_dir
+
+            state = load_work_dir(self._work_dir, self._target_key)
+            regions = _refresh_ocr_regions(
+                self._work_dir, self._settings, state, self._blur_regions,
+                ocr_enabled=self._settings.ocr_enabled,
+                ocr_y_min=self._settings.ocr_subtitle_y_min,
+                source_logo_auto=self._settings.branding_vision_enabled,
+            )
+            self.finished_ok.emit(regions)
+        except Exception as exc:  # noqa: BLE001
+            self.failed.emit(str(exc))
+
+
 class SaveAllWorker(QThread):
     """Save every edited line, then re-run TTS for the ones that changed.
 

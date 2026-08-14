@@ -247,16 +247,66 @@ _FFMPEG_URLS = {
         "https://github.com/BtbN/ffmpeg-builds/releases/download/latest/"
         "ffmpeg-master-latest-win64-gpl.zip"
     ),
-    "linux": (
-        "https://github.com/BtbN/ffmpeg-builds/releases/download/latest/"
-        "ffmpeg-master-latest-linux64-gpl.tar.xz"
-    ),
 }
 _FFMPEG_CHECKSUMS_URL = (
     "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/"
     "checksums.sha256"
 )
 _CHUNK = 65536   # 64 KB mỗi lần đọc
+
+def _download_ffmpeg_archive(url: str, part_path: str, archive_name: str,
+                             log, progress) -> None:
+    """Download FFmpeg with retry; never promote a partial archive."""
+    last_error: Exception | None = None
+    for attempt in range(1, 4):
+        try:
+            request = urllib.request.Request(
+                url, headers={"User-Agent": "DubFlow-Setup/1.0"})
+            with urllib.request.urlopen(request, timeout=60) as resp:
+                total = int(resp.headers.get("Content-Length", 0))
+                downloaded = 0
+                with open(part_path, "wb") as archive_file:
+                    while True:
+                        chunk = resp.read(_CHUNK)
+                        if not chunk:
+                            break
+                        archive_file.write(chunk)
+                        downloaded += len(chunk)
+                        if total:
+                            pct = int(downloaded / total * 75)
+                            progress(pct)
+                            log(f"Đang tải: {downloaded / 1_048_576:.1f} / "
+                                f"{total / 1_048_576:.0f} MB")
+            return
+        except Exception as exc:  # noqa: BLE001 - network boundary
+            last_error = exc
+            try:
+                os.remove(part_path)
+            except OSError:
+                pass
+            if attempt < 3:
+                log(f"Tải FFmpeg lỗi, thử lại ({attempt}/3): {exc}")
+    raise RuntimeError(
+        f"Không tải được FFmpeg sau 3 lần thử ({archive_name}): {last_error}")
+
+def _system_ffmpeg_pair(which=shutil.which) -> tuple[str, str] | None:
+    """Return a complete system FFmpeg install, or None."""
+    candidates = [(which("ffmpeg"), which("ffprobe"), False)]
+    if sys.platform.startswith("linux"):
+        for directory in ("/usr/bin", "/usr/local/bin", "/snap/bin"):
+            candidates.append((
+                os.path.join(directory, "ffmpeg"),
+                os.path.join(directory, "ffprobe"),
+                True,
+            ))
+    for ffmpeg, ffprobe, check_files in candidates:
+        if (ffmpeg and ffprobe and
+                (not check_files or (
+                    os.path.isfile(ffmpeg) and os.path.isfile(ffprobe)
+                    and os.access(ffmpeg, os.X_OK)
+                    and os.access(ffprobe, os.X_OK)))):
+            return ffmpeg, ffprobe
+    return None
 
 def _verify_ffmpeg_archive(path: str, archive_name: str) -> None:
     request = urllib.request.Request(
@@ -268,7 +318,7 @@ def _verify_ffmpeg_archive(path: str, archive_name: str) -> None:
     expected = ""
     for line in checksums.splitlines():
         fields = line.strip().split()
-        if len(fields) >= 2 and fields[-1] == archive_name:
+        if len(fields) >= 2 and fields[-1].lstrip("*") == archive_name:
             expected = fields[0].lower()
             break
     if len(expected) != 64:
@@ -297,6 +347,15 @@ class FFmpegDownloadWorker(QThread):
             ffmpeg_exe = os.path.join(bin_dir, f"ffmpeg{suffix}")
             ffprobe_exe = os.path.join(bin_dir, f"ffprobe{suffix}")
 
+            system_pair = _system_ffmpeg_pair()
+            if system_pair:
+                self.log.emit(
+                    f"{STATUS_OK} FFmpeg hệ thống đã sẵn sàng — bỏ qua tải.")
+                _patch_path(os.path.dirname(system_pair[0]))
+                self.progress.emit(100)
+                self.finished_ok.emit()
+                return
+
             # Nếu đã có sẵn thì bỏ qua tải
             if os.path.isfile(ffmpeg_exe) and os.path.isfile(ffprobe_exe):
                 self.log.emit(f"{STATUS_OK} FFmpeg đã có sẵn — bỏ qua tải.")
@@ -305,18 +364,16 @@ class FFmpegDownloadWorker(QThread):
                 self.finished_ok.emit()
                 return
 
+            if sys.platform.startswith("linux"):
+                raise RuntimeError(
+                    "Linux cần gói ffmpeg và ffprobe của hệ thống. "
+                    "Bản .deb tự khai báo ffmpeg; hãy cài lại gói hoặc chạy "
+                    "`sudo apt install ffmpeg`, rồi mở lại DubFlow. "
+                    "Không tải FFmpeg trực tiếp trong bản Linux.")
+
             os.makedirs(bin_dir, exist_ok=True)
-            archive_path = os.path.join(
-                bin_dir,
-                "_ffmpeg_download.zip"
-                if sys.platform == "win32"
-                else "_ffmpeg_download.tar.xz",
-            )
-            archive_name = (
-                "ffmpeg-master-latest-win64-gpl.zip"
-                if sys.platform == "win32"
-                else "ffmpeg-master-latest-linux64-gpl.tar.xz"
-            )
+            archive_path = os.path.join(bin_dir, "_ffmpeg_download.zip")
+            archive_name = "ffmpeg-master-latest-win64-gpl.zip"
 
             # --- Tải archive ---
             url = _FFMPEG_URLS.get(sys.platform)
@@ -324,27 +381,17 @@ class FFmpegDownloadWorker(QThread):
                 raise RuntimeError(f"Unsupported platform: {sys.platform}")
             self.log.emit(f"Đang kết nối: {url}")
             self.progress.emit(2)
-            req = urllib.request.Request(
-                url,
-                headers={"User-Agent": "DubFlow-Setup/1.0"},
-            )
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                total = int(resp.headers.get("Content-Length", 0))
-                downloaded = 0
-                with open(archive_path, "wb") as archive_file:
-                    while True:
-                        chunk = resp.read(_CHUNK)
-                        if not chunk:
-                            break
-                        archive_file.write(chunk)
-                        downloaded += len(chunk)
-                        if total:
-                            pct = int(downloaded / total * 75)
-                            self.progress.emit(pct)
-                            mb = downloaded / 1_048_576
-                            total_mb = total / 1_048_576
-                            self.log.emit(
-                                f"Đang tải: {mb:.1f} / {total_mb:.0f} MB")
+            temp_archive_path = archive_path + ".part"
+            try:
+                _download_ffmpeg_archive(
+                    url, temp_archive_path, archive_name,
+                    self.log.emit, self.progress.emit)
+                os.replace(temp_archive_path, archive_path)
+            finally:
+                try:
+                    os.remove(temp_archive_path)
+                except OSError:
+                    pass
 
             self.log.emit("Đang kiểm tra SHA256 FFmpeg...")
             self.progress.emit(75)
@@ -395,9 +442,11 @@ class FFmpegDownloadWorker(QThread):
             except OSError:
                 pass
 
-            if not os.path.isfile(ffmpeg_exe):
+            if not (os.path.isfile(ffmpeg_exe)
+                    and os.path.isfile(ffprobe_exe)):
                 raise RuntimeError(
-                    f"Không tìm thấy ffmpeg{suffix} trong gói FFmpeg.")
+                    f"Không tìm thấy đủ ffmpeg{suffix} và ffprobe{suffix} "
+                    "trong gói FFmpeg.")
 
             # Patch PATH cho lần chạy này
             _patch_path(bin_dir)
@@ -454,6 +503,7 @@ class SetupScriptWorker(QThread):
                 encoding="utf-8",
                 errors="replace",
                 cwd=data_root(),
+                env=dict(os.environ, DUBFLOW_APP_ROOT=app_root()),
                 creationflags=_NO_WINDOW,
             )
 

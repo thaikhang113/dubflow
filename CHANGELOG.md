@@ -1,5 +1,24 @@
 # Changelog
 
+## 3.0.4 - 2026-08-14
+
+### Fixed
+
+- OCR subtitle masking refreshes when the editor region changes and keeps
+  original-logo detection separate from the subtitle region.
+- Windows and Linux bundles include external ASR, TTS, OCR, and separator
+  workers in current PyInstaller layouts.
+- Linux uses system `ffmpeg`/`ffprobe` and declares `ffmpeg` as a Debian
+  package dependency instead of downloading a static copy.
+- Improve Vietnamese font loading, help text, download layout, and DubFlow
+  branding in the app UI.
+
+### Added
+
+- In-app OCR subtitle masking defaults to the lower 30-35% of the frame.
+- Release validation checks worker files, setup scripts, version, and secrets
+  before packaging.
+
 ## 3.0.3 - 2026-08-14
 
 ### Fixed

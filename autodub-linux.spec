@@ -3,11 +3,13 @@
 import os
 import sys
 
+import PySide6
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 ROOT = os.path.abspath(SPECPATH)
 
 datas = [
+    (os.path.join(ROOT, "logo.ico"), "."),
     (os.path.join(ROOT, "autodub", "speech", "tts", "vieneu_worker.py"),
      os.path.join("autodub", "speech", "tts")),
     (os.path.join(ROOT, "autodub", "speech", "asr_paraformer_worker.py"),
@@ -16,9 +18,19 @@ datas = [
      os.path.join("autodub", "speech")),
     (os.path.join(ROOT, "autodub", "media", "demucs_worker.py"),
      os.path.join("autodub", "media")),
+    (os.path.join(ROOT, "autodub", "media", "ocr_worker.py"),
+     os.path.join("autodub", "media")),
     (os.path.join(ROOT, "autodub", "speech", "tts", "capcut_api", "Voice.json"),
      os.path.join("autodub", "speech", "tts", "capcut_api")),
 ]
+_QT_PLUGINS = os.path.join(os.path.dirname(PySide6.__file__), "plugins")
+for _plugin_dir in ("platforms", "imageformats", "multimedia"):
+    _plugin_path = os.path.join(_QT_PLUGINS, _plugin_dir)
+    if os.path.isdir(_plugin_path):
+        datas.append((
+            _plugin_path,
+            os.path.join("PySide6", "Qt", "plugins", _plugin_dir),
+        ))
 binaries = []
 hiddenimports = [
     "autodub.content.generator",

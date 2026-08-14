@@ -6,7 +6,11 @@ import math
 import os
 import subprocess
 
-from autodub.media.ocr_regions import detections_to_regions, merge_regions
+from autodub.media.ocr_regions import (
+    detections_to_logo_regions,
+    detections_to_regions,
+    merge_regions,
+)
 from autodub.utils import setup_logging
 
 logger = setup_logging("autodub.ocr")
@@ -19,10 +23,8 @@ def _sample_times(duration: float, interval: float) -> list[float]:
     return [round(min(duration - 0.05, i * interval), 3) for i in range(count)]
 
 
-def detect_regions(
+def _run_detections(
     video_path: str,
-    video_w: int,
-    video_h: int,
     duration: float,
     settings,
 ) -> list[dict]:
@@ -57,11 +59,52 @@ def detect_regions(
     if proc.returncode != 0 and not detections:
         raise RuntimeError(errors[-1] if errors else
                            (proc.stderr or "PaddleOCR worker failed")[-500:])
-    regions = detections_to_regions(
+    return detections
+
+def detect_regions(
+    video_path: str,
+    video_w: int,
+    video_h: int,
+    duration: float,
+    settings,
+) -> list[dict]:
+    return detect_regions_with_logo(
+        video_path, video_w, video_h, duration, settings
+    )[0]
+
+def detect_regions_with_logo(
+    video_path: str,
+    video_w: int,
+    video_h: int,
+    duration: float,
+    settings,
+) -> tuple[list[dict], list[dict]]:
+    """Run PaddleOCR once and return subtitle plus stable-logo regions."""
+    detections = _run_detections(video_path, duration, settings)
+    subtitle_regions = detections_to_regions(
         detections, video_w, video_h,
         min_confidence=settings.ocr_min_confidence,
         max_area=settings.ocr_max_region_area,
         subtitle_y_min=getattr(settings, "ocr_subtitle_y_min", 0.65),
         sample_interval=settings.ocr_sample_interval,
     )
-    return merge_regions(regions, max_gap=settings.ocr_sample_interval * 1.25)
+    subtitle_regions = merge_regions(
+        subtitle_regions, max_gap=settings.ocr_sample_interval * 1.25)
+    logo_regions = detections_to_logo_regions(
+        detections, video_w, video_h,
+        min_confidence=settings.ocr_min_confidence,
+        subtitle_y_min=getattr(settings, "ocr_subtitle_y_min", 0.65),
+    )
+    return subtitle_regions, logo_regions
+
+def detect_logo_regions(
+    video_path: str,
+    video_w: int,
+    video_h: int,
+    duration: float,
+    settings,
+) -> list[dict]:
+    """Detect stable non-subtitle CJK text that may be a source logo."""
+    return detect_regions_with_logo(
+        video_path, video_w, video_h, duration, settings
+    )[1]

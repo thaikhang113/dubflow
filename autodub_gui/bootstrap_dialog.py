@@ -67,6 +67,12 @@ class BootstrapDialog(QDialog):
         completed = state.get("completed", {})
         while self.index < len(bootstrap.steps()):
             step = bootstrap.steps()[self.index]
+            if (step.key == "ffmpeg" and __import__("sys").platform.startswith("linux")):
+                from autodub_gui.workers_setup import _system_ffmpeg_pair
+
+                if _system_ffmpeg_pair():
+                    bootstrap.mark_completed(step.key)
+                    completed[step.key] = True
             if completed.get(step.key) is True:
                 self.items[self.index].setText(f"{step.label}  -  complete")
                 self.index += 1

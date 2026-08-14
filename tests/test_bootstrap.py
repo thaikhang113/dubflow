@@ -33,3 +33,8 @@ def test_bootstrap_steps_include_all_engines():
     assert bootstrap.steps()[0].kind == "python"
     assert bootstrap.steps()[1].kind == "ffmpeg"
     assert bootstrap.steps()[-2].script == "scripts/setup_demucs.py"
+
+def test_linux_bootstrap_does_not_offer_ffmpeg_download(monkeypatch):
+    monkeypatch.setattr(bootstrap.sys, "platform", "linux")
+
+    assert "ffmpeg" not in [step.key for step in bootstrap.steps()]

@@ -29,6 +29,13 @@ import time
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EMBEDDED_PY = os.path.join(PROJECT_ROOT, "autodub_gui", "_embedded.py")
 DIST_DIR = os.path.join(PROJECT_ROOT, "dist", "DubFlow")
+
+def _bundle_data_dir() -> str:
+    for name in ("_internal", "data"):
+        path = os.path.join(DIST_DIR, name)
+        if os.path.isdir(path):
+            return path
+    return os.path.join(DIST_DIR, "_internal")
 SETUP_PYTHON_VERSION = "3.12"
 
 def log(msg: str) -> None:
@@ -71,8 +78,9 @@ def step_pyinstaller() -> None:
             os.path.join("autodub", "speech", "asr_whisper_worker.py"),
             os.path.join("autodub", "speech", "asr_paraformer_worker.py"),
             os.path.join("autodub", "speech", "tts", "vieneu_worker.py"),
-            os.path.join("autodub", "media", "demucs_worker.py")):
-        bundled = os.path.join(DIST_DIR, "_internal", worker)
+            os.path.join("autodub", "media", "demucs_worker.py"),
+            os.path.join("autodub", "media", "ocr_worker.py")):
+        bundled = os.path.join(_bundle_data_dir(), worker)
         if not os.path.isfile(bundled):
             raise SystemExit(f"!! thiếu worker trong bundle: {bundled}")
 
@@ -86,8 +94,8 @@ def step_assemble() -> None:
     with open(os.path.join(DIST_DIR, "VERSION"), "w", encoding="utf-8") as f:
         f.write(f"{version}\n")
 
-    # Script cài phần mở rộng (giọng đọc, ASR tiếng Trung, Douyin) chạy trên
-    # máy người dùng — exe chỉ chứa phần lõi.
+    # Script cài phần mở rộng (giọng đọc, ASR, OCR, Douyin) chạy trên máy
+    # người dùng — exe chứa worker Python cần thiết, không chứa model/venv.
     scripts_dst = os.path.join(DIST_DIR, "scripts")
     os.makedirs(scripts_dst, exist_ok=True)
     for script in ("setup_support.py", "setup_vieneu.py",
@@ -130,7 +138,7 @@ def step_assemble() -> None:
     if os.path.isdir(voices_src):
         shutil.copytree(
             voices_src,
-            os.path.join(DIST_DIR, "_internal", "voices", "preset_voices_vn"),
+            os.path.join(_bundle_data_dir(), "voices", "preset_voices_vn"),
             dirs_exist_ok=True,
         )
         log("đã kèm voice preset trong bundle — không phụ thuộc URL ngoài")
@@ -250,6 +258,8 @@ echo  Whisper se chay ngoai exe — giam ~112 MB kich thuoc ban phan phoi.
 echo  Yeu cau: da cai Python 3.10-3.12 (xem HUONG_DAN_CAI_DAT.md, Buoc 2).
 echo.
 cd /d "%~dp0"
+set "DUBFLOW_APP_ROOT=%CD%"
+if not defined DUBFLOW_DATA_DIR set "DUBFLOW_DATA_DIR=%LOCALAPPDATA%\DubFlow"
 py -3.12 scripts\setup_whisper.py 2>nul || py -3.11 scripts\setup_whisper.py 2>nul || py -3.10 scripts\setup_whisper.py 2>nul || py scripts\setup_whisper.py || python scripts\setup_whisper.py
 if errorlevel 1 (
     echo.

@@ -22,11 +22,11 @@ import os
 import subprocess
 import tempfile
 
-from PySide6.QtCore import QPoint, QRect, QRectF, Qt, QThread, Signal
+from PySide6.QtCore import QPoint, QRect, QRectF, QSize, Qt, QThread, Signal
 from PySide6.QtGui import (QColor, QFont, QGuiApplication, QPainter,
                            QPainterPath, QPen, QPixmap)
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QFormLayout, QHBoxLayout,
+    QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QHBoxLayout,
     QLabel, QPushButton, QSpinBox, QVBoxLayout, QWidget,
 )
 
@@ -109,18 +109,38 @@ class _FrameCanvas(QWidget):
     """Frame + blur rectangles + draggable live subtitle preview."""
 
     def __init__(self, pixmap: QPixmap, style: dict,
-                 allow_regions: bool = True, parent=None):
+                 allow_regions: bool = True, parent=None,
+                 logo_path: str = "", logo_region: dict | None = None,
+                 logo_scale: float = 0.2, logo_opacity: float = 1.0,
+                 ocr_y_min: float = 0.65):
         super().__init__(parent)
         self._source = pixmap
         self._scaled = pixmap
         self._style = dict(style)
         self._allow_regions = allow_regions
         self._rects: list[QRect] = []
+        self._logo = QPixmap()
+        self._logo_rect = QRect()
+        self._logo_scale = float(logo_scale or 0.2)
+        self._logo_opacity = (
+            1.0 if logo_opacity is None
+            else max(0.0, min(1.0, float(logo_opacity)))
+        )
+        self._ocr_y_min = max(0.0, min(0.95, float(ocr_y_min)))
+        self._source_logo_rect = QRect()
+        self._source_logo_mode = False
         self._drag_origin: QPoint | None = None
         self._drag_current: QRect | None = None
         self._dragging_text = False
+        self._dragging_logo = False
+        self._dragging_ocr = False
+        self._dragging_source_logo = False
+        self._logo_drag_offset = QPoint()
         self._text_rect = QRectF()
         self.on_style_dragged = None      # callback(position: str, margin_v: int)
+        self.on_logo_dragged = None       # callback(region: dict)
+        self.on_ocr_dragged = None        # callback(y_min: float)
+        self.set_logo(logo_path, logo_region)
         self.setMinimumSize(480, 270)
         self.setMouseTracking(True)
 
@@ -139,6 +159,8 @@ class _FrameCanvas(QWidget):
     def resizeEvent(self, event):
         self._scaled = self._source.scaled(
             self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self._fit_logo()
+        self._clip_logo()
         super().resizeEvent(event)
         self.update()
 
@@ -151,14 +173,67 @@ class _FrameCanvas(QWidget):
     def set_rects_from_normalized(self, regions: list[dict]) -> None:
         """Restore previously picked regions onto the current canvas."""
         pr = self._pixmap_rect()
-        self._rects = [
-            QRect(int(pr.x() + r["x"] * pr.width()),
-                  int(pr.y() + r["y"] * pr.height()),
-                  int(r["w"] * pr.width()),
-                  int(r["h"] * pr.height()))
-            for r in regions
-        ]
+        self._rects = []
+        self._source_logo_rect = QRect()
+        for region in regions:
+            rect = QRect(
+                int(pr.x() + float(region["x"]) * pr.width()),
+                int(pr.y() + float(region["y"]) * pr.height()),
+                int(float(region["w"]) * pr.width()),
+                int(float(region["h"]) * pr.height()),
+            )
+            if region.get("source") == "logo":
+                self._source_logo_rect = rect
+            else:
+                self._rects.append(rect)
         self.update()
+
+    def set_logo(self, path: str, region: dict | None = None) -> None:
+        self._logo = QPixmap(path) if path else QPixmap()
+        if region:
+            pr = self._pixmap_rect()
+            self._logo_rect = QRect(
+                int(pr.x() + float(region.get("x", 0.76)) * pr.width()),
+                int(pr.y() + float(region.get("y", 0.04)) * pr.height()),
+                int(float(region.get("w", 0.2)) * pr.width()),
+                int(float(region.get("h", 0.1)) * pr.height()),
+            )
+        self._fit_logo()
+        self.update()
+
+    def set_logo_scale(self, value: float) -> None:
+        self._logo_scale = max(0.01, min(1.0, float(value)))
+        self._fit_logo()
+        self.update()
+
+    def set_logo_opacity(self, value: float) -> None:
+        self._logo_opacity = max(0.0, min(1.0, float(value)))
+        self.update()
+
+    def set_ocr_y_min(self, value: float) -> None:
+        self._ocr_y_min = max(0.0, min(0.95, float(value)))
+        self.update()
+
+    def set_source_logo_mode(self, enabled: bool) -> None:
+        self._source_logo_mode = bool(enabled)
+        self.setCursor(Qt.CrossCursor if enabled else Qt.ArrowCursor)
+
+    def clear_source_logo(self) -> None:
+        self._source_logo_rect = QRect()
+        self.update()
+
+    def _fit_logo(self) -> None:
+        if self._logo.isNull():
+            return
+        pr = self._pixmap_rect()
+        if self._logo_rect.isNull():
+            width = max(16, int(pr.width() * self._logo_scale))
+            height = max(16, int(width * self._logo.height() / max(1, self._logo.width())))
+            self._logo_rect = QRect(pr.right() - width - 12, pr.top() + 12, width, height)
+        else:
+            width = max(16, int(pr.width() * self._logo_scale))
+            height = max(16, int(width * self._logo.height() / max(1, self._logo.width())))
+            self._logo_rect.setSize(QSize(width, height))
 
     # --------------------------------------------------------- mouse ------ #
 
@@ -166,15 +241,37 @@ class _FrameCanvas(QWidget):
         if event.button() != Qt.LeftButton:
             return
         pos = event.position()
-        if self._text_rect.adjusted(-8, -8, 8, 8).contains(pos):
+        if self._source_logo_mode and self._allow_regions:
+            self._drag_origin = pos.toPoint()
+            self._drag_current = None
+            self._dragging_source_logo = True
+        elif not self._logo.isNull() and self._logo_rect.contains(pos.toPoint()):
+            self._dragging_logo = True
+            self._logo_drag_offset = pos.toPoint() - self._logo_rect.topLeft()
+        elif abs(pos.y() - (self._pixmap_rect().y() + self._ocr_y_min * self._pixmap_rect().height())) < 8:
+            self._dragging_ocr = True
+        elif self._text_rect.adjusted(-8, -8, 8, 8).contains(pos):
             self._dragging_text = True
         elif self._allow_regions:
             self._drag_origin = pos.toPoint()
             self._drag_current = None
+            self._dragging_source_logo = self._source_logo_mode
 
     def mouseMoveEvent(self, event):
         pos = event.position()
-        if self._dragging_text:
+        if self._dragging_logo:
+            self._logo_rect.moveTopLeft(pos.toPoint() - self._logo_drag_offset)
+            self._clip_logo()
+            if self.on_logo_dragged is not None:
+                self.on_logo_dragged(self.normalized_logo_region())
+            self.update()
+        elif getattr(self, "_dragging_ocr", False):
+            pr = self._pixmap_rect()
+            self._ocr_y_min = max(0.0, min(0.95, (pos.y() - pr.y()) / max(1, pr.height())))
+            if self.on_ocr_dragged is not None:
+                self.on_ocr_dragged(self._ocr_y_min)
+            self.update()
+        elif self._dragging_text:
             self._apply_text_drag(pos.y())
         elif self._drag_origin is not None:
             self._drag_current = QRect(
@@ -185,7 +282,17 @@ class _FrameCanvas(QWidget):
             self.setCursor(Qt.SizeVerCursor if inside else Qt.CrossCursor)
 
     def mouseReleaseEvent(self, event):
-        if self._dragging_text:
+        if self._dragging_logo:
+            self._dragging_logo = False
+        elif getattr(self, "_dragging_ocr", False):
+            self._dragging_ocr = False
+        elif self._dragging_source_logo:
+            if self._drag_current is not None:
+                clipped = self._drag_current.intersected(self._pixmap_rect())
+                if clipped.width() > 4 and clipped.height() > 4:
+                    self._source_logo_rect = clipped
+            self._dragging_source_logo = False
+        elif self._dragging_text:
             self._dragging_text = False
         elif self._drag_origin is not None and self._drag_current is not None:
             clipped = self._drag_current.intersected(self._pixmap_rect())
@@ -194,6 +301,15 @@ class _FrameCanvas(QWidget):
         self._drag_origin = None
         self._drag_current = None
         self.update()
+
+    def _clip_logo(self) -> None:
+        pr = self._pixmap_rect()
+        if self._logo_rect.width() > pr.width():
+            self._logo_rect.setWidth(pr.width())
+        if self._logo_rect.height() > pr.height():
+            self._logo_rect.setHeight(pr.height())
+        self._logo_rect.moveLeft(max(pr.left(), min(self._logo_rect.left(), pr.right() - self._logo_rect.width() + 1)))
+        self._logo_rect.moveTop(max(pr.top(), min(self._logo_rect.top(), pr.bottom() - self._logo_rect.height() + 1)))
 
     def _apply_text_drag(self, mouse_y: float) -> None:
         """Move the preview line to the cursor; report position + margin back."""
@@ -225,10 +341,15 @@ class _FrameCanvas(QWidget):
     def clear_last(self):
         if self._rects:
             self._rects.pop()
-            self.update()
+        elif not self._source_logo_rect.isNull():
+            self._source_logo_rect = QRect()
+        else:
+            return
+        self.update()
 
     def clear_all(self):
         self._rects.clear()
+        self._source_logo_rect = QRect()
         self.update()
 
     def normalized_regions(self) -> list[dict]:
@@ -244,7 +365,27 @@ class _FrameCanvas(QWidget):
                 "w": round(r.width() / pr.width(), 4),
                 "h": round(r.height() / pr.height(), 4),
             })
+        if not self._source_logo_rect.isNull():
+            r = self._source_logo_rect
+            out.append({
+                "x": round((r.x() - pr.x()) / pr.width(), 4),
+                "y": round((r.y() - pr.y()) / pr.height(), 4),
+                "w": round(r.width() / pr.width(), 4),
+                "h": round(r.height() / pr.height(), 4),
+                "source": "logo",
+            })
         return out
+
+    def normalized_logo_region(self) -> dict:
+        pr = self._pixmap_rect()
+        if self._logo_rect.isNull() or not pr.width() or not pr.height():
+            return {}
+        return {
+            "x": round((self._logo_rect.x() - pr.x()) / pr.width(), 4),
+            "y": round((self._logo_rect.y() - pr.y()) / pr.height(), 4),
+            "w": round(self._logo_rect.width() / pr.width(), 4),
+            "h": round(self._logo_rect.height() / pr.height(), 4),
+        }
 
     # --------------------------------------------------------- paint ------ #
 
@@ -262,6 +403,23 @@ class _FrameCanvas(QWidget):
         for r in self._rects:
             painter.fillRect(r, fill)
             painter.drawRect(r)
+        if not self._source_logo_rect.isNull():
+            painter.fillRect(self._source_logo_rect, QColor(231, 111, 81, 80))
+            painter.setPen(QPen(QColor(tokens.WARNING), 2))
+            painter.drawRect(self._source_logo_rect)
+            painter.drawText(self._source_logo_rect.topLeft() + QPoint(4, 16),
+                             "Logo gốc")
+        if not self._logo.isNull() and not self._logo_rect.isNull():
+            painter.save()
+            painter.setOpacity(self._logo_opacity)
+            painter.drawPixmap(self._logo_rect, self._logo)
+            painter.restore()
+            painter.setPen(QPen(QColor(tokens.ACCENT_PURPLE), 2))
+            painter.drawRect(self._logo_rect)
+        ocr_y = int(pr.y() + self._ocr_y_min * pr.height())
+        painter.setPen(QPen(QColor(tokens.WARNING), 2, Qt.DashLine))
+        painter.drawLine(pr.left(), ocr_y, pr.right(), ocr_y)
+        painter.drawText(pr.left() + 8, ocr_y - 6, "OCR phụ đề gốc")
         if self._drag_current is not None:
             painter.setPen(QPen(QColor(tokens.PREVIEW_BLUR_EDGE), 2, Qt.DashLine))
             painter.drawRect(self._drag_current)
@@ -358,7 +516,11 @@ class StyleDialog(QDialog):
 
     def __init__(self, video_path: str | None, style: dict,
                  regions: list[dict] | None = None, parent=None,
-                 preview_text: str = ""):
+                 preview_text: str = "", logo_path: str = "",
+                 logo_region: dict | None = None, logo_opacity: float = 1.0,
+                 logo_scale: float = 0.2, ocr_y_min: float = 0.65,
+                 ocr_enabled: bool = True,
+                 source_logo_auto: bool = True):
         super().__init__(parent)
         self.setWindowTitle("Phụ đề & che chữ")
         # Giữ dialog trong vùng màn hình khả dụng, tránh Qt cảnh báo geometry.
@@ -371,6 +533,16 @@ class StyleDialog(QDialog):
         self._style = dict(style)
         self._video_path = video_path
         self._regions_pending = regions
+        self._logo_path = logo_path or ""
+        self._logo_region = dict(logo_region or {})
+        self._logo_opacity = (
+            1.0 if logo_opacity is None
+            else max(0.0, min(1.0, float(logo_opacity)))
+        )
+        self._logo_scale = float(logo_scale or 0.2)
+        self._ocr_y_min = float(ocr_y_min if ocr_y_min is not None else 0.65)
+        self._ocr_enabled = bool(ocr_enabled)
+        self._source_logo_auto = bool(source_logo_auto)
         self._frame_worker = None
         # Chữ xem trước: dùng câu thật của người dùng nếu được truyền vào,
         # không thì dùng mẫu mặc định. Điều này giúp xem trước đúng với độ
@@ -401,8 +573,14 @@ class StyleDialog(QDialog):
         left = QVBoxLayout()
         left.setSpacing(6)
         # allow_regions luôn True — placeholder đủ để khoanh vùng; tọa độ 0..1
-        self.canvas = _FrameCanvas(pixmap, self._style, allow_regions=True)
+        self.canvas = _FrameCanvas(
+            pixmap, self._style, allow_regions=True,
+            logo_path=self._logo_path, logo_region=self._logo_region,
+            logo_scale=self._logo_scale, logo_opacity=self._logo_opacity,
+            ocr_y_min=self._ocr_y_min)
         self.canvas.on_style_dragged = self._on_canvas_drag
+        self.canvas.on_logo_dragged = self._on_logo_dragged
+        self.canvas.on_ocr_dragged = self._on_ocr_dragged
         left.addWidget(self.canvas, 1)
         hint = QLabel(
             "Kéo dòng phụ đề để đặt vị trí. "
@@ -611,6 +789,81 @@ class StyleDialog(QDialog):
         self.btn_clear.clicked.connect(self.canvas.clear_all)
         b.addWidget(self.btn_undo)
         b.addWidget(self.btn_clear)
+        self.chk_source_logo = QCheckBox("Khoanh vùng logo gốc")
+        self.chk_source_logo.setChecked(any(
+            region.get("source") == "logo"
+            for region in (self._regions_pending or [])
+        ))
+        self.chk_source_logo.setToolTip(
+            "Bật rồi kéo đúng vùng logo gốc. Vùng này được làm mờ cố định "
+            "suốt video, tách khỏi OCR và vùng che thủ công.")
+        self.chk_source_logo.toggled.connect(self.canvas.set_source_logo_mode)
+        self.btn_clear_source_logo = QPushButton("Xoá logo gốc")
+        self.btn_clear_source_logo.clicked.connect(self.canvas.clear_source_logo)
+        logo_blur_row = QHBoxLayout()
+        logo_blur_row.addWidget(self.chk_source_logo, 1)
+        logo_blur_row.addWidget(self.btn_clear_source_logo)
+        panel_l.addLayout(logo_blur_row)
+        source_logo_hint = QLabel(
+            "Logo gốc không phải phụ đề nên không dùng OCR. Khoanh một vùng riêng "
+            "để làm mờ cả video; OCR chỉ xử lý chữ Trung trong vùng phụ đề.")
+        source_logo_hint.setWordWrap(True)
+        panel_l.addWidget(source_logo_hint)
+        self.chk_auto_source_logo = QCheckBox("Tự dò logo gốc bằng Vision")
+        self.chk_auto_source_logo.setChecked(self._source_logo_auto)
+        self.chk_auto_source_logo.setToolTip(
+            "Dò logo cố định xuất hiện trong nhiều khung hình rồi thêm vùng làm mờ. "
+            "Có thể tắt nếu video không có logo hoặc muốn chọn thủ công.")
+        self.chk_auto_source_logo.toggled.connect(
+            lambda checked: setattr(self, "_source_logo_auto", bool(checked)))
+        panel_l.addWidget(self.chk_auto_source_logo)
+        _section("OCR phụ đề gốc")
+        self.chk_ocr = QCheckBox("Tự động làm mờ chữ Trung")
+        self.chk_ocr.setChecked(self._ocr_enabled)
+        self.chk_ocr.setToolTip(
+            "OCR chỉ tìm chữ Trung trong vùng phía dưới đường màu vàng.")
+        self.sp_ocr_y = QSpinBox()
+        self.sp_ocr_y.setRange(0, 95)
+        self.sp_ocr_y.setSuffix("%")
+        self.sp_ocr_y.setValue(round(self._ocr_y_min * 100))
+        self.sp_ocr_y.setToolTip(
+            "Vị trí bắt đầu vùng OCR. 65% nghĩa là quét 35% phía dưới.")
+        ocr_row = QHBoxLayout()
+        ocr_row.addWidget(self.chk_ocr, 1)
+        ocr_row.addWidget(QLabel("Từ"))
+        ocr_row.addWidget(self.sp_ocr_y)
+        panel_l.addLayout(ocr_row)
+        self.lbl_ocr_hint = QLabel(
+            "Kéo đường vàng trên video để chọn vùng OCR phụ đề Trung.")
+        self.lbl_ocr_hint.setWordWrap(True)
+        panel_l.addWidget(self.lbl_ocr_hint)
+        _section("Logo cá nhân")
+        self.btn_logo = QPushButton("Chọn logo")
+        self.btn_logo.clicked.connect(self._pick_logo)
+        self.lbl_logo = QLabel(os.path.basename(self._logo_path) if self._logo_path else "Chưa chọn logo")
+        self.lbl_logo.setWordWrap(True)
+        logo_file_row = QHBoxLayout()
+        logo_file_row.addWidget(self.btn_logo)
+        logo_file_row.addWidget(self.lbl_logo, 1)
+        panel_l.addLayout(logo_file_row)
+        self.sp_logo_scale = QSpinBox()
+        self.sp_logo_scale.setRange(1, 100)
+        self.sp_logo_scale.setSuffix("%")
+        self.sp_logo_scale.setValue(round(self._logo_scale * 100))
+        self.sp_logo_opacity = QSpinBox()
+        self.sp_logo_opacity.setRange(0, 100)
+        self.sp_logo_opacity.setSuffix("%")
+        self.sp_logo_opacity.setValue(round(self._logo_opacity * 100))
+        logo_settings = QHBoxLayout()
+        logo_settings.addWidget(QLabel("Cỡ"))
+        logo_settings.addWidget(self.sp_logo_scale)
+        logo_settings.addWidget(QLabel("Đục"))
+        logo_settings.addWidget(self.sp_logo_opacity)
+        panel_l.addLayout(logo_settings)
+        self.lbl_logo_hint = QLabel(
+            "Kéo logo trên video để đặt logo cá nhân. Có thể đặt lên vùng logo gốc đã che.")
+        self.lbl_logo_hint.setWordWrap(True)
+        panel_l.addWidget(self.lbl_logo_hint)
         panel_l.addStretch()
         panel_scroll.setWidget(panel)
         body.addWidget(panel_scroll, 4)
@@ -722,6 +975,10 @@ class StyleDialog(QDialog):
         self.chk_bold.toggled.connect(self._sync_from_controls)
         self.cb_box.currentIndexChanged.connect(self._sync_from_controls)
         self.sp_box_opacity.valueChanged.connect(self._sync_from_controls)
+        self.chk_ocr.toggled.connect(self._sync_overlay_controls)
+        self.sp_ocr_y.valueChanged.connect(self._sync_overlay_controls)
+        self.sp_logo_scale.valueChanged.connect(self._sync_overlay_controls)
+        self.sp_logo_opacity.valueChanged.connect(self._sync_overlay_controls)
 
     def _update_karaoke_enabled(self) -> None:
         karaoke = self.cb_display.currentData() == "karaoke"
@@ -780,6 +1037,34 @@ class StyleDialog(QDialog):
         self._style["position"] = position
         self._style["margin_v"] = margin_v
         self.sp_margin.setEnabled(position != "middle")
+
+    def _on_logo_dragged(self, region: dict) -> None:
+        self._logo_region = dict(region)
+
+    def _on_ocr_dragged(self, value: float) -> None:
+        self._ocr_y_min = value
+        self.sp_ocr_y.blockSignals(True)
+        self.sp_ocr_y.setValue(round(value * 100))
+        self.sp_ocr_y.blockSignals(False)
+
+    def _sync_overlay_controls(self, *_args) -> None:
+        self._ocr_enabled = self.chk_ocr.isChecked()
+        self._ocr_y_min = self.sp_ocr_y.value() / 100.0
+        self._logo_scale = self.sp_logo_scale.value() / 100.0
+        self._logo_opacity = self.sp_logo_opacity.value() / 100.0
+        self.canvas.set_ocr_y_min(self._ocr_y_min)
+        self.canvas.set_logo_scale(self._logo_scale)
+        self.canvas.set_logo_opacity(self._logo_opacity)
+
+    def _pick_logo(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Chọn logo", "", "Ảnh (*.png *.jpg *.jpeg *.webp)")
+        if not path:
+            return
+        self._logo_path = path
+        self._logo_region = {}
+        self.lbl_logo.setText(os.path.basename(path))
+        self.canvas.set_logo(path)
 
     def _paint_color_button(self, btn: QPushButton, hex_color: str) -> None:
         btn.setText(hex_color)
@@ -892,3 +1177,18 @@ class StyleDialog(QDialog):
 
     def regions(self) -> list[dict]:
         return self.canvas.normalized_regions()
+
+    def branding(self) -> dict:
+        return {
+            "logo_path": self._logo_path,
+            "logo_region": self.canvas.normalized_logo_region(),
+            "logo_opacity": self._logo_opacity,
+            "logo_scale": self._logo_scale,
+            "source_logo_auto": self._source_logo_auto,
+        }
+
+    def ocr_options(self) -> dict:
+        return {
+            "ocr_enabled": self._ocr_enabled,
+            "ocr_subtitle_y_min": self._ocr_y_min,
+        }

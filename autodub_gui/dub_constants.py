@@ -76,7 +76,7 @@ FRIENDLY_ERRORS: list[tuple[str, str, str]] = [
      "hoặc thử lại bằng CPU nếu NVENC tiếp tục lỗi."),
     ("Thiếu cấu hình bắt buộc", "Thiếu cấu hình",
      "Mở trang Cài đặt và điền các mục còn trống, rồi chạy lại."),
-    ("Không đủ Vox", "Hết Vox",
+    ("Không đủ Vox", "Hết tín dụng",
      "Mở trang Tài khoản để nạp thêm, rồi chạy tiếp thư mục dự án đang dở. "
      "Phần đã dịch xong vẫn được giữ nguyên, không phải trả tiền lần nữa."),
     ("Không kết nối được máy chủ", "Mất kết nối máy chủ",

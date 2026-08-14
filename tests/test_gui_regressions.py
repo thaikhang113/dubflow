@@ -40,6 +40,26 @@ def test_header_exposes_manual_update_check() -> None:
     assert "_check_updates(manual=True)" in source
 
 
+def test_smoke_report_checks_all_external_workers() -> None:
+    source = _source("autodub_gui/app.py")
+    assert "autodub.speech.tts.vieneu_vi" in source
+    assert "autodub.media.vocal_separator" in source
+    assert "asr_whisper_worker.py" in source
+    assert "asr_paraformer_worker.py" in source
+
+def test_ocr_refresh_queues_latest_editor_change() -> None:
+    source = _source("autodub_gui/pages/editor_export.py")
+    assert "self._ocr_refresh_pending = (" in source
+    assert "settings, bool(enabled), float(y_min), source_logo_auto" in source
+    assert "self._on_ocr_refresh_finished()" in source
+    assert "self._start_ocr_refresh(*pending)" in source
+
+def test_download_page_scrolls_full_results_area() -> None:
+    source = _source("autodub_gui/pages/download_page.py")
+    assert "QScrollArea" in source
+    assert "self.table.setMinimumHeight(320)" in source
+
+
 def test_zero_argument_changed_signals_discard_payload() -> None:
     for path in (
         "autodub_gui/pages/editor_panels.py",
@@ -328,6 +348,125 @@ def test_new_project_runtime_round_trips_detailed_six_step_values(
 
     page.deleteLater()
     app.processEvents()
+
+def test_style_canvas_round_trips_source_logo_region(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtGui import QPixmap
+    from PySide6.QtWidgets import QApplication
+    from autodub_gui.style_dialog import _FrameCanvas
+
+    app = QApplication.instance() or QApplication([])
+    canvas = _FrameCanvas(QPixmap(160, 90), {}, allow_regions=True)
+    canvas.resize(160, 90)
+    regions = [
+        {"x": 0.1, "y": 0.2, "w": 0.2, "h": 0.1},
+        {"x": 0.7, "y": 0.05, "w": 0.2, "h": 0.1, "source": "logo"},
+    ]
+
+    canvas.set_rects_from_normalized(regions)
+    restored = canvas.normalized_regions()
+
+    assert len(canvas._rects) == 1
+    assert restored[0] == regions[0]
+    assert restored[1]["source"] == "logo"
+    for key in ("x", "y", "w", "h"):
+        assert restored[1][key] == pytest.approx(regions[1][key], abs=0.01)
+    canvas.deleteLater()
+    app.processEvents()
+
+def test_style_canvas_clear_last_removes_last_manual_region(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtGui import QPixmap
+    from PySide6.QtWidgets import QApplication
+    from autodub_gui.style_dialog import _FrameCanvas
+
+    app = QApplication.instance() or QApplication([])
+    canvas = _FrameCanvas(QPixmap(160, 90), {}, allow_regions=True)
+    canvas.resize(160, 90)
+    canvas.set_rects_from_normalized([
+        {"x": 0.1, "y": 0.2, "w": 0.2, "h": 0.1},
+        {"x": 0.7, "y": 0.05, "w": 0.2, "h": 0.1, "source": "logo"},
+    ])
+
+    canvas.clear_last()
+
+    assert canvas.normalized_regions() == [
+        {"x": pytest.approx(0.7, abs=0.01),
+         "y": pytest.approx(0.05, abs=0.01),
+         "w": pytest.approx(0.2, abs=0.01),
+         "h": pytest.approx(0.1, abs=0.01),
+         "source": "logo"}
+    ]
+    canvas.deleteLater()
+    app.processEvents()
+
+def test_style_canvas_clear_last_prefers_manual_region_over_source_logo(
+    monkeypatch,
+):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtGui import QPixmap
+    from PySide6.QtWidgets import QApplication
+    from autodub_gui.style_dialog import _FrameCanvas
+
+    app = QApplication.instance() or QApplication([])
+    canvas = _FrameCanvas(QPixmap(160, 90), {}, allow_regions=True)
+    canvas.resize(160, 90)
+    canvas.set_rects_from_normalized([
+        {"x": 0.7, "y": 0.05, "w": 0.2, "h": 0.1, "source": "logo"},
+        {"x": 0.1, "y": 0.2, "w": 0.2, "h": 0.1},
+    ])
+
+    canvas.clear_last()
+
+    assert len(canvas._rects) == 0
+    assert not canvas._source_logo_rect.isNull()
+    canvas.deleteLater()
+    app.processEvents()
+
+def test_ocr_refresh_worker_updates_regions_off_editor_core(monkeypatch, tmp_path):
+    from autodub.config import Settings
+    from autodub_gui.workers import OCRRefreshWorker
+
+    expected = [{"x": 0.2, "y": 0.75, "w": 0.3, "h": 0.1, "source": "ocr"}]
+    monkeypatch.setattr(
+        "autodub.editor.load_work_dir",
+        lambda _work_dir, _target: object(),
+    )
+    monkeypatch.setattr(
+        "autodub.editor._refresh_ocr_regions",
+        lambda _work_dir, _settings, _state, _regions, **_kwargs: expected,
+    )
+    worker = OCRRefreshWorker(Settings(), str(tmp_path), "vi", [])
+    received = []
+    worker.finished_ok.connect(received.append)
+
+    worker.run()
+
+    assert received == [expected]
+
+def test_download_page_keeps_table_visible(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from autodub_gui.pages.download_page import DownloadPage
+
+    app = QApplication.instance() or QApplication([])
+    page = DownloadPage()
+
+    assert page.table.minimumHeight() >= 200
+    assert page.table.table.verticalHeader().defaultSectionSize() <= 48
+    assert page.log.maximumHeight() <= 80
+    page.deleteLater()
+    app.processEvents()
+
+def test_help_page_documents_ocr_and_uses_bundled_readme_name():
+    from autodub_gui.pages import help_page
+
+    names = [item[0] for item in help_page.INSTALL_ITEMS]
+    assert any("Whisper" in name for name in names)
+    assert any("PaddleOCR" in name for name in names)
+    source = (help_page.__file__ and open(
+        help_page.__file__, encoding="utf-8").read())
+    assert "HUONG_DAN_CAI_DAT.md" in source
 
 def test_logo_region_parser_accepts_empty_values() -> None:
     from autodub_gui.pages.new_project_page import NewProjectPage

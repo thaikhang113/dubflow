@@ -377,12 +377,13 @@ def merge_video(
     if mirror:
         render_blur_regions = mirror_blur_regions(render_blur_regions)
     burn_srt = srt_path if subtitle_mode == "burn" else None
+    effective_logo_region = branding_region(logo_region) if logo_path else None
     filter_complex = None
     if render_blur_regions or burn_srt or logo_path:
         width, height = probe_dimensions(video_path)
         filter_complex = build_filter_complex(
             render_blur_regions, width, height, burn_srt, subtitle_style,
-            logo_region=logo_region if logo_path else None,
+            logo_region=effective_logo_region,
             logo_opacity=float(logo_opacity),
         )
 

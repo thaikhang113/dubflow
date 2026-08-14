@@ -17,6 +17,13 @@ import time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIST = os.path.join(ROOT, "dist", "DubFlow")
 
+def _bundle_data_dir() -> str:
+    for name in ("_internal", "data"):
+        path = os.path.join(DIST, name)
+        if os.path.isdir(path):
+            return path
+    return os.path.join(DIST, "_internal")
+
 
 def run(command: list[str]) -> None:
     print("$", " ".join(command), flush=True)
@@ -46,7 +53,7 @@ def assemble(version: str) -> None:
     if os.path.isdir(voices):
         shutil.copytree(
             voices,
-            os.path.join(DIST, "_internal", "voices", "preset_voices_vn"),
+            os.path.join(_bundle_data_dir(), "voices", "preset_voices_vn"),
             dirs_exist_ok=True,
         )
 
@@ -81,7 +88,7 @@ def archive(version: str) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-test", action="store_true")
-    parser.add_argument("--version", default="3.0.3")
+    parser.add_argument("--version", default="3.0.4")
     args = parser.parse_args()
     started = time.time()
 
@@ -97,8 +104,9 @@ def main() -> int:
             os.path.join("autodub", "speech", "asr_whisper_worker.py"),
             os.path.join("autodub", "speech", "asr_paraformer_worker.py"),
             os.path.join("autodub", "speech", "tts", "vieneu_worker.py"),
-            os.path.join("autodub", "media", "demucs_worker.py")):
-        bundled = os.path.join(DIST, "_internal", worker)
+            os.path.join("autodub", "media", "demucs_worker.py"),
+            os.path.join("autodub", "media", "ocr_worker.py")):
+        bundled = os.path.join(_bundle_data_dir(), worker)
         if not os.path.isfile(bundled):
             raise SystemExit(f"missing worker in bundle: {bundled}")
     assemble(args.version)

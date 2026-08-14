@@ -600,6 +600,7 @@ QLabel#sectionTitle {{
 }}
 QLabel#cardTitle {{
     font-size: {_t.FS_CARD_TITLE}px; font-weight: 600; color: {_t.TEXT_PRIMARY};
+    background: transparent;
 }}
 QLabel#hint {{ color: {_t.TEXT_MUTED}; font-size: {_t.FS_LABEL}px; }}
 QLabel#meta {{ color: {_t.TEXT_MUTED}; font-size: {_t.FS_META}px; }}

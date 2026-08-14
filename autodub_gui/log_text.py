@@ -190,7 +190,7 @@ _RAW_NOTICES: list[tuple[str, _Template, int]] = [
      "Đang dịch {0} câu sang tiếng Việt", logging.INFO),
     (r"Đã dịch \d+/\d+ câu", None, logging.INFO),      # thanh tiến độ đã có
     (r"Không đủ Vox|INSUFFICIENT_CREDIT",
-     "Hết Vox — mở trang Tài khoản để nạp thêm rồi chạy tiếp",
+     "Hết tín dụng — mở trang Tài khoản để nạp thêm rồi chạy tiếp",
      logging.WARNING),
     (r"Không kết nối được máy chủ",
      "Mất kết nối tới máy chủ dịch — kiểm tra mạng rồi chạy tiếp",
@@ -198,7 +198,7 @@ _RAW_NOTICES: list[tuple[str, _Template, int]] = [
     (r"Máy chủ đang bận",
      "Máy chủ đang quá tải, chờ một chút rồi thử lại", logging.WARNING),
     (r"Lượt dịch này tốn ([\d.,]+) Vox",
-     "Lượt dịch này tốn {0} Vox", logging.INFO),
+     "Lượt dịch này tốn {0} tín dụng", logging.INFO),
     (r"câu dịch còn lẫn tiếng Trung — dịch lại",
      "Đang dịch lại vài câu còn lẫn tiếng Trung", logging.INFO),
     (r"(\d+) câu vẫn còn lẫn tiếng Trung",

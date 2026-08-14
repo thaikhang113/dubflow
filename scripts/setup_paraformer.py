@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tarfile
 import urllib.request
+from setup_support import find_bundled_worker
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
@@ -31,16 +32,10 @@ MARKER = os.path.join(MODEL_DIR, "installed_ok.json")
 #: Phiên bản package ASR. Chốt trần major để lần cài sau không tự nhảy sang
 #: bản đổi API — numpy 3.x cũng chưa được sherpa-onnx hỗ trợ.
 _ASR_SPECS = ("sherpa-onnx<2.0", "numpy<3.0")
-WORKER = os.path.join(PROJECT_ROOT, "autodub", "speech",
-                      "asr_paraformer_worker.py")
-if not os.path.isfile(WORKER):
-    # Bản đóng gói: worker nằm trong data/ (PyInstaller contents_directory).
-    for _d in ("data", "_internal"):
-        _candidate = os.path.join(PROJECT_ROOT, _d, "autodub", "speech",
-                                  "asr_paraformer_worker.py")
-        if os.path.isfile(_candidate):
-            WORKER = _candidate
-            break
+WORKER = find_bundled_worker(
+    os.path.join("autodub", "speech", "asr_paraformer_worker.py"),
+    PROJECT_ROOT,
+)
 
 _GH = "https://github.com/k2-fsa/sherpa-onnx/releases/download"
 ASR_TARBALL = f"{_GH}/asr-models/sherpa-onnx-paraformer-zh-2023-09-14.tar.bz2"

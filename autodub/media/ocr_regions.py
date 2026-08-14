@@ -12,6 +12,7 @@ from pathlib import Path
 
 _CJK_RE = re.compile(r"[\u3400-\u9fff]")
 _CACHE_VERSION = 2
+_OCR_BOX_PADDING_PX = 4
 
 
 def _box_bounds(box) -> tuple[float, float, float, float] | None:
@@ -61,10 +62,12 @@ def detections_to_regions(
             continue
         if (w * h) / frame_area > max_area:
             continue
-        x = max(0.0, min(x, video_w - 1))
-        y = max(0.0, min(y, video_h - 1))
-        w = max(1.0, min(w, video_w - x))
-        h = max(1.0, min(h, video_h - y))
+        x = max(0.0, min(x - _OCR_BOX_PADDING_PX, video_w - 1))
+        y = max(0.0, min(y - _OCR_BOX_PADDING_PX, video_h - 1))
+        right = min(float(video_w), x + w + _OCR_BOX_PADDING_PX * 2)
+        bottom = min(float(video_h), y + h + _OCR_BOX_PADDING_PX * 2)
+        w = max(1.0, right - x)
+        h = max(1.0, bottom - y)
         t_start = max(0.0, float(detection.get("time", 0.0) or 0.0))
         t_end = float(detection.get("t_end", t_start + sample_interval) or
                       (t_start + sample_interval))
@@ -80,6 +83,75 @@ def detections_to_regions(
             "confidence": round(confidence, 4),
         })
     return out
+
+def detections_to_logo_regions(
+    detections: list[dict],
+    video_w: int,
+    video_h: int,
+    *,
+    min_confidence: float = 0.8,
+    subtitle_y_min: float = 0.65,
+    min_width_px: int = 16,
+    min_height_px: int = 8,
+    max_area: float = 0.12,
+    min_samples: int = 2,
+) -> list[dict]:
+    """Find stable CJK text outside the subtitle band as source-logo boxes."""
+    if video_w <= 0 or video_h <= 0:
+        return []
+    candidates = []
+    for detection in detections:
+        text = str(detection.get("text") or "").strip()
+        confidence = float(detection.get("confidence", 0.0) or 0.0)
+        bounds = _box_bounds(detection.get("box"))
+        if confidence < min_confidence or not _has_cjk(text) or bounds is None:
+            continue
+        x, y, w, h = bounds
+        if (y + h) / video_h >= max(0.0, min(1.0, subtitle_y_min)):
+            continue
+        if w < min_width_px or h < min_height_px:
+            continue
+        if (w * h) / float(video_w * video_h) > max_area:
+            continue
+        x = max(0.0, min(x - _OCR_BOX_PADDING_PX, video_w - 1))
+        y = max(0.0, min(y - _OCR_BOX_PADDING_PX, video_h - 1))
+        right = min(float(video_w), x + w + _OCR_BOX_PADDING_PX * 2)
+        bottom = min(float(video_h), y + h + _OCR_BOX_PADDING_PX * 2)
+        candidates.append({
+            "x": x / video_w,
+            "y": y / video_h,
+            "w": max(1.0, right - x) / video_w,
+            "h": max(1.0, bottom - y) / video_h,
+            "text": text,
+            "confidence": confidence,
+            "time": float(detection.get("time", 0.0) or 0.0),
+        })
+
+    groups: list[list[dict]] = []
+    for candidate in candidates:
+        for group in groups:
+            if _iou(candidate, group[0]) >= 0.45:
+                group.append(candidate)
+                break
+        else:
+            groups.append([candidate])
+
+    output = []
+    for group in groups:
+        if len({item["time"] for item in group}) < min_samples:
+            continue
+        representative = max(group, key=lambda item: item["confidence"])
+        output.append({
+            "x": round(sum(item["x"] for item in group) / len(group), 6),
+            "y": round(sum(item["y"] for item in group) / len(group), 6),
+            "w": round(sum(item["w"] for item in group) / len(group), 6),
+            "h": round(sum(item["h"] for item in group) / len(group), 6),
+            "source": "logo",
+            "text": representative["text"],
+            "confidence": round(
+                max(item["confidence"] for item in group), 4),
+        })
+    return output
 
 
 def _iou(a: dict, b: dict) -> float:

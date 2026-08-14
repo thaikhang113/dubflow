@@ -556,6 +556,21 @@ class EditorPage(VoiceAndExportMixin, BasePage):
             float(opts.get("voice_speed", settings.voice_speed)))
         self.export_panel.set_source_info(0, 0, 0)
         self._blur_regions = list(opts.get("blur_regions") or [])
+        self._branding_options = {
+            "branding_logo_path": opts.get(
+                "branding_logo_path", settings.branding_logo_path),
+            "branding_logo_region": opts.get(
+                "branding_logo_region", settings.branding_logo_region),
+            "branding_logo_opacity": opts.get(
+                "branding_logo_opacity", settings.branding_logo_opacity),
+            "branding_logo_scale": opts.get(
+                "branding_logo_scale", settings.branding_logo_scale),
+            "branding_vision_enabled": opts.get(
+                "branding_vision_enabled", settings.branding_vision_enabled),
+            "ocr_enabled": opts.get("ocr_enabled", settings.ocr_enabled),
+            "ocr_subtitle_y_min": opts.get(
+                "ocr_subtitle_y_min", settings.ocr_subtitle_y_min),
+        }
         self._subtitle_style = opts.get("subtitle_style")
         self.export_panel.preset.set_key(
             (self._subtitle_style or {}).get("preset")
@@ -579,6 +594,7 @@ class EditorPage(VoiceAndExportMixin, BasePage):
         opts.update(self.voice_panel.values())
         opts.update(self.export_panel.values())
         opts["blur_regions"] = list(getattr(self, "_blur_regions", []))
+        opts.update(getattr(self, "_branding_options", {}))
         if getattr(self, "_subtitle_style", None):
             opts["subtitle_style"] = self._subtitle_style
         try:

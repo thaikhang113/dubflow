@@ -3,8 +3,8 @@
 Chạy 1 lần:  py scripts/setup_whisper.py
 
 Sau khi cài, faster-whisper + ctranslate2 chạy trong .venv-whisper qua
-tiến trình con (asr_whisper_worker.py) — không cần bundle trong exe,
-giảm ~112 MB kích thước bản phân phối.
+tiến trình con. Worker được kèm trong bản phân phối để wizard luôn tìm được
+đúng file, còn model và virtualenv vẫn nằm ngoài exe.
 
 Các bước đều resume-safe — chạy lại sẽ bỏ qua phần đã xong:
   1. Tạo virtualenv .venv-whisper (Python hiện tại)
@@ -18,7 +18,7 @@ import subprocess
 import sys
 import wave
 
-from setup_support import retry_call
+from setup_support import find_bundled_worker, retry_call
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
@@ -35,15 +35,11 @@ MARKER = os.path.join(MODEL_DIR, "installed_ok.json")
 _WHISPER_SPEC = "faster-whisper<2.0"
 
 # Worker script của app — dùng để smoke test
-WORKER = os.path.join(PROJECT_ROOT, "autodub", "speech",
-                      "asr_whisper_worker.py")
-if not os.path.isfile(WORKER):
-    for _d in ("data", "_internal"):
-        _c = os.path.join(PROJECT_ROOT, _d, "autodub", "speech",
-                          "asr_whisper_worker.py")
-        if os.path.isfile(_c):
-            WORKER = _c
-            break
+def _find_worker() -> str:
+    return find_bundled_worker(
+        os.path.join("autodub", "speech", "asr_whisper_worker.py"),
+        PROJECT_ROOT,
+    )
 
 
 def log(msg: str) -> None:
@@ -77,12 +73,14 @@ def step_install() -> None:
 
 
 def step_smoke() -> None:
+    worker = _find_worker()
+    if not worker:
+        raise SystemExit(
+            "!! không thấy worker script trong bản cài. "
+            "Hãy tải lại bản DubFlow mới hoặc build lại.")
     if os.path.isfile(MARKER):
         log("smoke test đã đạt — bỏ qua")
         return
-
-    if not os.path.isfile(WORKER):
-        raise SystemExit(f"!! không thấy worker script: {WORKER}")
 
     os.makedirs(MODEL_DIR, exist_ok=True)
 
@@ -97,7 +95,7 @@ def step_smoke() -> None:
     log("chạy smoke test (tải model lần đầu có thể mất vài phút) ...")
     try:
         proc = subprocess.run(
-            [VENV_PY, WORKER,
+            [VENV_PY, worker,
              "--audio",     smoke_wav,
              "--model",     "medium",      # model nhỏ cho smoke test nhanh
              "--language",  "zh",

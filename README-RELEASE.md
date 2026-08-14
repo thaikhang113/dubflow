@@ -26,18 +26,19 @@ Linux:
 ```bash
 python3 -m pip install -e .
 python3 -m pip install pyinstaller
-python3 scripts/build_linux.py --version 3.0.2
-python3 scripts/build_deb.py --no-build --version 3.0.2
+python3 scripts/build_linux.py --version 3.0.4
+python3 scripts/build_deb.py --no-build --version 3.0.4
 ```
 
 Linux build needs Qt runtime libraries and `dpkg-deb`. The `.deb` does not
 require Python on the host: first-run setup downloads a verified portable
-Python 3.12 runtime into the user data directory. FFmpeg, ASR/TTS models,
-CUDA support, and user credentials are not included in the package.
+Python 3.12 runtime into the user data directory. FFmpeg is a Debian package
+dependency and is never downloaded by the Linux wizard. ASR/TTS models, CUDA
+support, and user credentials are not included in the package.
 
 ## Release workflow
 
-Push a semantic-version tag such as `v3.0.2`. GitHub Actions builds both
+Push a semantic-version tag such as `v3.0.4`. GitHub Actions builds both
 platforms, writes SHA256 checksum files, and publishes one GitHub Release.
 Do not publish artifacts from `main` manually.
 

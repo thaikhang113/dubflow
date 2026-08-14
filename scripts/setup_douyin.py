@@ -74,7 +74,7 @@ def main() -> None:
     step_check_python()
     step_install_libs()
     step_install_chromium()
-    log("XONG — mở lại VoxDub, tính năng tải Douyin đã sẵn sàng.")
+    log("XONG — mở lại DubFlow, tính năng tải Douyin đã sẵn sàng.")
 
 
 if __name__ == "__main__":

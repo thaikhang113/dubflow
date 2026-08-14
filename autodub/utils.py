@@ -173,14 +173,24 @@ def fonts_dir() -> str:
 
 
 def bundled_font_files() -> list[str]:
-    """Mọi file font trong :func:`fonts_dir` (rỗng khi thư mục chưa có)."""
-    d = fonts_dir()
-    if not os.path.isdir(d):
-        return []
-    return sorted(
-        os.path.join(d, f) for f in os.listdir(d)
-        if f.lower().endswith((".ttf", ".otf", ".ttc"))
-    )
+    """Fonts bundled with the app plus user fonts, without duplicates."""
+    roots = [fonts_dir()]
+    bundled = os.path.join(app_root(), "fonts")
+    if os.path.abspath(bundled) != os.path.abspath(roots[0]):
+        roots.append(bundled)
+    paths: list[str] = []
+    seen: set[str] = set()
+    for root in roots:
+        if not os.path.isdir(root):
+            continue
+        for name in os.listdir(root):
+            if not name.lower().endswith((".ttf", ".otf", ".ttc")):
+                continue
+            path = os.path.abspath(os.path.join(root, name))
+            if path not in seen:
+                seen.add(path)
+                paths.append(path)
+    return sorted(paths)
 
 
 def seg_wav_path(seg_dir: str, seg_id: int) -> str:
