@@ -22,6 +22,12 @@ def test_settings_load_env_vars(monkeypatch):
     assert settings.output_dir == os.path.join(app_root(), "output")
 
 
+def test_settings_loads_douyin_cookie_file(monkeypatch):
+    monkeypatch.setattr("autodub.config.load_dotenv", lambda *a, **kw: None)
+    monkeypatch.setenv("DOUYIN_COOKIES_FILE", "C:\\cookies\\douyin.txt")
+    assert Settings.load().douyin_cookies_file == "C:\\cookies\\douyin.txt"
+
+
 def test_settings_defaults(monkeypatch):
     """When optional env vars are not set, Settings should use defaults."""
     # Prevent load_dotenv from loading .env file values
@@ -150,6 +156,18 @@ def test_ocr_defaults_and_paths(monkeypatch):
         else ".venv-ocr/bin/python"
     )
     assert s.ocr_venv_python_path().replace("\\", "/").endswith(expected_suffix)
+
+
+def test_hybrid_ocr_defaults_to_paddle_with_optional_deepseek(monkeypatch):
+    monkeypatch.delenv("OCR_BACKEND", raising=False)
+    monkeypatch.delenv("DEEPSEEK_OCR_ENABLED", raising=False)
+    settings = Settings.load()
+
+    assert settings.ocr_backend == "hybrid"
+    assert settings.deepseek_ocr_enabled is False
+    assert settings.deepseek_ocr_venv_python_path().replace("\\", "/").endswith(
+        ".venv-deepseek-ocr/Scripts/python.exe"
+    )
 
 
 def test_clone_defaults(monkeypatch):

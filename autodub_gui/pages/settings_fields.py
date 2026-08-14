@@ -91,6 +91,11 @@ _KARAOKE_EFFECTS = [
     ("Không hiệu ứng", "none"),
 ]
 
+_OCR_BACKENDS = [
+    ("PaddleOCR — nhanh, ổn định", "paddle"),
+    ("Hybrid — Paddle + DeepSeek fallback", "hybrid"),
+]
+
 
 # Toàn bộ các mục, xếp theo thẻ rồi theo nhóm.
 FIELDS: tuple[Field, ...] = (
@@ -233,6 +238,15 @@ FIELDS: tuple[Field, ...] = (
           TAB_PERF, "Che phụ đề cứng", "true",
           "Dùng PaddleOCR local để tìm đúng vùng chữ Trung. Vùng độ tin cậy thấp "
           "hoặc quá lớn sẽ tự động bỏ qua; vùng khoanh thủ công vẫn được giữ."),
+    Field("OCR_BACKEND", COMBO, "Backend OCR",
+          TAB_PERF, "Che phụ đề cứng", "hybrid",
+          "Hybrid dùng PaddleOCR trước, chỉ gọi DeepSeek-OCR khi Paddle không "
+          "tìm được phụ đề hoặc logo ổn định.",
+          options=_OCR_BACKENDS),
+    Field("DEEPSEEK_OCR_ENABLED", CHECK, "Bật DeepSeek-OCR fallback",
+          TAB_PERF, "Che phụ đề cứng", "false",
+          "Cần cài riêng DeepSeek-OCR và GPU NVIDIA. Chưa cài thì PaddleOCR "
+          "vẫn chạy bình thường."),
     Field("OCR_MIN_CONFIDENCE", SLIDER, "Độ tin cậy OCR tối thiểu",
           TAB_PERF, "Che phụ đề cứng", "0.80",
           "Tăng lên nếu OCR nhận nhầm. Chỉ vùng đạt ngưỡng mới được làm mờ.",
@@ -332,6 +346,10 @@ FIELDS: tuple[Field, ...] = (
           TAB_TRANSLATE, "Đăng nhập Bilibili", "",
           "Đường dẫn tệp Netscape cookies.txt. Không dán nội dung cookie vào đây.",
           placeholder="C:\\Users\\...\\bilibili-cookies.txt"),
+    Field("DOUYIN_COOKIES_FILE", TEXT, "Tệp cookie Douyin",
+           TAB_TRANSLATE, "Đăng nhập Douyin", "",
+           "Đường dẫn tệp Netscape cookies.txt. Cookie được lưu cục bộ.",
+           placeholder="C:\\Users\\...\\douyin-cookies.txt"),
     Field("TRANSLATE_BATCH_SIZE", NUMBER, "Số câu mỗi lượt gửi", TAB_TRANSLATE,
           "Dịch tự động", "10",
           "Lô nhỏ hơn thì chậm hơn một chút nhưng mạch dịch bám ngữ cảnh sát "
@@ -371,6 +389,8 @@ FIELDS: tuple[Field, ...] = (
 # Khóa do ứng dụng tự tính hoặc chỉ dùng nội bộ, không hiện thành ô nhập chữ.
 # Mỗi khóa đều phải kèm lý do rõ ràng.
 EXEMPT_KEYS: dict[str, str] = {
+    "DEEPSEEK_OCR_VENV_PYTHON": "đường dẫn venv DeepSeek-OCR tự suy ra hoặc chỉ dành cho cài đặt nâng cao",
+    "DEEPSEEK_OCR_MODEL_DIR": "thư mục model DeepSeek-OCR tự suy ra hoặc chỉ dành cho cài đặt nâng cao",
     "VIENEU_VOICE": "chọn ở thẻ Giọng đọc bằng thẻ giọng, không phải ô nhập chữ",
     "VIENEU_STYLE": "chọn ở cột phải của thẻ Giọng đọc",
     "VIENEU_CLONE_ENABLED": "clone là tùy chọn theo từng job trong wizard, không cần cấu hình chung",

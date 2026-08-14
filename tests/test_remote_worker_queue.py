@@ -62,3 +62,15 @@ def test_worker_request_payload_merges_branding_fields():
     assert request.file_path == "input.mp4"
     assert request.logo_path == "logo.png"
     assert request.vision_enabled is True
+
+
+def test_worker_settings_payload_overrides_only_allowed_settings():
+    from autodub.remote_worker import settings_from_payload
+    from autodub.config import Settings
+
+    settings = settings_from_payload(
+        {"settings": {"translate_batch_size": 7}},
+        Settings(),
+    )
+
+    assert settings.translate_batch_size == 7

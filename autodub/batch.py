@@ -35,6 +35,15 @@ STATE_FILENAME = "batch_state.json"
 # rÃ ng (| , ; tab, hoáº·c tá»« hai khoáº£ng tráº¯ng trá»Ÿ lÃªn) vÃ¬ tÃªn giá»ng tiáº¿ng Viá»‡t
 # cÃ³ khoáº£ng tráº¯ng bÃªn trong â€” tÃ¡ch á»Ÿ má»™t dáº¥u cÃ¡ch sáº½ cáº¯t Ä‘Ã´i Â«TrÃºc LyÂ».
 _SPLIT_RE = re.compile(r"[|,;\t]|\s{2,}")
+_URL_RE = re.compile(r"https?://[^\s<>\[\]{}]+", re.IGNORECASE)
+
+
+def _urls_from_line(line: str) -> list[str]:
+    return [
+        value.rstrip(".,!?;:，。！？；：）)]}")
+        for value in _URL_RE.findall(line)
+        if value.rstrip(".,!?;:，。！？；：）)]}")
+    ]
 
 
 @dataclass
@@ -181,9 +190,18 @@ def parse_lines(text: str | Iterable[str]) -> list[BatchItem]:
         if not line or line.startswith("#"):
             continue
 
-        parts = [p.strip() for p in _SPLIT_RE.split(line, maxsplit=1) if p and p.strip()]
+        embedded_urls = _urls_from_line(line)
+        if embedded_urls and not line.lower().startswith(("http://", "https://")):
+            for url in embedded_urls:
+                if url not in seen:
+                    seen.add(url)
+                    items.append(BatchItem(url=url))
+            continue
+
+        parts = [p.strip() for p in _SPLIT_RE.split(line, maxsplit=1)
+                 if p and p.strip()]
         if not parts:
-            continue  # dÃ²ng chá»‰ cÃ³ kÃ½ tá»± phÃ¢n tÃ¡ch ("|", ",") â€” bá» qua
+            continue
         url = parts[0]
         voice = parts[1] if len(parts) > 1 else None
 

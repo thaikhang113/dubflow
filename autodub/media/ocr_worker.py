@@ -105,7 +105,7 @@ def _frames(video: str, times: list[float], output_dir: str) -> list[str]:
     pattern = os.path.join(output_dir, "%05d.png")
     proc = subprocess.run(
         ["ffmpeg", "-v", "error", "-i", video,
-         "-vf", f"fps=1/{interval:.3f}", "-vsync", "vfr",
+         "-vf", f"fps=1/{interval:.3f}",
          "-frames:v", str(len(times)), "-y", pattern],
         capture_output=True, text=True, timeout=60,
     )

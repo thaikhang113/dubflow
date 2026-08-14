@@ -73,6 +73,17 @@ def test_parse_empty_input():
     assert parse_lines("   \n\n# chỉ có ghi chú\n") == []
 
 
+def test_parse_extracts_urls_from_pasted_caption():
+    text = (
+        "3.35 O@K.jP :1pm NwF:/ 09/14 哈基蜂终于拿到了岁岁鸭！ "
+        "#三角洲行动 https://v.douyin.com/rGg7OPe4qrg/ 复制此链接，打开Dou音搜索"
+    )
+    items = parse_lines(text)
+    assert [item.url for item in items] == [
+        "https://v.douyin.com/rGg7OPe4qrg/"
+    ]
+
+
 # --------------------------------------------------------------- run_batch --- #
 
 class FakePipeline:

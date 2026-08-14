@@ -371,7 +371,11 @@ class DubPipeline:
             "source_lang": req.source_lang or settings.default_source_lang,
         }
         runtime = asdict(requested_settings)
-        for secret in ("translation_api_key", "bilibili_cookies_file"):
+        for secret in (
+            "translation_api_key",
+            "bilibili_cookies_file",
+            "douyin_cookies_file",
+        ):
             runtime.pop(secret, None)
         from autodub.pipeline_state import grouped_settings
         state["settings"] = {
@@ -1394,7 +1398,10 @@ class DubPipeline:
         if url:
             from autodub.media.downloader import download_video
             return download_video(
-                url, work_dir, cookies_file=self.settings.bilibili_cookies_file
+                url,
+                work_dir,
+                cookies_file=self.settings.bilibili_cookies_file,
+                douyin_cookies_file=self.settings.douyin_cookies_file,
             )
 
         raise RuntimeError(

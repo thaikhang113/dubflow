@@ -164,7 +164,11 @@ def grouped_settings(request: dict[str, Any],
     source = {**runtime, **request}
     source = {
         key: value for key, value in source.items()
-        if key not in {"translation_api_key", "bilibili_cookies_file"}
+        if key not in {
+            "translation_api_key",
+            "bilibili_cookies_file",
+            "douyin_cookies_file",
+        }
     }
     groups: dict[str, dict[str, Any]] = {}
     for stage, prefixes in STEP_SETTING_GROUPS.items():

@@ -8,7 +8,11 @@ records into the GUI log panel.
 from __future__ import annotations
 
 import logging
+import json
+import os
+import re
 import threading
+import time
 
 from PySide6.QtCore import QObject, QRunnable, QThread, Signal
 
@@ -637,12 +641,14 @@ class DownloadWorker(QThread):
 
     def __init__(self, urls: list[str], output_dir: str,
                  cookies_from_browser: str | None = None,
-                 cookies_file: str | None = None, parent=None):
+                 cookies_file: str | None = None, parent=None,
+                 douyin_cookies_file: str | None = None):
         super().__init__(parent)
         self._urls = urls
         self._output_dir = output_dir
         self._cookies_browser = cookies_from_browser or None
         self._cookies_file = cookies_file or None
+        self._douyin_cookies_file = douyin_cookies_file or None
         self._cancel_event = threading.Event()
 
     def cancel(self) -> None:
@@ -650,26 +656,67 @@ class DownloadWorker(QThread):
 
     def run(self) -> None:
         from autodub.media.downloader import download_one
-        from autodub.utils import ensure_dir
+        from autodub.utils import ensure_dir, save_json_atomic
 
         handler = attach_gui_logging(self.log)
         success = failed = 0
         try:
             ensure_dir(self._output_dir)
             total = len(self._urls)
+            state_path = os.path.join(self._output_dir, "download_queue.json")
+            try:
+                with open(state_path, encoding="utf-8") as f:
+                    state = json.load(f)
+            except (OSError, ValueError):
+                state = {}
+            if not isinstance(state, dict):
+                state = {}
+
+            def flush():
+                save_json_atomic(state, state_path)
             for i, url in enumerate(self._urls):
                 if self._cancel_event.is_set():
                     self.cancelled.emit()
                     return
-                self.item_status.emit(i, total, url, "start", "")
-                try:
-                    entry = download_one(url, self._output_dir,
-                                         self._cookies_browser, self._cookies_file)
+                previous = state.get(url, {})
+                if previous.get("status") == "success" and os.path.isfile(
+                        previous.get("filepath", "")):
                     success += 1
-                    self.item_status.emit(i, total, url, "success", entry["filepath"])
-                except Exception as e:  # noqa: BLE001 — per-item failure
-                    failed += 1
-                    self.item_status.emit(i, total, url, "failed", str(e)[:200])
+                    self.item_status.emit(i, total, url, "success",
+                                          previous["filepath"])
+                    continue
+                self.item_status.emit(i, total, url, "start", "")
+                item_dir = os.path.join(self._output_dir, f"{i + 1:03d}")
+                ensure_dir(item_dir)
+                for attempt, delay in enumerate((0, 2, 5), start=1):
+                    if delay:
+                        time.sleep(delay)
+                    try:
+                        entry = download_one(
+                            url, item_dir, self._cookies_browser,
+                            self._cookies_file,
+                            douyin_cookies_file=self._douyin_cookies_file)
+                        state[url] = {"status": "success",
+                                      "filepath": entry["filepath"]}
+                        flush()
+                        success += 1
+                        self.item_status.emit(i, total, url, "success",
+                                              entry["filepath"])
+                        break
+                    except Exception as e:
+                        message = str(e)
+                        transient = bool(re.search(
+                            r"\b(?:408|425|429|500|502|503|504|522|524)\b|"
+                            r"timed?\s*out|connection\s+(?:reset|aborted|error)|"
+                            r"temporar(?:y|ily)", message, re.I))
+                        if not transient or attempt == 3:
+                            failed += 1
+                            state[url] = {"status": "failed",
+                                          "error": message[:200]}
+                            flush()
+                            self.item_status.emit(i, total, url, "failed",
+                                                  message[:200])
+                            break
             self.finished_ok.emit(success, failed)
         except Exception as e:  # noqa: BLE001 — e.g. thư mục lưu không tạo được
             self.failed.emit(str(e))

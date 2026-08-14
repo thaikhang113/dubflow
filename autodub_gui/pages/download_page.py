@@ -29,6 +29,10 @@ from autodub_gui.widgets import LogPanel
 from autodub_gui.workers import DownloadWorker
 from autodub_gui.log_text import error_line
 from autodub.media.bilibili import has_login_cookies, save_netscape_cookies
+from autodub.media.douyin_cookies import (
+    save_douyin_cookies,
+    validate_douyin_cookies,
+)
 from autodub_gui.env_store import read_env, write_env
 from autodub.utils import app_root
 
@@ -94,6 +98,7 @@ class DownloadPage(BasePage):
                                 _PAGE_MARGIN, tokens.SP_5)
         root.setSpacing(tokens.SP_4)
         root.addWidget(self._build_bilibili_login_card())
+        root.addWidget(self._build_douyin_cookie_card())
         root.addWidget(self._build_input_card())
         root.addLayout(self._build_actions())
 
@@ -193,6 +198,81 @@ class DownloadPage(BasePage):
         else:
             self.cookie_status.setText("Chưa có cookie Bilibili hợp lệ.")
 
+    def _build_douyin_cookie_card(self) -> QWidget:
+        card = Card(padding=tokens.SP_4)
+        card.add_header("Cookie Douyin")
+        hint = QLabel(
+            "Dán nội dung Netscape cookies.txt xuất từ trình duyệt. Cookie lưu "
+            "cục bộ và chỉ dùng cho luồng tải Douyin.")
+        hint.setWordWrap(True)
+        hint.setStyleSheet(
+            f"color: {tokens.TEXT_MUTED}; font-size: {tokens.FS_META}px; "
+            "background: transparent;")
+        card.body.addWidget(hint)
+
+        actions = QHBoxLayout()
+        self.douyin_cookie_status = QLabel("")
+        self.douyin_cookie_status.setStyleSheet(
+            f"color: {tokens.TEXT_SECONDARY}; font-size: {tokens.FS_META}px; "
+            "background: transparent;")
+        actions.addWidget(self.douyin_cookie_status, 1)
+        save_button = GhostButton("Lưu cookie")
+        save_button.clicked.connect(self._save_douyin_cookies)
+        actions.addWidget(save_button)
+        clear_button = GhostButton("Xóa cookie")
+        clear_button.clicked.connect(self._clear_douyin_cookies)
+        actions.addWidget(clear_button)
+        card.body.addLayout(actions)
+
+        self.douyin_cookie_edit = QPlainTextEdit()
+        self.douyin_cookie_edit.setPlaceholderText(
+            "# Netscape HTTP Cookie File\n"
+            ".douyin.com\tTRUE\t/\tFALSE\t0\tsessionid\t...\n"
+            ".iesdouyin.com\tTRUE\t/\tFALSE\t0\tmsToken\t...")
+        self.douyin_cookie_edit.setMinimumHeight(64)
+        self.douyin_cookie_edit.setMaximumHeight(80)
+        card.body.addWidget(self.douyin_cookie_edit)
+        self._refresh_douyin_cookie_status()
+        return card
+
+    def _douyin_cookie_path(self) -> str:
+        return os.path.join(app_root(), "douyin-cookies.txt")
+
+    def _save_douyin_cookies(self) -> None:
+        try:
+            path = self._douyin_cookie_path()
+            save_douyin_cookies(self.douyin_cookie_edit.toPlainText(), path)
+            write_env({"DOUYIN_COOKIES_FILE": path})
+        except (OSError, ValueError) as exc:
+            self.douyin_cookie_status.setText(
+                f"Không lưu được cookie: {str(exc)[:180]}")
+            return
+        self.douyin_cookie_edit.clear()
+        self._refresh_douyin_cookie_status()
+
+    def _clear_douyin_cookies(self) -> None:
+        path = self._douyin_cookie_path()
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+            write_env({"DOUYIN_COOKIES_FILE": ""})
+        except OSError as exc:
+            self.douyin_cookie_status.setText(
+                f"Không xóa được cookie: {str(exc)[:180]}")
+            return
+        self._refresh_douyin_cookie_status()
+
+    def _refresh_douyin_cookie_status(self) -> None:
+        path = read_env().get("DOUYIN_COOKIES_FILE", "").strip()
+        try:
+            with open(path, encoding="utf-8") as handle:
+                valid = bool(validate_douyin_cookies(handle.read()))
+        except (OSError, ValueError):
+            valid = False
+        self.douyin_cookie_status.setText(
+            "Cookie Douyin đã lưu." if valid
+            else "Chưa có cookie Douyin hợp lệ.")
+
     def _build_input_card(self) -> QWidget:
         card = Card(padding=tokens.SP_4)
         card.add_header("Liên kết cần tải")
@@ -284,15 +364,10 @@ class DownloadPage(BasePage):
 
     def _collect_urls(self) -> list[str]:
         """Lọc lấy các liên kết hợp lệ, bỏ dòng trống và dòng ghi chú."""
-        lines = self.urls_edit.toPlainText().splitlines()
-        urls: list[str] = []
-        for line in lines:
-            text = line.strip()
-            if not text or text.startswith("#"):
-                continue
-            if text.lower().startswith(("http://", "https://")):
-                urls.append(text)
-        return urls
+        from autodub.batch import parse_lines
+
+        return [item.url for item in parse_lines(self.urls_edit.toPlainText())
+                if item.url]
 
     # -- Chạy ----------------------------------------------------------
     def _confirm_disclaimer(self) -> bool:
@@ -338,8 +413,11 @@ class DownloadPage(BasePage):
             read_env().get("BILIBILI_COOKIES_FILE", "").strip()
             if not self.cookies.current_key() else None
         ) or None
+        douyin_cookies_file = (
+            read_env().get("DOUYIN_COOKIES_FILE", "").strip() or None)
         worker = DownloadWorker(urls, self.output.text() or "downloads",
-                                self.cookies.current_key(), cookies_file, self)
+                                self.cookies.current_key(), cookies_file, self,
+                                douyin_cookies_file=douyin_cookies_file)
         worker.item_status.connect(self._on_item_status)
         worker.log.connect(self.log.append_log)
         worker.finished_ok.connect(self._on_finished)

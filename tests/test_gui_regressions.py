@@ -467,6 +467,26 @@ def test_help_page_documents_ocr_and_uses_bundled_readme_name():
     source = (help_page.__file__ and open(
         help_page.__file__, encoding="utf-8").read())
     assert "HUONG_DAN_CAI_DAT.md" in source
+    assert "Sao chép lệnh cài" not in source
+    assert "SetupScriptWorker" in source
+    assert "VoiceSetupDialog.ensure_voices" in source
+
+def test_help_page_install_rows_use_in_app_buttons(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from autodub.config import Settings
+    from autodub_gui.pages import help_page
+    from autodub_gui.pages.help_page import HelpPage
+
+    app = QApplication.instance() or QApplication([])
+    page = HelpPage(lambda: Settings())
+
+    assert len(page._install_rows) == len(help_page.INSTALL_ITEMS)
+    assert {row["button"].text() for row in page._install_rows.values()} == {
+        "Tải và cài",
+    }
+    page.deleteLater()
+    app.processEvents()
 
 def test_logo_region_parser_accepts_empty_values() -> None:
     from autodub_gui.pages.new_project_page import NewProjectPage

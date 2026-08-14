@@ -23,24 +23,39 @@ def _sample_times(duration: float, interval: float) -> list[float]:
     return [round(min(duration - 0.05, i * interval), 3) for i in range(count)]
 
 
-def _run_detections(
+def _run_engine_detections(
     video_path: str,
     duration: float,
     settings,
+    *,
+    backend: str,
 ) -> list[dict]:
-    if not settings.ocr_configured():
-        raise RuntimeError(
-            "PaddleOCR chưa được cài. Chạy scripts/setup_ocr.py rồi thử lại.")
     times = _sample_times(duration, settings.ocr_sample_interval)
+    if backend == "paddle":
+        if not settings.ocr_configured():
+            raise RuntimeError(
+                "PaddleOCR chưa được cài. Chạy scripts/setup_ocr.py rồi thử lại.")
+        python_path = settings.ocr_venv_python_path()
+        worker_name = "ocr_worker.py"
+        cache_env = ("PADDLE_PDX_CACHE_HOME", settings.ocr_model_dir_path())
+    else:
+        if not settings.deepseek_ocr_configured():
+            raise RuntimeError(
+                "DeepSeek-OCR chưa được cài hoặc chưa bật.")
+        python_path = settings.deepseek_ocr_venv_python_path()
+        worker_name = "deepseek_ocr_worker.py"
+        cache_env = ("DEEPSEEK_OCR_MODEL_DIR",
+                     settings.deepseek_ocr_model_dir_path())
     cmd = [
-        settings.ocr_venv_python_path(),
-        os.path.join(os.path.dirname(__file__), "ocr_worker.py"),
+        python_path,
+        os.path.join(os.path.dirname(__file__), worker_name),
         "--video", video_path,
         "--times", json.dumps(times),
     ]
     env = os.environ.copy()
-    env["PADDLE_PDX_CACHE_HOME"] = settings.ocr_model_dir_path()
-    env["OCR_DEVICE"] = settings.ocr_device
+    env[cache_env[0]] = cache_env[1]
+    if backend == "paddle":
+        env["OCR_DEVICE"] = settings.ocr_device
     proc = subprocess.run(cmd, capture_output=True, text=True,
                           encoding="utf-8", errors="replace",
                           env=env,
@@ -58,8 +73,18 @@ def _run_detections(
             detections.append(item)
     if proc.returncode != 0 and not detections:
         raise RuntimeError(errors[-1] if errors else
-                           (proc.stderr or "PaddleOCR worker failed")[-500:])
+                           (proc.stderr or f"{backend} OCR worker failed")[-500:])
     return detections
+
+
+def _run_detections(
+    video_path: str,
+    duration: float,
+    settings,
+) -> list[dict]:
+    """Run configured primary OCR backend, preserving legacy callers."""
+    return _run_engine_detections(
+        video_path, duration, settings, backend="paddle")
 
 def detect_regions(
     video_path: str,
@@ -80,7 +105,18 @@ def detect_regions_with_logo(
     settings,
 ) -> tuple[list[dict], list[dict]]:
     """Run PaddleOCR once and return subtitle plus stable-logo regions."""
-    detections = _run_detections(video_path, duration, settings)
+    deepseek_ready = (
+        getattr(settings, "ocr_backend", "paddle") == "hybrid"
+        and getattr(settings, "deepseek_ocr_enabled", False)
+        and getattr(settings, "deepseek_ocr_configured", lambda: False)()
+    )
+    try:
+        detections = _run_detections(video_path, duration, settings)
+    except Exception:
+        if not deepseek_ready:
+            raise
+        logger.warning("PaddleOCR không sẵn sàng; chuyển sang DeepSeek-OCR")
+        detections = []
     subtitle_regions = detections_to_regions(
         detections, video_w, video_h,
         min_confidence=settings.ocr_min_confidence,
@@ -95,6 +131,27 @@ def detect_regions_with_logo(
         min_confidence=settings.ocr_min_confidence,
         subtitle_y_min=getattr(settings, "ocr_subtitle_y_min", 0.65),
     )
+    if deepseek_ready and (not subtitle_regions or not logo_regions):
+        try:
+            deepseek_detections = _run_engine_detections(
+                video_path, duration, settings, backend="deepseek")
+            detections.extend(deepseek_detections)
+            subtitle_regions = detections_to_regions(
+                detections, video_w, video_h,
+                min_confidence=settings.ocr_min_confidence,
+                max_area=settings.ocr_max_region_area,
+                subtitle_y_min=getattr(settings, "ocr_subtitle_y_min", 0.65),
+                sample_interval=settings.ocr_sample_interval,
+            )
+            subtitle_regions = merge_regions(
+                subtitle_regions, max_gap=settings.ocr_sample_interval * 1.25)
+            logo_regions = detections_to_logo_regions(
+                detections, video_w, video_h,
+                min_confidence=settings.ocr_min_confidence,
+                subtitle_y_min=getattr(settings, "ocr_subtitle_y_min", 0.65),
+            )
+        except Exception as exc:
+            logger.warning(f"DeepSeek-OCR fallback bỏ qua: {exc}")
     return subtitle_regions, logo_regions
 
 def detect_logo_regions(

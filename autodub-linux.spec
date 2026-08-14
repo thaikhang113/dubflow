@@ -20,6 +20,8 @@ datas = [
      os.path.join("autodub", "media")),
     (os.path.join(ROOT, "autodub", "media", "ocr_worker.py"),
      os.path.join("autodub", "media")),
+    (os.path.join(ROOT, "autodub", "media", "deepseek_ocr_worker.py"),
+     os.path.join("autodub", "media")),
     (os.path.join(ROOT, "autodub", "speech", "tts", "capcut_api", "Voice.json"),
      os.path.join("autodub", "speech", "tts", "capcut_api")),
 ]

@@ -114,8 +114,9 @@ def test_deb_bundle_validation_checks_executable_workers_and_setup_scripts(
         "autodub/speech/asr_whisper_worker.py",
         "autodub/speech/asr_paraformer_worker.py",
         "autodub/speech/tts/vieneu_worker.py",
-        "autodub/media/demucs_worker.py",
-        "autodub/media/ocr_worker.py",
+            "autodub/media/demucs_worker.py",
+            "autodub/media/ocr_worker.py",
+            "autodub/media/deepseek_ocr_worker.py",
     ):
         path = bundle / "data" / relative
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -126,8 +127,8 @@ def test_deb_bundle_validation_checks_executable_workers_and_setup_scripts(
     (bundle / "scripts").mkdir()
     for name in (
         "setup_support.py", "setup_vieneu.py", "setup_whisper.py",
-        "setup_paraformer.py", "setup_ocr.py", "setup_douyin.py",
-        "setup_demucs.py", "setup_voices.py",
+            "setup_paraformer.py", "setup_ocr.py", "setup_douyin.py",
+            "setup_demucs.py", "setup_voices.py", "setup_deepseek_ocr.py",
     ):
         (bundle / "scripts" / name).write_text("# setup\n", encoding="utf-8")
 
@@ -143,8 +144,9 @@ def test_deb_bundle_validation_prefers_data_dir_with_workers(tmp_path):
         "autodub/speech/asr_whisper_worker.py",
         "autodub/speech/asr_paraformer_worker.py",
         "autodub/speech/tts/vieneu_worker.py",
-        "autodub/media/demucs_worker.py",
-        "autodub/media/ocr_worker.py",
+            "autodub/media/demucs_worker.py",
+            "autodub/media/ocr_worker.py",
+            "autodub/media/deepseek_ocr_worker.py",
     ):
         path = internal / relative
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -155,8 +157,8 @@ def test_deb_bundle_validation_prefers_data_dir_with_workers(tmp_path):
     (bundle / "scripts").mkdir()
     for name in (
         "setup_support.py", "setup_vieneu.py", "setup_whisper.py",
-        "setup_paraformer.py", "setup_ocr.py", "setup_douyin.py",
-        "setup_demucs.py", "setup_voices.py",
+            "setup_paraformer.py", "setup_ocr.py", "setup_douyin.py",
+            "setup_demucs.py", "setup_voices.py", "setup_deepseek_ocr.py",
     ):
         (bundle / "scripts" / name).write_text("# setup\n", encoding="utf-8")
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.0.5 - 2026-08-14
+
+### Added
+
+- In-app installation controls for optional ASR, OCR, TTS, and voice features.
+- Douyin cookie import, hybrid OCR support, and OpenClaw tool integration.
+
+### Fixed
+
+- Improved batch download and processing queue behavior.
+- Fixed OCR and subtitle masking workflow compatibility.
+
 ## 3.0.4 - 2026-08-14
 
 ### Fixed

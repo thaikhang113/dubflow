@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import os
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (
-    QApplication, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QProgressBar, QScrollArea, QVBoxLayout, QWidget,
 )
 
 from autodub_gui import tokens
@@ -43,29 +43,36 @@ QUICK_START = (
      "video để ghép bản cuối cùng."),
 )
 
-# (tên, mô tả, dung lượng, lệnh cài, hàm kiểm tra tình trạng)
+# (tên, mô tả, dung lượng, loại cài, script, hàm kiểm tra tình trạng)
 INSTALL_ITEMS = (
     ("Bộ giọng đọc VieNeu",
      "Giọng Việt chạy trên bộ xử lý trung tâm nên nhanh và không cần card "
      "đồ họa. Đây là bộ giọng duy nhất của ứng dụng.",
-     MODEL_SIZES["vieneu"], "py scripts/setup_vieneu.py", "vieneu_configured"),
+     MODEL_SIZES["vieneu"], "script", "scripts/setup_vieneu.py",
+     "vieneu_configured"),
     ("Thư viện giọng mẫu",
      "Nạp thêm các giọng trong thư mục voices cạnh ứng dụng. Chạy một lần, "
      "sau đó chọn giọng theo tên trong Cài đặt.",
-     "không cần tải", "py scripts/setup_voices.py", "voices_enrolled"),
+     "không cần tải", "voices", "", "voices_enrolled"),
     ("Paraformer", "Nghe tiếng Trung chính xác hơn Whisper, chạy trên CPU.",
-     MODEL_SIZES["paraformer"], "py scripts/setup_paraformer.py",
+     MODEL_SIZES["paraformer"], "script", "scripts/setup_paraformer.py",
      "paraformer_configured"),
     ("Whisper ASR",
      "Nhận dạng lời nói cho ngôn ngữ khác tiếng Trung. Cài riêng để không làm "
      "phình bản DubFlow.",
-     MODEL_SIZES["medium"], "py scripts/setup_whisper.py",
+     MODEL_SIZES["medium"], "script", "scripts/setup_whisper.py",
      "whisper_venv_configured"),
     ("PaddleOCR",
      "Tự tìm chữ Trung trong vùng phụ đề để làm mờ. Chỉ cần khi muốn tự động "
      "che phụ đề gốc; logo gốc có thể tự dò bằng Vision hoặc chọn vùng riêng "
      "trong Trình chỉnh sửa.",
-     "khoảng 2–3 GB (GPU)", "py scripts/setup_ocr.py", "ocr_configured"),
+     "khoảng 2–3 GB (GPU)", "script", "scripts/setup_ocr.py",
+     "ocr_configured"),
+    ("DeepSeek-OCR (tùy chọn)",
+     "Fallback cho PaddleOCR và hỗ trợ tìm logo/chữ khó. Cần GPU NVIDIA, "
+     "cài riêng và bật trong Cài đặt; không cài thì PaddleOCR vẫn hoạt động.",
+     "tải riêng theo model", "script", "scripts/setup_deepseek_ocr.py",
+     "deepseek_ocr_configured"),
 )
 
 EXTRA_PROBLEMS = (
@@ -109,6 +116,9 @@ class HelpPage(BasePage):
     def __init__(self, settings_provider, parent: QWidget | None = None):
         super().__init__(parent)
         self._settings_provider = settings_provider
+        self._install_rows: dict[str, dict[str, object]] = {}
+        self._active_install: str | None = None
+        self._install_worker: QThread | None = None
         self._build()
 
     def _build(self) -> None:
@@ -151,14 +161,14 @@ class HelpPage(BasePage):
             "Ứng dụng chạy được ngay mà không cần cài gì thêm. Những phần dưới "
             "đây là tùy chọn, cài rồi thì chất lượng tốt hơn."))
         settings = self._safe_settings()
-        for name, description, size, command, checker in INSTALL_ITEMS:
+        for name, description, size, kind, script, checker in INSTALL_ITEMS:
             section.add_layout(
-                self._install_row(settings, name, description, size,
-                                  command, checker))
+                self._install_row(settings, name, description, size, kind,
+                                  script, checker))
         return section
 
     def _install_row(self, settings, name: str, description: str, size: str,
-                     command: str, checker: str) -> QVBoxLayout:
+                     kind: str, script: str, checker: str) -> QVBoxLayout:
         column = QVBoxLayout()
         column.setSpacing(tokens.SP_1)
         head = QHBoxLayout()
@@ -181,14 +191,28 @@ class HelpPage(BasePage):
         head.addWidget(state)
         head.addWidget(size_label)
         head.addStretch()
-        if command:
-            copy_button = GhostButton("Sao chép lệnh cài")
-            copy_button.setToolTip(command)
-            copy_button.clicked.connect(
-                lambda _c=False, cmd=command: self._copy(cmd))
-            head.addWidget(copy_button)
+        install_button = GhostButton("Đã cài" if ready else "Tải và cài")
+        install_button.setEnabled(not ready and settings is not None)
+        install_button.clicked.connect(
+            lambda _checked=False, key=checker: self._start_install(key))
+        head.addWidget(install_button)
         column.addLayout(head)
         column.addWidget(_body_label(description))
+        progress = QProgressBar()
+        progress.setRange(0, 100)
+        progress.setTextVisible(False)
+        progress.setFixedHeight(8)
+        progress.hide()
+        column.addWidget(progress)
+        self._install_rows[checker] = {
+            "name": name,
+            "kind": kind,
+            "script": script,
+            "checker": checker,
+            "state": state,
+            "button": install_button,
+            "progress": progress,
+        }
         return column
 
     def _build_problems(self) -> QWidget:
@@ -308,9 +332,93 @@ class HelpPage(BasePage):
         except Exception:  # noqa: BLE001 — không kiểm tra được thì coi là chưa cài
             return False
 
-    def _copy(self, command: str) -> None:
-        QApplication.clipboard().setText(command)
-        TOASTS.success("Đã sao chép lệnh. Dán vào cửa sổ dòng lệnh rồi chạy.")
+    def _start_install(self, checker: str) -> None:
+        if self._active_install is not None:
+            return
+        row = self._install_rows.get(checker)
+        settings = self._safe_settings()
+        if row is None or settings is None:
+            TOASTS.error("Không đọc được cấu hình để cài thành phần.")
+            return
+
+        self._active_install = checker
+        self._set_install_controls(False)
+        row["button"].setText("Đang cài...")
+        row["button"].setEnabled(False)
+        row["state"].setText("đang cài")
+        row["state"].setStyleSheet(
+            f"color: {tokens.ACCENT_BLUE}; font-size: {tokens.FS_META}px; "
+            "background: transparent;")
+        row["progress"].setValue(0)
+        row["progress"].show()
+
+        if row["kind"] == "voices":
+            from autodub_gui.voice_setup_dialog import VoiceSetupDialog
+
+            ok = VoiceSetupDialog.ensure_voices(settings, self)
+            self._finish_install(checker, ok, "")
+            return
+
+        from autodub_gui.workers_setup import SetupScriptWorker
+
+        worker = SetupScriptWorker(row["script"], self)
+        worker.progress.connect(row["progress"].setValue)
+        worker.log.connect(lambda message: row["button"].setToolTip(message))
+        worker.finished_ok.connect(
+            lambda key=checker: self._finish_install(key, True, ""))
+        worker.failed.connect(
+            lambda message, key=checker: self._finish_install(
+                key, False, message))
+        worker.finished.connect(worker.deleteLater)
+        self._install_worker = worker
+        worker.start()
+
+    def _finish_install(self, checker: str, ok: bool, message: str) -> None:
+        row = self._install_rows.get(checker)
+        if row is None:
+            return
+        self._active_install = None
+        self._install_worker = None
+        row["progress"].hide()
+        if ok:
+            self._refresh_install_row(checker)
+            TOASTS.success(f"Đã cài {row['name']}.")
+        else:
+            row["state"].setText("cài thất bại")
+            row["state"].setStyleSheet(
+                f"color: {tokens.DANGER}; font-size: {tokens.FS_META}px; "
+                "background: transparent;")
+            row["state"].setToolTip(message)
+            row["button"].setText("Thử lại")
+            row["button"].setEnabled(True)
+            TOASTS.error(f"Cài {row['name']} thất bại.")
+        self._set_install_controls(True)
+
+    def _refresh_install_row(self, checker: str) -> None:
+        row = self._install_rows.get(checker)
+        settings = self._safe_settings()
+        if row is None:
+            return
+        ready = self._is_ready(settings, checker)
+        row["state"].setText("đã sẵn sàng" if ready else "chưa cài")
+        row["state"].setStyleSheet(
+            f"color: {tokens.SUCCESS if ready else tokens.WARNING}; "
+            f"font-size: {tokens.FS_META}px; background: transparent;")
+        row["button"].setText("Đã cài" if ready else "Tải và cài")
+        row["button"].setEnabled(not ready and settings is not None)
+        row["state"].setToolTip("")
+
+    def _set_install_controls(self, enabled: bool) -> None:
+        settings = self._safe_settings() if enabled else None
+        for checker in self._install_rows:
+            if checker == self._active_install:
+                continue
+            row = self._install_rows[checker]
+            if not enabled:
+                row["button"].setEnabled(False)
+                continue
+            row["button"].setEnabled(
+                settings is not None and not self._is_ready(settings, checker))
 
     def _open_app_folder(self) -> None:
         from autodub.utils import app_root

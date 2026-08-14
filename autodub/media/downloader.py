@@ -72,6 +72,7 @@ def normalize_url(url: str) -> str:
 def download_video(
     url: str, output_dir: str, cookies_from_browser: str | None = None,
     cookies_file: str | None = None,
+    douyin_cookies_file: str | None = None,
 ) -> str:
     if not url:
         raise ValueError("URL cannot be empty")
@@ -84,7 +85,8 @@ def download_video(
     from autodub.media.douyin import is_douyin_url, download_douyin
     if is_douyin_url(url):
         logger.info(f"Routing to Playwright Douyin extractor: {url}")
-        info = download_douyin(url, output_dir)
+        info = download_douyin(
+            url, output_dir, cookies_file=douyin_cookies_file)
         _save_meta(output_dir, info.get("title", ""), info.get("uploader", ""))
         return info["filepath"]
 
@@ -206,6 +208,7 @@ def download_one(
     output_dir: str,
     cookies_from_browser: str | None = None,
     cookies_file: str | None = None,
+    douyin_cookies_file: str | None = None,
 ) -> dict:
     """Download a single URL and return metadata + saved filepath.
 
@@ -216,7 +219,8 @@ def download_one(
     from autodub.media.douyin import is_douyin_url, download_douyin
     if is_douyin_url(url):
         logger.info(f"Routing to Playwright Douyin extractor: {url}")
-        return download_douyin(url, output_dir)
+        return download_douyin(
+            url, output_dir, cookies_file=douyin_cookies_file)
 
     canonical = normalize_url(url)
     if canonical != url:

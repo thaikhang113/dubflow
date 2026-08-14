@@ -25,6 +25,10 @@ from pathlib import Path
 import requests
 
 from autodub.utils import setup_logging, ensure_dir
+from autodub.media.douyin_cookies import (
+    load_douyin_cookies,
+    playwright_cookies,
+)
 
 logger = setup_logging("autodub.downloader_douyin")
 
@@ -44,6 +48,11 @@ _DASH_AUDIO_RE = re.compile(r"/media-audio-")
 _CDN_HOST_RE = re.compile(r"\.(zjcdn|douyinvod|douyincdn)\.com|\.bytecdntp\.com")
 _VIDEO_MIME_RE = re.compile(r"mime_type=video_mp4")
 _ROUTER_DATA_RE = re.compile(r"window\._ROUTER_DATA\s*=\s*(\{.*?\})\s*</script>", re.DOTALL)
+_TRANSIENT_RE = re.compile(
+    r"\b(?:408|425|429|500|502|503|504|522|524)\b|"
+    r"timed?\s*out|connection\s+(?:reset|aborted|error)|temporar(?:y|ily)",
+    re.IGNORECASE,
+)
 
 # ID patterns seen across douyin URL shapes (canonical, share page, modal route)
 _ID_PATTERNS = (
@@ -52,6 +61,18 @@ _ID_PATTERNS = (
     re.compile(r"[?&]modal_id=(\d+)"),
     re.compile(r"[?&]vid=(\d+)"),
 )
+
+
+def _is_transient_error(error: object) -> bool:
+    return bool(_TRANSIENT_RE.search(str(error)))
+
+
+def _requests_client(cookie_file: str | None = None):
+    if not cookie_file:
+        return requests
+    session = requests.Session()
+    session.cookies.update(load_douyin_cookies(cookie_file))
+    return session
 
 
 def is_douyin_url(url: str) -> bool:
@@ -75,7 +96,7 @@ def _extract_video_id(url: str) -> str | None:
     return None
 
 
-def resolve_video_id(url: str) -> str | None:
+def resolve_video_id(url: str, cookies_file: str | None = None) -> str | None:
     """Resolve a Douyin URL (including v.douyin.com short links) to its video ID.
 
     Short links 302-redirect to an iesdouyin.com share URL that embeds the
@@ -87,7 +108,7 @@ def resolve_video_id(url: str) -> str | None:
         return vid
 
     try:
-        resp = requests.get(
+        resp = _requests_client(cookies_file).get(
             url,
             headers={"User-Agent": _UA},
             allow_redirects=True,
@@ -111,14 +132,15 @@ def resolve_video_id(url: str) -> str | None:
 # Primary path: share-page JSON → direct MP4
 # --------------------------------------------------------------------------- #
 
-def _fetch_share_info(video_id: str) -> dict | None:
+def _fetch_share_info(video_id: str, cookies_file: str | None = None) -> dict | None:
     """Fetch video metadata from the mobile share page's embedded JSON.
 
     Returns {"uri", "title", "duration_ms"} or None if the page layout changed.
     """
     url = f"https://www.iesdouyin.com/share/video/{video_id}/"
     try:
-        resp = requests.get(url, headers={"User-Agent": _MOBILE_UA}, timeout=20)
+        resp = _requests_client(cookies_file).get(
+            url, headers={"User-Agent": _MOBILE_UA}, timeout=20)
         resp.raise_for_status()
     except requests.RequestException as exc:
         logger.warning(f"Share page fetch failed for {video_id}: {exc}")
@@ -157,7 +179,9 @@ def _fetch_share_info(video_id: str) -> dict | None:
     return None
 
 
-def _download_play_url(uri: str, dest: Path) -> int:
+def _download_play_url(
+    uri: str, dest: Path, cookies_file: str | None = None
+) -> int:
     """Download the MP4 via the aweme play endpoint (no watermark)."""
     quoted = urllib.parse.quote(str(uri), safe="")
     url = f"https://aweme.snssdk.com/aweme/v1/play/?video_id={quoted}&ratio=1080p&line=0"
@@ -167,8 +191,9 @@ def _download_play_url(uri: str, dest: Path) -> int:
     # cắt cụt ở đích trông như tải thành công.
     part = Path(str(dest) + ".part")
     try:
-        with requests.get(url, headers=headers, stream=True,
-                          allow_redirects=True, timeout=120) as r:
+        with _requests_client(cookies_file).get(
+                url, headers=headers, stream=True,
+                allow_redirects=True, timeout=120) as r:
             r.raise_for_status()
             content_type = r.headers.get("Content-Type", "")
             if "video" not in content_type:
@@ -199,10 +224,49 @@ def _bitrate_of(url: str) -> int:
         return 0
 
 
+def _capture_playwright_streams(page) -> dict[str, list]:
+    captured = {
+        "dash_video": [], "dash_audio": [], "progressive": [],
+        "progressive_bodies": [],
+    }
+
+    def on_request(req):
+        stream_url = req.url
+        lower = stream_url.lower()
+        if not (_CDN_HOST_RE.search(stream_url) or ".douyin.com/" in lower):
+            return
+        if _DASH_VIDEO_RE.search(stream_url) or "media-video" in lower:
+            captured["dash_video"].append(stream_url)
+        elif _DASH_AUDIO_RE.search(stream_url) or "media-audio" in lower:
+            captured["dash_audio"].append(stream_url)
+        elif (_VIDEO_MIME_RE.search(stream_url) or ".mp4" in lower
+              or "video/" in lower):
+            captured["progressive"].append(stream_url)
+
+    def on_response(response):
+        stream_url = response.url
+        lower = stream_url.lower()
+        content_type = response.headers.get("content-type", "").lower()
+        if (".mp4" not in lower and not _VIDEO_MIME_RE.search(stream_url)
+                and "video/" not in content_type):
+            return
+        try:
+            body = response.body()
+        except Exception:
+            return
+        if _is_video_signature(body[:16]):
+            captured["progressive_bodies"].append((stream_url, body))
+
+    page.on("request", on_request)
+    page.on("response", on_response)
+    return captured
+
+
 def _extract_via_playwright(
     url: str,
     wait_seconds: float = 20.0,
     headless: bool = True,
+    cookies_file: str | None = None,
 ) -> dict:
     """Open the Douyin page and capture direct CDN URLs for video + audio.
 
@@ -233,26 +297,15 @@ def _extract_via_playwright(
                 viewport={"width": 1920, "height": 1080},
                 locale="zh-CN",
             )
+            if cookies_file:
+                context.add_cookies(playwright_cookies(cookies_file))
             # Hide webdriver flag — Douyin checks navigator.webdriver
             context.add_init_script(
                 "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
             )
             page = context.new_page()
 
-            captured = {"dash_video": [], "dash_audio": [], "progressive": []}
-
-            def on_request(req):
-                u = req.url
-                if not _CDN_HOST_RE.search(u):
-                    return
-                if _DASH_VIDEO_RE.search(u):
-                    captured["dash_video"].append(u)
-                elif _DASH_AUDIO_RE.search(u):
-                    captured["dash_audio"].append(u)
-                elif _VIDEO_MIME_RE.search(u):
-                    captured["progressive"].append(u)
-
-            page.on("request", on_request)
+            captured = _capture_playwright_streams(page)
 
             logger.info(f"Loading Douyin page: {url}")
             page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -277,12 +330,19 @@ def _extract_via_playwright(
     video_id = _extract_video_id(canonical) or ""
 
     if captured["progressive"]:
+        progressive = sorted(
+            set(captured["progressive"]), key=_bitrate_of, reverse=True)
         return {
             "mode": "progressive",
             "canonical_url": canonical,
             "video_id": video_id,
             "title": title,
-            "video_url": max(captured["progressive"], key=_bitrate_of),
+            "video_url": progressive[0],
+            "video_urls": progressive,
+            "video_bytes": (
+                captured["progressive_bodies"][0][1]
+                if captured["progressive_bodies"] else None
+            ),
         }
 
     if captured["dash_video"] and captured["dash_audio"]:
@@ -300,19 +360,32 @@ def _extract_via_playwright(
     )
 
 
-def _download_stream(url: str, dest: Path) -> int:
+def _download_stream(
+    url: str, dest: Path, cookies_file: str | None = None
+) -> int:
     headers = {"User-Agent": _UA, "Referer": _REFERER}
     size = 0
     # Ghi ra .part rồi os.replace — đứt mạng không để lại file cắt cụt.
     part = Path(str(dest) + ".part")
     try:
-        with requests.get(url, headers=headers, stream=True, timeout=120) as r:
+        with _requests_client(cookies_file).get(
+                url, headers=headers, stream=True, timeout=120) as r:
             r.raise_for_status()
+            content_type = r.headers.get("Content-Type", "").lower()
+            if "text/html" in content_type:
+                raise RuntimeError(
+                    "CDN returned an HTML page instead of video; stream expired "
+                    "or Douyin blocked the request")
             with open(part, "wb") as f:
                 for chunk in r.iter_content(chunk_size=1024 * 256):
                     if chunk:
                         f.write(chunk)
                         size += len(chunk)
+            with open(part, "rb") as f:
+                signature = f.read(16)
+            if not _is_video_signature(signature):
+                raise RuntimeError(
+                    "CDN response is not a valid MP4 video")
         if size < 10_000:
             raise RuntimeError(
                 f"CDN returned suspiciously small file ({size}B) — likely an "
@@ -322,6 +395,10 @@ def _download_stream(url: str, dest: Path) -> int:
         if part.exists():
             part.unlink(missing_ok=True)
     return size
+
+
+def _is_video_signature(data: bytes) -> bool:
+    return len(data) >= 8 and data[4:8] == b"ftyp"
 
 
 def _ffmpeg_mux(video_path: Path, audio_path: Path, output_path: Path) -> None:
@@ -357,10 +434,15 @@ def _ffprobe_duration(path: Path) -> float:
         return 0.0
 
 
-def _download_via_playwright(video_id: str, out_dir: Path, final_path: Path) -> dict:
+def _download_via_playwright(
+    video_id: str,
+    out_dir: Path,
+    final_path: Path,
+    cookies_file: str | None = None,
+) -> dict:
     """Fallback: sniff CDN streams from the share page with a headless browser."""
     share_url = f"https://www.iesdouyin.com/share/video/{video_id}/"
-    info = _extract_via_playwright(share_url)
+    info = _extract_via_playwright(share_url, cookies_file=cookies_file)
 
     # The share page may client-side redirect; verify we stayed on our video.
     if info["video_id"] and info["video_id"] != video_id:
@@ -370,17 +452,31 @@ def _download_via_playwright(video_id: str, out_dir: Path, final_path: Path) -> 
         )
 
     if info["mode"] == "progressive":
-        logger.info(f"Downloading progressive MP4 id={video_id}")
-        size = _download_stream(info["video_url"], final_path)
-        logger.info(f"Stream downloaded: {size:,}B")
+        if info.get("video_bytes"):
+            final_path.write_bytes(info["video_bytes"])
+            return info
+        last_error = None
+        for stream_url in info.get("video_urls", [info["video_url"]]):
+            try:
+                logger.info(f"Downloading progressive MP4 id={video_id}")
+                size = _download_stream(stream_url, final_path, cookies_file)
+                logger.info(f"Stream downloaded: {size:,}B")
+                break
+            except (requests.RequestException, RuntimeError) as exc:
+                last_error = exc
+                logger.warning(f"Progressive stream failed: {exc}")
+        else:
+            raise RuntimeError(str(last_error))
     else:
         tmp_video = out_dir / f"_tmp_{video_id}.video.mp4"
         tmp_audio = out_dir / f"_tmp_{video_id}.audio.m4a"
         try:
             logger.info(f"Downloading DASH video stream id={video_id}")
-            v_size = _download_stream(info["video_url"], tmp_video)
+            v_size = _download_stream(
+                info["video_url"], tmp_video, cookies_file)
             logger.info(f"Downloading DASH audio stream id={video_id}")
-            a_size = _download_stream(info["audio_url"], tmp_audio)
+            a_size = _download_stream(
+                info["audio_url"], tmp_audio, cookies_file)
             logger.info(f"Streams downloaded: video={v_size:,}B audio={a_size:,}B")
             _ffmpeg_mux(tmp_video, tmp_audio, final_path)
         finally:
@@ -397,6 +493,7 @@ def download_douyin(
     url: str,
     output_dir: str,
     filename: str | None = None,
+    cookies_file: str | None = None,
 ) -> dict:
     """Download a Douyin video and return metadata matching download_one() shape.
 
@@ -412,7 +509,7 @@ def download_douyin(
 
     ensure_dir(output_dir)
 
-    video_id = resolve_video_id(url)
+    video_id = resolve_video_id(url, cookies_file)
     if not video_id:
         raise RuntimeError(
             f"Could not resolve a Douyin video id from {url}. "
@@ -426,12 +523,13 @@ def download_douyin(
     title = ""
 
     # --- Primary: share-page JSON → direct MP4 (id-exact, no browser) ---
-    share_info = _fetch_share_info(video_id)
+    share_info = _fetch_share_info(video_id, cookies_file)
     downloaded = False
     if share_info:
         title = share_info["title"]
         try:
-            size = _download_play_url(share_info["uri"], final_path)
+            size = _download_play_url(
+                share_info["uri"], final_path, cookies_file)
             logger.info(f"Direct download OK: {size:,}B (uri={share_info['uri']})")
             downloaded = True
         except (requests.RequestException, RuntimeError) as exc:
@@ -440,7 +538,8 @@ def download_douyin(
 
     # --- Fallback: Playwright stream sniffing (share page, id-verified) ---
     if not downloaded:
-        info = _download_via_playwright(video_id, out_dir, final_path)
+        info = _download_via_playwright(
+            video_id, out_dir, final_path, cookies_file)
         title = title or info["title"]
 
     duration = _ffprobe_duration(final_path)

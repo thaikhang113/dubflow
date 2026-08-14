@@ -5,6 +5,7 @@ import json
 import os
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 
 _TOP_LEVEL_KEYS = {"job_id", "request", "branding"}
@@ -17,6 +18,11 @@ _REQUEST_KEYS = {
 _BRANDING_KEYS = {
     "logo_path", "intro_path", "outro_path", "vision_enabled",
     "logo_opacity", "logo_scale", "logo_position", "logo_region",
+}
+_SETTINGS_KEYS = {
+    "translate_enabled", "translate_batch_size", "translate_cps_budget",
+    "translate_domain", "translate_context", "translate_pronouns",
+    "translate_glossary", "translate_style_notes", "generate_metadata",
 }
 
 
@@ -47,7 +53,7 @@ def _atomic_json(path: Path, payload: dict) -> None:
 def _validate_job(payload: dict) -> dict:
     if not isinstance(payload, dict):
         raise JobValidationError("job must be an object")
-    unknown = set(payload) - _TOP_LEVEL_KEYS
+    unknown = set(payload) - (_TOP_LEVEL_KEYS | {"settings"})
     if unknown:
         raise JobValidationError(f"unknown job fields: {sorted(unknown)}")
     job_id = payload.get("job_id")
@@ -60,7 +66,23 @@ def _validate_job(payload: dict) -> dict:
         unknown = set(value) - allowed
         if unknown:
             raise JobValidationError(f"unknown {name} fields: {sorted(unknown)}")
+    settings = payload.get("settings", {})
+    if not isinstance(settings, dict):
+        raise JobValidationError("settings must be an object")
+    unknown = set(settings) - _SETTINGS_KEYS
+    if unknown:
+        raise JobValidationError(f"unknown settings fields: {sorted(unknown)}")
     return dict(payload)
+
+
+def settings_from_payload(payload: dict, settings):
+    overrides = payload.get("settings", {})
+    if not overrides:
+        return settings
+    try:
+        return replace(settings, **overrides)
+    except TypeError as exc:
+        raise JobValidationError(f"invalid settings override: {exc}") from exc
 
 
 def _job_paths(root: Path, job_id: str) -> list[Path]:
@@ -144,6 +166,7 @@ def run_worker(root: str, settings, stop_event=None, poll_s: float = 1.0) -> Non
             payload = _validate_job(json.loads(running_path.read_text(encoding="utf-8")))
             _write_status(base, job_id, status="running", step="pipeline")
             request = request_from_payload(payload)
+            job_settings = settings_from_payload(payload, settings)
             cancel_event = threading.Event()
             watcher = threading.Thread(
                 target=_watch_cancel,
@@ -163,7 +186,7 @@ def run_worker(root: str, settings, stop_event=None, poll_s: float = 1.0) -> Non
                 )
 
             result = DubPipeline(
-                settings, progress=on_progress, cancel_event=cancel_event,
+                job_settings, progress=on_progress, cancel_event=cancel_event,
             ).run(request)
             final_status = "cancelled" if cancel_event.is_set() else result.status
             _write_status(

@@ -147,8 +147,9 @@ class Settings:
     whisper_venv_python: str = ""   # mặc định: <app>/.venv-whisper/Scripts/python.exe
     whisper_model_dir: str = ""     # mặc định: <app>/models/whisper (cache HuggingFace)
 
-    # --- OCR phụ đề cứng (PaddleOCR, tùy chọn) ------------------------------
+    # --- OCR phụ đề cứng (PaddleOCR + DeepSeek-OCR tùy chọn) ----------------
     ocr_enabled: bool = True
+    ocr_backend: str = "hybrid"
     ocr_venv_python: str = ""
     ocr_model_dir: str = ""
     ocr_device: str = "auto"  # "auto" | "gpu" | "cpu"
@@ -156,6 +157,9 @@ class Settings:
     ocr_max_region_area: float = 0.25
     ocr_subtitle_y_min: float = 0.65
     ocr_sample_interval: float = 1.0
+    deepseek_ocr_enabled: bool = False
+    deepseek_ocr_venv_python: str = ""
+    deepseek_ocr_model_dir: str = ""
 
     # --- Giọng đọc tiếng Việt (VieNeu — bộ giọng DUY NHẤT) -----------------
     # Chạy trong venv riêng (.venv-vieneu) qua tiến trình con — cài một lần
@@ -261,6 +265,7 @@ class Settings:
     translation_api_key: str = ""
     translation_model: str = ""
     bilibili_cookies_file: str = ""
+    douyin_cookies_file: str = ""
     branding_logo_path: str = ""
     branding_intro_path: str = ""
     branding_outro_path: str = ""
@@ -371,6 +376,8 @@ class Settings:
             asr_num_threads=max(1, min(16, env_int("ASR_NUM_THREADS", "4"))),
             whisper_beam_size=max(1, min(10, env_int("WHISPER_BEAM_SIZE", "5"))),
             ocr_enabled=env_bool("OCR_ENABLED", "true"),
+            ocr_backend=_one_of(env("OCR_BACKEND", "hybrid"),
+                                ("paddle", "hybrid"), "hybrid"),
             ocr_venv_python=env("OCR_VENV_PYTHON"),
             ocr_model_dir=env("OCR_MODEL_DIR"),
             ocr_device=_one_of(env("OCR_DEVICE", "auto"),
@@ -383,6 +390,9 @@ class Settings:
                 env_float("OCR_SUBTITLE_Y_MIN", "0.65"))),
             ocr_sample_interval=min(10.0, max(0.5,
                 env_float("OCR_SAMPLE_INTERVAL", "1.0"))),
+            deepseek_ocr_enabled=env_bool("DEEPSEEK_OCR_ENABLED", "false"),
+            deepseek_ocr_venv_python=env("DEEPSEEK_OCR_VENV_PYTHON"),
+            deepseek_ocr_model_dir=env("DEEPSEEK_OCR_MODEL_DIR"),
             vieneu_venv_python=env("VIENEU_VENV_PYTHON"),
             vieneu_model_dir=env("VIENEU_MODEL_DIR"),
             vieneu_voice=env("VIENEU_VOICE", "").strip(),
@@ -446,6 +456,7 @@ class Settings:
             translation_api_key=env("TRANSLATION_API_KEY").strip(),
             translation_model=env("TRANSLATION_MODEL").strip(),
             bilibili_cookies_file=env("BILIBILI_COOKIES_FILE").strip(),
+            douyin_cookies_file=env("DOUYIN_COOKIES_FILE").strip(),
             branding_logo_path=env("BRANDING_LOGO_PATH").strip(),
             branding_intro_path=env("BRANDING_INTRO_PATH").strip(),
             branding_outro_path=env("BRANDING_OUTRO_PATH").strip(),
@@ -590,6 +601,23 @@ class Settings:
                 and os.path.isfile(self.ocr_venv_python_path())
                 and os.path.isfile(os.path.join(self.ocr_model_dir_path(),
                                                 "installed_ok.json")))
+
+    def deepseek_ocr_venv_python_path(self) -> str:
+        if self.deepseek_ocr_venv_python:
+            return self.deepseek_ocr_venv_python
+        exe = "Scripts/python.exe" if os.name == "nt" else "bin/python"
+        return os.path.join(data_root(), ".venv-deepseek-ocr", *exe.split("/"))
+
+    def deepseek_ocr_model_dir_path(self) -> str:
+        if self.deepseek_ocr_model_dir:
+            return self.deepseek_ocr_model_dir
+        return os.path.join(data_root(), "models", "deepseek-ocr")
+
+    def deepseek_ocr_configured(self) -> bool:
+        return (self.deepseek_ocr_enabled
+                and os.path.isfile(self.deepseek_ocr_venv_python_path())
+                and os.path.isfile(os.path.join(
+                    self.deepseek_ocr_model_dir_path(), "installed_ok.json")))
 
     def vieneu_venv_python_path(self) -> str:
         """Trình thông dịch Python của venv dành riêng cho VieNeu."""
