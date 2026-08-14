@@ -29,7 +29,7 @@ from autodub_gui.ui.toast import TOASTS
 
 APP_NAME = "DubFlow"
 APP_TAGLINE = "Lồng tiếng video bằng AI"
-APP_VERSION = "3.0.5"
+APP_VERSION = "3.0.6"
 
 def _runtime_version() -> str:
     """Read release version written into frozen bundles."""
@@ -58,6 +58,7 @@ ROW_QUALITY   = 11  # Báo cáo chất lượng
 
 # Trang launcher editor (trung gian — không hiện trong sidebar)
 ROW_EDITOR_LAUNCHER = 12
+ROW_OPENCLAW = 13
 
 PAGE_COUNT = 13
 
@@ -95,6 +96,9 @@ PAGES: list[tuple[int, str, str, str, object, str]] = [
     (ROW_QUALITY,   "Báo cáo chất lượng","Báo cáo chất lượng",
      "Thống kê ASR, dịch thuật và cảnh báo timing",
      icons.chart_bar, "tools"),
+    (ROW_OPENCLAW,  "OpenClaw",          "OpenClaw",
+     "Kết nối agent local với DubFlow, không cần chạy source",
+     icons.globe, "tools"),
     # Nhóm "second" — HỆ THỐNG
     (ROW_SETTINGS,  "Cài đặt",           "Cài đặt",
      "Tùy chỉnh hệ thống theo nhu cầu của bạn",
@@ -125,7 +129,7 @@ _VIDEO_PROBE_MS = 4000     # thời gian chờ tối đa khi thử giải mã vi
 _PREWARM_ORDER = (ROW_HELP, ROW_SETTINGS, ROW_NEW, ROW_PROJECTS,
                   ROW_BATCH, ROW_DOWNLOAD, ROW_EDITOR,
                   ROW_VOICE, ROW_TRANSLATE, ROW_SUBTITLE, ROW_QUALITY,
-                  ROW_EDITOR_LAUNCHER)
+                  ROW_EDITOR_LAUNCHER, ROW_OPENCLAW)
 _PREWARM_START_MS = 700     # chờ khung hình đầu vẽ xong rồi mới dựng
 _PREWARM_GAP_MS = 250       # nghỉ giữa hai trang để giao diện luôn mượt
 _PREFLIGHT_DELAY_MS = 1200  # kiểm tra máy sau khi cửa sổ đã hiện xong
@@ -148,6 +152,10 @@ class MainWindow(QMainWindow):
         self._force_close = False
         self._breakpoint = ""
         self._page_widgets: dict[int, QWidget] = {}
+        from autodub.openclaw_runtime import OpenClawRuntime
+        self._openclaw_runtime = OpenClawRuntime(self._fresh_settings)
+        if self._openclaw_runtime.enabled:
+            self._openclaw_runtime.start()
 
         central = QWidget()
         panel_background(central, tokens.BG_APP)
@@ -338,6 +346,9 @@ class MainWindow(QMainWindow):
         elif row == ROW_QUALITY:
             from autodub_gui.pages.quality_page import QualityPage
             page = QualityPage(self._fresh_settings, self.pages)
+        elif row == ROW_OPENCLAW:
+            from autodub_gui.pages.openclaw_page import OpenClawPage
+            page = OpenClawPage(self._openclaw_runtime, self.pages)
         elif row == ROW_EDITOR_LAUNCHER:
             from autodub_gui.pages.editor_launcher_page import EditorLauncherPage
             page = EditorLauncherPage(self._fresh_settings, self.pages)
@@ -640,6 +651,7 @@ class MainWindow(QMainWindow):
                        self._preflight_worker, self._update_worker):
             if worker is not None and worker.isRunning():
                 worker.wait(5000)
+        self._openclaw_runtime.stop()
         event.accept()
 
 

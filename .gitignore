@@ -23,6 +23,7 @@ logs/
 
 # Du lieu ca nhan
 linkdouyin.txt
+openclaw.json
 
 # Models (nhieu GB; tai ve bang cac script trong scripts/)
 models/

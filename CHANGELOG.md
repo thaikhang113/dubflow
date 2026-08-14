@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.0.6 - 2026-08-14
+
+### Added
+
+- OpenClaw integration managed entirely by DubFlow.
+- Local HTTP bridge, token authentication, background queue worker and batch monitor.
+
+### Changed
+
+- OpenClaw setup no longer requires running Python commands or source files.
+
 ## 3.0.5 - 2026-08-14
 
 ### Added

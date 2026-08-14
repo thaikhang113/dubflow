@@ -26,8 +26,8 @@ Linux:
 ```bash
 python3 -m pip install -e .
 python3 -m pip install pyinstaller
-python3 scripts/build_linux.py --version 3.0.5
-python3 scripts/build_deb.py --no-build --version 3.0.5
+python3 scripts/build_linux.py --version 3.0.6
+python3 scripts/build_deb.py --no-build --version 3.0.6
 ```
 
 Linux build needs Qt runtime libraries and `dpkg-deb`. The `.deb` does not
@@ -38,7 +38,7 @@ support, and user credentials are not included in the package.
 
 ## Release workflow
 
-Push a semantic-version tag such as `v3.0.5`. GitHub Actions builds both
+Push a semantic-version tag such as `v3.0.6`. GitHub Actions builds both
 platforms, writes SHA256 checksum files, and publishes one GitHub Release.
 Do not publish artifacts from `main` manually.
 

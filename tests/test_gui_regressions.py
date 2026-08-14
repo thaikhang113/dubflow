@@ -488,6 +488,30 @@ def test_help_page_install_rows_use_in_app_buttons(monkeypatch):
     page.deleteLater()
     app.processEvents()
 
+def test_openclaw_page_is_app_managed(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from autodub.openclaw_runtime import OpenClawRuntime
+    from autodub_gui.pages.openclaw_page import OpenClawPage
+
+    app = QApplication.instance() or QApplication([])
+    runtime = OpenClawRuntime(data_dir=tmp_path)
+    page = OpenClawPage(runtime)
+
+    assert "Bật kết nối OpenClaw" in page.enable_box.text()
+    assert page.endpoint_edit.isReadOnly()
+    assert page.token_edit.isReadOnly()
+    assert "py -m" not in (page.toolTip() or "")
+    page.deleteLater()
+    runtime.stop()
+    app.processEvents()
+
+def test_app_registers_openclaw_as_a_tool_page():
+    source = _source("autodub_gui/app.py")
+    assert "ROW_OPENCLAW" in source
+    assert "OpenClawPage" in source
+    assert "self._openclaw_runtime" in source
+
 def test_logo_region_parser_accepts_empty_values() -> None:
     from autodub_gui.pages.new_project_page import NewProjectPage
 
