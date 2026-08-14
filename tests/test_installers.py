@@ -264,9 +264,11 @@ def test_ffmpeg_bootstrap_accepts_existing_system_install():
         lambda name: f"/usr/bin/{name}") == (
             "/usr/bin/ffmpeg", "/usr/bin/ffprobe")
 
-def test_ffmpeg_bootstrap_rejects_incomplete_system_install():
+def test_ffmpeg_bootstrap_rejects_incomplete_system_install(monkeypatch):
     from autodub_gui import workers_setup
 
+    # Keep this unit test independent from FFmpeg installed on the runner.
+    monkeypatch.setattr(workers_setup.sys, "platform", "win32")
     assert workers_setup._system_ffmpeg_pair(
         lambda name: "/usr/bin/ffmpeg" if name == "ffmpeg" else None) is None
 

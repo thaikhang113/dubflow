@@ -28,10 +28,14 @@ def test_bootstrap_state_recovers_from_corrupt_file(monkeypatch, tmp_path):
 
 def test_bootstrap_steps_include_all_engines():
     keys = [step.key for step in bootstrap.steps()]
-    assert keys == ["python", "ffmpeg", "vieneu", "whisper", "paraformer",
-                    "ocr", "douyin", "demucs", "voices"]
+    expected = ["python", "vieneu", "whisper", "paraformer",
+                "ocr", "douyin", "demucs", "voices"]
+    if not bootstrap.sys.platform.startswith("linux"):
+        expected.insert(1, "ffmpeg")
+    assert keys == expected
     assert bootstrap.steps()[0].kind == "python"
-    assert bootstrap.steps()[1].kind == "ffmpeg"
+    if not bootstrap.sys.platform.startswith("linux"):
+        assert bootstrap.steps()[1].kind == "ffmpeg"
     assert bootstrap.steps()[-2].script == "scripts/setup_demucs.py"
 
 def test_linux_bootstrap_does_not_offer_ffmpeg_download(monkeypatch):

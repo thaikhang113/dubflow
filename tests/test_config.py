@@ -165,8 +165,13 @@ def test_hybrid_ocr_defaults_to_paddle_with_optional_deepseek(monkeypatch):
 
     assert settings.ocr_backend == "hybrid"
     assert settings.deepseek_ocr_enabled is False
-    assert settings.deepseek_ocr_venv_python_path().replace("\\", "/").endswith(
+    suffix = (
         ".venv-deepseek-ocr/Scripts/python.exe"
+        if os.name == "nt"
+        else ".venv-deepseek-ocr/bin/python"
+    )
+    assert settings.deepseek_ocr_venv_python_path().replace("\\", "/").endswith(
+        suffix
     )
 
 
