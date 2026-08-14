@@ -12,6 +12,8 @@ datas = [
      os.path.join("autodub", "speech", "tts")),
     (os.path.join(ROOT, "autodub", "speech", "asr_paraformer_worker.py"),
      os.path.join("autodub", "speech")),
+    (os.path.join(ROOT, "autodub", "speech", "asr_whisper_worker.py"),
+     os.path.join("autodub", "speech")),
     (os.path.join(ROOT, "autodub", "media", "demucs_worker.py"),
      os.path.join("autodub", "media")),
     (os.path.join(ROOT, "autodub", "speech", "tts", "capcut_api", "Voice.json"),
@@ -34,7 +36,7 @@ hiddenimports = [
 ]
 hiddenimports += collect_submodules("autodub_gui")
 
-for package in ("yt_dlp", "faster_whisper", "ctranslate2"):
+for package in ("yt_dlp",):
     try:
         data, binary, hidden = collect_all(package)
     except Exception as exc:

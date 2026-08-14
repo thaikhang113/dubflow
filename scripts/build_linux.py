@@ -81,7 +81,7 @@ def archive(version: str) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-test", action="store_true")
-    parser.add_argument("--version", default="3.0.2")
+    parser.add_argument("--version", default="3.0.3")
     args = parser.parse_args()
     started = time.time()
 
@@ -93,6 +93,14 @@ def main() -> int:
     ])
     if not os.path.isfile(os.path.join(DIST, "DubFlow")):
         raise SystemExit("PyInstaller finished without dist/DubFlow/DubFlow")
+    for worker in (
+            os.path.join("autodub", "speech", "asr_whisper_worker.py"),
+            os.path.join("autodub", "speech", "asr_paraformer_worker.py"),
+            os.path.join("autodub", "speech", "tts", "vieneu_worker.py"),
+            os.path.join("autodub", "media", "demucs_worker.py")):
+        bundled = os.path.join(DIST, "_internal", worker)
+        if not os.path.isfile(bundled):
+            raise SystemExit(f"missing worker in bundle: {bundled}")
     assemble(args.version)
     if not args.no_test:
         smoke_test()

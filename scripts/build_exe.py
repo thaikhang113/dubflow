@@ -67,6 +67,14 @@ def step_pyinstaller() -> None:
     exe = os.path.join(DIST_DIR, "DubFlow.exe")
     if not os.path.isfile(exe):
         raise SystemExit(f"!! PyInstaller xong nhưng không thấy {exe}")
+    for worker in (
+            os.path.join("autodub", "speech", "asr_whisper_worker.py"),
+            os.path.join("autodub", "speech", "asr_paraformer_worker.py"),
+            os.path.join("autodub", "speech", "tts", "vieneu_worker.py"),
+            os.path.join("autodub", "media", "demucs_worker.py")):
+        bundled = os.path.join(DIST_DIR, "_internal", worker)
+        if not os.path.isfile(bundled):
+            raise SystemExit(f"!! thiếu worker trong bundle: {bundled}")
 
 
 def step_assemble() -> None:

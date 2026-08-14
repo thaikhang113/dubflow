@@ -27,8 +27,9 @@ def test_settings_defaults(monkeypatch):
     # Prevent load_dotenv from loading .env file values
     monkeypatch.setattr("autodub.config.load_dotenv", lambda *a, **kw: None)
 
-    for var in ("WHISPER_MODEL", "DEFAULT_SOURCE_LANG", "QUALITY_PRESET",
-                "AUDIO_SAMPLE_RATE", "OUTPUT_DIR", "VIDEO_URL"):
+    for var in ("WHISPER_MODEL", "ASR_ENGINE", "DEFAULT_SOURCE_LANG",
+                "QUALITY_PRESET", "AUDIO_SAMPLE_RATE", "OUTPUT_DIR",
+                "VIDEO_URL"):
         monkeypatch.delenv(var, raising=False)
 
     settings = Settings.load()

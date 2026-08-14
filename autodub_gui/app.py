@@ -29,7 +29,7 @@ from autodub_gui.ui.toast import TOASTS
 
 APP_NAME = "DubFlow"
 APP_TAGLINE = "Lồng tiếng video bằng AI"
-APP_VERSION = "3.0.2"
+APP_VERSION = "3.0.3"
 
 def _runtime_version() -> str:
     """Read release version written into frozen bundles."""
@@ -181,6 +181,8 @@ class MainWindow(QMainWindow):
         # Hỏi GitHub có bản mới không — nền, im lặng khi lỗi mạng.
         self._update_worker: QThread | None = None
         self._update_check_started = False
+        self._manual_update_check = False
+        self._update_found = False
         if os.environ.get("DUBFLOW_BOOTSTRAP_SYNC") != "1":
             QTimer.singleShot(_UPDATE_CHECK_DELAY_MS, self._check_updates)
 
@@ -394,15 +396,19 @@ class MainWindow(QMainWindow):
 
     def _header_actions(self, row: int) -> list[QWidget]:
         """Các nút riêng của từng trang trên thanh tiêu đề (dựng mới mỗi lần)."""
-        if row != ROW_HOME:
-            return []
         from autodub_gui.ui.buttons import GhostButton, PrimaryButton
+
+        btn_update = GhostButton("Kiểm tra cập nhật", icon=icons.reload())
+        btn_update.clicked.connect(lambda: self._check_updates(manual=True))
+        actions = [btn_update]
+        if row != ROW_HOME:
+            return actions
 
         btn_import = GhostButton("Nhập video")
         btn_import.clicked.connect(self._browse_home_video)
         btn_new = PrimaryButton("+ Tạo dự án mới")
         btn_new.clicked.connect(lambda: self._start_new_project())
-        return [btn_import, btn_new]
+        return [*actions, btn_import, btn_new]
 
     def _browse_home_video(self) -> None:
         page = self._page_widgets.get(ROW_HOME)
@@ -475,36 +481,57 @@ class MainWindow(QMainWindow):
             return
         self._check_updates()
 
-    def _check_updates(self) -> None:
+    def _check_updates(self, manual: bool = False) -> None:
         """Hỏi bản mới ở luồng nền; chỉ báo nhẹ khi thực sự có bản mới."""
         if os.environ.get("AUTODUB_SMOKE") == "1":
+            if manual:
+                TOASTS.info("Kiểm tra cập nhật bị tắt trong chế độ smoke test.")
             return  # phiên chạy thử tự động không gọi mạng
         from autodub_gui import bootstrap
         if not bootstrap.is_complete():
+            if manual:
+                TOASTS.warn("Hoàn tất cài đặt DubFlow trước khi kiểm tra cập nhật.")
             return  # Không chen updater vào wizard cài đặt lần đầu.
         if self._update_check_started:
             return
         self._update_check_started = True
+        self._manual_update_check = manual
+        self._update_found = False
         from autodub_gui.workers import UpdateCheckWorker
 
         try:
             repo = (Settings.load(override=True).update_repo
                     or "thaikhang113/dubflow")
         except Exception:  # noqa: BLE001 — cấu hình hỏng thì bỏ qua lượt này
+            self._update_check_started = False
+            if manual:
+                TOASTS.error("Không đọc được cấu hình cập nhật.")
             return
         if not repo:
+            self._update_check_started = False
+            if manual:
+                TOASTS.warn("Chưa cấu hình kho phát hành để kiểm tra cập nhật.")
             return
         worker = UpdateCheckWorker(repo, APP_VERSION, self)
         worker.found.connect(self._on_update_found)
+        worker.finished.connect(self._on_update_check_finished)
         self._update_worker = worker
         worker.start()
 
     def _on_update_found(self, info) -> None:
+        self._update_found = True
         from autodub_gui.update_dialog import UpdateDialog
 
         self._update_dialog = UpdateDialog(info, self)
         self._update_dialog.install_requested.connect(self._install_update)
         self._update_dialog.show()
+
+    def _on_update_check_finished(self) -> None:
+        manual = self._manual_update_check
+        self._manual_update_check = False
+        self._update_check_started = False
+        if manual and not self._update_found:
+            TOASTS.info("Không có bản mới, hoặc máy chưa kết nối được GitHub.")
 
     def _install_update(self, package_path: str) -> None:
         from autodub.updates import launch_installer

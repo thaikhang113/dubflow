@@ -33,6 +33,13 @@ def test_translation_model_updates_labeled_line_edit_through_public_api() -> Non
     assert "widget.set_text(model)" in source
 
 
+def test_header_exposes_manual_update_check() -> None:
+    source = _source("autodub_gui/app.py")
+    assert "Kiểm tra cập nhật" in source
+    assert "def _on_update_check_finished" in source
+    assert "_check_updates(manual=True)" in source
+
+
 def test_zero_argument_changed_signals_discard_payload() -> None:
     for path in (
         "autodub_gui/pages/editor_panels.py",

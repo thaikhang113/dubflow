@@ -26,6 +26,8 @@ datas = [
      os.path.join("autodub", "speech", "tts")),
     (os.path.join(ROOT, "autodub", "speech", "asr_paraformer_worker.py"),
      os.path.join("autodub", "speech")),
+    (os.path.join(ROOT, "autodub", "speech", "asr_whisper_worker.py"),
+     os.path.join("autodub", "speech")),
     (os.path.join(ROOT, "autodub", "media", "demucs_worker.py"),
      os.path.join("autodub", "media")),
     # Danh mục giọng CapCut — tài nguyên trong gói, đọc qua bundled_file.
@@ -68,7 +70,7 @@ except Exception as e:  # noqa: BLE001 — không được làm vỡ quá trình
 # qua HTTP tới máy chủ VoxDub (requests đã có sẵn).
 # playwright/PIL KHÔNG đóng gói: Douyin cài qua 'Cai dat tinh nang
 # Douyin.bat' (libs/ sideload).
-for pkg in ("yt_dlp", "faster_whisper", "ctranslate2"):
+for pkg in ("yt_dlp",):
     try:
         d, b, h = collect_all(pkg)
     except Exception as e:  # package tùy chọn chưa cài → bỏ qua, không vỡ build

@@ -27,6 +27,25 @@ def test_release_builders_bundle_setup_support_helper():
     assert "VoxDub" not in linux
 
 
+def test_release_specs_bundle_whisper_worker():
+    for name in ("autodub.spec", "autodub-linux.spec"):
+        source = (ROOT / name).read_text(encoding="utf-8")
+        assert "asr_whisper_worker.py" in source
+
+def test_release_builders_gate_all_python_workers():
+    workers = (
+        "asr_whisper_worker.py",
+        "asr_paraformer_worker.py",
+        "vieneu_worker.py",
+        "demucs_worker.py",
+    )
+    for name in ("scripts/build_exe.py", "scripts/build_linux.py"):
+        source = (ROOT / name).read_text(encoding="utf-8")
+        for worker in workers:
+            assert worker in source
+        assert "worker in bundle" in source or "worker trong bundle" in source
+
+
 def test_linux_runtime_probe_rejects_unsupported_python(monkeypatch):
     from autodub_gui import workers_setup
 
