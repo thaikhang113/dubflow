@@ -4,7 +4,7 @@ from __future__ import annotations
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QHBoxLayout, QLabel, QLineEdit, QVBoxLayout,
-    QWidget,
+    QPlainTextEdit, QWidget,
 )
 
 from autodub_gui import tokens
@@ -62,14 +62,24 @@ class OpenClawPage(BasePage):
         connection.body.addWidget(self.endpoint_edit)
         connection.body.addWidget(self.token_edit)
 
+        self.prompt_edit = QPlainTextEdit()
+        self.prompt_edit.setReadOnly(True)
+        self.prompt_edit.setPlaceholderText("Prompt kết nối OpenClaw")
+        self.prompt_edit.setAccessibleName("Prompt kết nối OpenClaw")
+        self.prompt_edit.setMaximumHeight(190)
+        connection.body.addWidget(self.prompt_edit)
+
         actions = QHBoxLayout()
         self.copy_button = GhostButton("Sao chép thông tin kết nối")
         self.copy_button.clicked.connect(self._copy_connection)
+        self.prompt_button = GhostButton("Sao chép prompt OpenClaw")
+        self.prompt_button.clicked.connect(self._copy_prompt)
         self.rotate_button = GhostButton("Tạo token mới")
         self.rotate_button.clicked.connect(self._rotate_token)
         self.test_button = PrimaryButton("Kiểm tra kết nối")
         self.test_button.clicked.connect(self._test_connection)
         actions.addWidget(self.copy_button)
+        actions.addWidget(self.prompt_button)
         actions.addWidget(self.rotate_button)
         actions.addStretch()
         actions.addWidget(self.test_button)
@@ -121,13 +131,17 @@ class OpenClawPage(BasePage):
         self.refresh()
         TOASTS.success("Đã tạo token OpenClaw mới.")
 
+    def _copy_prompt(self) -> None:
+        QApplication.clipboard().setText(self.runtime.connection_prompt())
+        TOASTS.success("Đã sao chép prompt kết nối OpenClaw.")
+
     def _test_connection(self) -> None:
-        if self.runtime.running:
-            self.status.setText("Kết nối local đang hoạt động.")
+        ok, detail = self.runtime.check_health()
+        self.status.setText(detail)
+        if ok:
             TOASTS.success("OpenClaw đang sẵn sàng.")
         else:
-            self.status.setText("OpenClaw đang tắt.")
-            TOASTS.warn("Hãy bật kết nối OpenClaw trước.")
+            TOASTS.warn(detail)
 
     def refresh(self) -> None:
         self.enable_box.blockSignals(True)
@@ -136,10 +150,12 @@ class OpenClawPage(BasePage):
         self.endpoint_edit.setText(self.runtime.endpoint or "Chưa bật")
         self.token_edit.setText(self.runtime.token if self.runtime.enabled
                                 else "Chưa bật")
+        self.prompt_edit.setPlainText(self.runtime.connection_prompt())
         self.status.setText(
             "Đang chạy trên máy này." if self.runtime.running
             else "Đang tắt. Bật để OpenClaw kết nối.")
         self.copy_button.setEnabled(self.runtime.running)
+        self.prompt_button.setEnabled(True)
         self.rotate_button.setEnabled(True)
         self.test_button.setEnabled(True)
         self._refresh_batches()

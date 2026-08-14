@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.0.7 - 2026-08-14
+
+### Added
+
+- Dynamic OpenClaw connection prompt with endpoint, token and workflow instructions.
+- In-app `/health` connection test for the OpenClaw bridge.
+
 ## 3.0.6 - 2026-08-14
 
 ### Added

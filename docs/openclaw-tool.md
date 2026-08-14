@@ -4,8 +4,12 @@ Mở DubFlow, vào mục `OpenClaw` trong nhóm Công cụ rồi bật `Bật k�
 OpenClaw`. Ứng dụng tự chạy API local và worker nền; người dùng không cần
 mở terminal, cài Python hoặc tải source code.
 
-Sao chép thông tin kết nối do DubFlow hiển thị vào cấu hình HTTP tool của
-OpenClaw. API chỉ lắng nghe trên máy local và yêu cầu Bearer token.
+Trong trang OpenClaw, sao chép prompt kết nối rồi dán vào OpenClaw. Prompt đã
+có endpoint, Bearer token, quy trình hỏi tùy chọn và các API cần gọi. API chỉ
+lắng nghe trên máy local và yêu cầu Bearer token.
+
+Nút kiểm tra kết nối gọi `GET /health` trong DubFlow. Sau đó OpenClaw cũng phải
+gọi lại endpoint này theo hướng dẫn trong prompt.
 
 Actions:
 

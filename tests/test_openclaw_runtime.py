@@ -85,3 +85,34 @@ def test_runtime_persists_enabled_state_and_rotates_token(tmp_path):
     assert restored.token != old_token
     restored.set_enabled(False)
     restored.stop()
+
+def test_runtime_builds_dynamic_connection_prompt(tmp_path):
+    runtime = OpenClawRuntime(data_dir=tmp_path)
+    runtime.start(worker=False)
+    try:
+        prompt = runtime.connection_prompt()
+        assert runtime.endpoint in prompt
+        assert runtime.token in prompt
+        for text in (
+            "GET /health",
+            "POST /v1/prepare",
+            "POST /v1/submit",
+            "GET /v1/batches/{batch_id}",
+            "retry-failed",
+        ):
+            assert text in prompt
+    finally:
+        runtime.stop()
+
+def test_runtime_health_check_uses_local_api(tmp_path):
+    runtime = OpenClawRuntime(data_dir=tmp_path)
+    runtime.start(worker=False)
+    try:
+        assert runtime.check_health() == (
+            True, "DubFlow API phản hồi /health.")
+    finally:
+        runtime.stop()
+
+def test_runtime_health_check_reports_disabled_api(tmp_path):
+    runtime = OpenClawRuntime(data_dir=tmp_path)
+    assert runtime.check_health() == (False, "DubFlow API đang tắt.")

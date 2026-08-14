@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "autodub"
-version = "3.0.6"
+version = "3.0.7"
 description = "Automatic video dubbing into Vietnamese: download → ASR → translate → TTS → mix → export"
 readme = "README.md"
 requires-python = ">=3.10"

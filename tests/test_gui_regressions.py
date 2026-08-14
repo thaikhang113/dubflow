@@ -501,6 +501,8 @@ def test_openclaw_page_is_app_managed(monkeypatch, tmp_path):
     assert "Bật kết nối OpenClaw" in page.enable_box.text()
     assert page.endpoint_edit.isReadOnly()
     assert page.token_edit.isReadOnly()
+    assert page.prompt_edit.isReadOnly()
+    assert "GET /health" in page.prompt_edit.toPlainText()
     assert "py -m" not in (page.toolTip() or "")
     page.deleteLater()
     runtime.stop()

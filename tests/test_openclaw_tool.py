@@ -1,6 +1,7 @@
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -151,7 +152,7 @@ def test_cli_emits_utf8_json_on_windows(tmp_path):
             {"action": "prepare", "text": "https://example.com/video"}
         ).encode("utf-8"),
         capture_output=True,
-        cwd=str(tmp_path.parent.parent),
+        cwd=str(Path(__file__).resolve().parents[1]),
     )
 
     assert result.returncode == 0

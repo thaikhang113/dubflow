@@ -6,6 +6,8 @@ import secrets
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 from urllib.parse import urlsplit
 
 from autodub.config import Settings
@@ -224,6 +226,52 @@ class OpenClawRuntime:
         self._token = secrets.token_urlsafe(32)
         self._write_config()
         return self._token
+
+    def connection_prompt(self) -> str:
+        endpoint = self.endpoint or "http://127.0.0.1:PORT"
+        return f"""Bạn là agent điều khiển DubFlow qua HTTP local.
+
+Kết nối:
+- URL: {endpoint}
+- Authorization: Bearer {self.token}
+- Chỉ gọi API khi người dùng yêu cầu xử lý video.
+
+Quy trình:
+1. Gọi GET /health để kiểm tra DubFlow.
+2. Gọi POST /v1/prepare với link video để lấy link hợp lệ và câu hỏi còn thiếu.
+3. Hỏi người dùng các lựa chọn còn thiếu như giọng đọc, phong cách dịch và kiểu phụ đề.
+4. Gọi POST /v1/submit để tạo batch xử lý.
+5. Theo dõi GET /v1/batches/{{batch_id}} và báo tiến trình theo từng video.
+6. Khi người dùng yêu cầu dừng, gọi POST /v1/batches/{{batch_id}}/cancel.
+7. Khi job lỗi, báo lỗi và chỉ gọi POST /v1/batches/{{batch_id}}/retry-failed khi người dùng xác nhận.
+8. Không tự thay đổi tùy chọn người dùng chưa xác nhận.
+
+Endpoint:
+- GET /health
+- POST /v1/prepare
+- POST /v1/submit
+- GET /v1/batches/{{batch_id}}
+- POST /v1/batches/{{batch_id}}/cancel
+- POST /v1/batches/{{batch_id}}/retry-failed
+
+Sau khi gọi /health thành công, báo người dùng rằng DubFlow đã sẵn sàng."""
+
+    def check_health(self) -> tuple[bool, str]:
+        if not self.running or not self.endpoint:
+            return False, "DubFlow API đang tắt."
+        request = Request(
+            self.endpoint + "/health",
+            headers={"Authorization": f"Bearer {self.token}"},
+        )
+        try:
+            with urlopen(request, timeout=3) as response:
+                if response.status == 200:
+                    return True, "DubFlow API phản hồi /health."
+                return False, f"DubFlow trả về HTTP {response.status}."
+        except HTTPError as exc:
+            return False, f"DubFlow từ chối kết nối (HTTP {exc.code})."
+        except (OSError, URLError) as exc:
+            return False, f"Không gọi được DubFlow: {exc}"
 
     def handle(self, payload: dict) -> dict:
         from autodub.openclaw_tool import handle
