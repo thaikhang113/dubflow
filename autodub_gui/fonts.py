@@ -18,7 +18,7 @@ import os
 
 from PySide6.QtGui import QFontDatabase
 
-from autodub.utils import app_root, bundled_font_files
+from autodub.utils import bundled_font_files, data_root
 
 FONTS_DIRNAME = "fonts"
 
@@ -34,7 +34,7 @@ _loaded: dict[str, list[str]] = {}
 
 def fonts_dir() -> str:
     """Thư mục chứa phông chữ dùng cho phụ đề."""
-    return os.path.join(app_root(), FONTS_DIRNAME)
+    return os.path.join(data_root(), FONTS_DIRNAME)
 
 
 def load_app_fonts() -> list[str]:

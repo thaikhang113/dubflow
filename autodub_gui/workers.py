@@ -514,7 +514,7 @@ class PreflightWorker(QThread):
 
 
 class UpdateCheckWorker(QThread):
-    """Hỏi GitHub xem có bản VoxDub mới không, chạy ở luồng nền.
+    """Hỏi GitHub xem có bản DubFlow mới không, chạy ở luồng nền.
 
     Gọi mạng nên không được chạy trên luồng giao diện. Không có mạng hay kho
     chưa có bản phát hành nào thì im lặng — kiểm tra nền không được làm phiền.

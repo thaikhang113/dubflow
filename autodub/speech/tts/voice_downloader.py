@@ -17,7 +17,12 @@ import zipfile
 from pathlib import Path
 
 from autodub.config import Settings
-from autodub.utils import app_root, setup_logging
+from autodub.utils import (
+    app_root,
+    bundled_file,
+    data_root as runtime_data_root,
+    setup_logging,
+)
 
 logger = setup_logging("autodub.voice_downloader")
 
@@ -28,9 +33,16 @@ VOICES_TARGET_DIR = "voices/preset_voices_vn"
 MANIFEST_NAME = "voices_manifest.json"
 
 
+def data_root() -> str:
+    """Keep source-test path override compatible with older callers."""
+    if getattr(__import__("sys"), "frozen", False):
+        return runtime_data_root()
+    return app_root()
+
+
 def voices_installed(settings: Settings) -> bool:
     """Kiểm tra xem voice library đã được tải và enrolled chưa."""
-    voices_dir = os.path.join(app_root(), VOICES_TARGET_DIR)
+    voices_dir = os.path.join(data_root(), VOICES_TARGET_DIR)
     manifest = os.path.join(voices_dir, MANIFEST_NAME)
     if not os.path.isfile(manifest):
         return False
@@ -71,13 +83,18 @@ def download_voices(progress_callback=None) -> str:
     return temp_zip
 
 def _local_voice_library() -> str | None:
-    """Return bundled WAV library path, if present."""
-    voices_dir = os.path.join(app_root(), VOICES_TARGET_DIR)
+    """Return local or bundled WAV library path, if present."""
+    voices_dir = os.path.join(data_root(), VOICES_TARGET_DIR)
     if os.path.isdir(voices_dir) and any(
         voices_dir_path.is_file()
         for voices_dir_path in Path(voices_dir).glob("*.wav")
     ):
         return voices_dir
+    bundled_dir = bundled_file(*VOICES_TARGET_DIR.split("/"))
+    if os.path.isdir(bundled_dir) and any(
+        path.is_file() for path in Path(bundled_dir).glob("*.wav")
+    ):
+        return bundled_dir
     return None
 
 
@@ -90,14 +107,23 @@ def extract_voices(zip_path: str) -> str:
     Returns:
         Đường dẫn thư mục đã giải nén
     """
-    target = os.path.join(app_root(), VOICES_TARGET_DIR)
+    target = os.path.join(data_root(), VOICES_TARGET_DIR)
 
     logger.info(f"Đang giải nén voices.zip...")
 
     with tempfile.TemporaryDirectory() as tmp:
-        # Extract toàn bộ vào temp trước
+        # Extract từng member sau khi kiểm tra path; ZIP có thể đến từ mạng.
         with zipfile.ZipFile(zip_path, "r") as zf:
-            zf.extractall(tmp)
+            tmp_root = Path(tmp).resolve()
+            for member in zf.infolist():
+                if member.is_dir():
+                    continue
+                target_path = (tmp_root / member.filename).resolve()
+                if target_path != tmp_root and tmp_root not in target_path.parents:
+                    raise ValueError("voice archive contains unsafe path")
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(member) as source, open(target_path, "wb") as dest:
+                    shutil.copyfileobj(source, dest)
 
         # Kiểm tra cấu trúc: nếu temp chỉ có 1 thư mục duy nhất → đó là root
         items = os.listdir(tmp)
@@ -267,12 +293,20 @@ def ensure_voices_available(settings: Settings, progress_callback=None) -> bool:
     if voices_installed(settings):
         logger.info("Voice library đã được cài đặt")
         return True
-
     try:
         # Dùng WAV đóng kèm trước; release URL cũ có thể không còn tồn tại.
         voices_dir = _local_voice_library()
         if voices_dir:
             logger.info(f"Dùng voice library local: {voices_dir}")
+            target_dir = os.path.join(data_root(), VOICES_TARGET_DIR)
+            if os.path.abspath(voices_dir) != os.path.abspath(target_dir):
+                os.makedirs(target_dir, exist_ok=True)
+                for item in os.listdir(voices_dir):
+                    source = os.path.join(voices_dir, item)
+                    target = os.path.join(target_dir, item)
+                    if not os.path.exists(target):
+                        shutil.copy2(source, target)
+                voices_dir = target_dir
         else:
             if progress_callback:
                 progress_callback("download_start", None, None)

@@ -15,10 +15,11 @@ from setup_support import retry_call
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VENV = os.path.join(ROOT, ".venv-ocr")
+DATA_ROOT = os.environ.get("DUBFLOW_DATA_DIR", ROOT)
+VENV = os.path.join(DATA_ROOT, ".venv-ocr")
 PYTHON = os.path.join(VENV, "Scripts" if os.name == "nt" else "bin",
                       "python.exe" if os.name == "nt" else "python")
-MODEL_DIR = os.path.join(ROOT, "models", "ocr")
+MODEL_DIR = os.path.join(DATA_ROOT, "models", "ocr")
 MARKER = os.path.join(MODEL_DIR, "installed_ok.json")
 os.environ.setdefault("PADDLE_PDX_CACHE_HOME", MODEL_DIR)
 

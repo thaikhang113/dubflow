@@ -21,10 +21,11 @@ import urllib.request
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VENV_DIR = os.path.join(PROJECT_ROOT, ".venv-asr")
+DATA_ROOT = os.environ.get("DUBFLOW_DATA_DIR", PROJECT_ROOT)
+VENV_DIR = os.path.join(DATA_ROOT, ".venv-asr")
 VENV_PY = os.path.join(VENV_DIR, "Scripts" if os.name == "nt" else "bin",
                        "python.exe" if os.name == "nt" else "python")
-MODEL_DIR = os.path.join(PROJECT_ROOT, "models", "paraformer-zh")
+MODEL_DIR = os.path.join(DATA_ROOT, "models", "paraformer-zh")
 MARKER = os.path.join(MODEL_DIR, "installed_ok.json")
 
 #: Phiên bản package ASR. Chốt trần major để lần cài sau không tự nhảy sang
@@ -82,6 +83,8 @@ def _extract_flat(tarball: str, dest_dir: str, wanted: tuple[str, ...]) -> None:
             if base in wanted and member.isfile():
                 with tf.extractfile(member) as src, \
                         open(os.path.join(dest_dir, base), "wb") as out:
+                    if src is None:
+                        continue
                     shutil.copyfileobj(src, out)
 
 
@@ -167,7 +170,7 @@ def step_smoke() -> None:
 
 
 def step_enable_env() -> None:
-    env_path = os.path.join(PROJECT_ROOT, ".env")
+    env_path = os.path.join(DATA_ROOT, ".env")
     lines: list[str] = []
     if os.path.exists(env_path):
         with open(env_path, encoding="utf-8") as f:

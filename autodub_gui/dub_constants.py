@@ -69,7 +69,7 @@ MODEL_SIZES: dict[str, str] = {
 # Mỗi mục gồm: chuỗi nhận dạng, tiêu đề ngắn, việc cần làm.
 FRIENDLY_ERRORS: list[tuple[str, str, str]] = [
     ("Video cũ đang được ứng dụng khác mở", "Video cũ đang bị khóa",
-     "Đóng video trong VoxDub hoặc trình phát ngoài rồi bấm Xuất video lại. "
+     "Đóng video trong DubFlow hoặc trình phát ngoài rồi bấm Xuất video lại. "
      "File export tạm vẫn được giữ nếu đã mã hóa xong."),
     ("timeout after", "FFmpeg quá thời gian",
      "FFmpeg đã chạy quá lâu và bị dừng. Kiểm tra file nguồn, driver GPU, "

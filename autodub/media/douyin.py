@@ -216,7 +216,7 @@ def _extract_via_playwright(
         # playwright không đóng trong exe — người dùng cài qua file bat.
         raise RuntimeError(
             "Tính năng tải Douyin chưa được cài. Đúp chuột file "
-            "'Cai dat tinh nang Douyin.bat' trong thư mục VoxDub, đợi cài "
+            "'Cai dat tinh nang Douyin.bat' trong thư mục DubFlow, đợi cài "
             "xong rồi mở lại app.") from None
 
     launch_args = [

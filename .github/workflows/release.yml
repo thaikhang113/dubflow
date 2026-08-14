@@ -44,13 +44,27 @@ jobs:
           python -m pip install pyinstaller
       - name: Build Linux bundle
         run: python scripts/build_linux.py --no-test --version "${{ steps.version.outputs.value }}"
+      - name: Build Debian package
+        run: python scripts/build_deb.py --no-build --version "${{ steps.version.outputs.value }}"
+      - name: Validate Debian package
+        shell: bash
+        run: |
+          set -euo pipefail
+          package="dist/dubflow_${{ steps.version.outputs.value }}_amd64.deb"
+          test -f "$package"
+          dpkg-deb --info "$package"
+          dpkg-deb --contents "$package" | grep -F "/opt/dubflow/DubFlow"
+          dpkg-deb --contents "$package" | grep -F "/usr/share/applications/dubflow.desktop"
+          test "$(dpkg-deb -f "$package" Package)" = "dubflow"
+          test "$(dpkg-deb -f "$package" Architecture)" = "amd64"
       - name: Create checksum
-        run: (cd dist && sha256sum DubFlow-v*-linux-x86_64.tar.gz) > dist/SHA256SUMS-linux.txt
+        run: |
+          (cd dist && sha256sum dubflow_*_amd64.deb) > dist/SHA256SUMS-linux.txt
       - uses: actions/upload-artifact@v4
         with:
           name: release-linux
           path: |
-            dist/DubFlow-v*-linux-x86_64.tar.gz
+            dist/dubflow_*_amd64.deb
             dist/SHA256SUMS-linux.txt
 
   build-windows:
@@ -84,17 +98,31 @@ jobs:
       - name: Build Windows bundle
         shell: pwsh
         run: python scripts/build_exe.py --no-test --version "${{ steps.version.outputs.value }}"
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            $iscc = "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+          }
+          if (-not (Test-Path $iscc)) {
+            throw "ISCC.exe not found"
+          }
+          & $iscc "/DAppVersion=${{ steps.version.outputs.value }}" scripts\DubFlow.iss
       - name: Create checksum
         shell: pwsh
         run: |
-          $archive = Get-ChildItem dist/DubFlow-v*-windows-x64.zip
+          $archive = Get-ChildItem dist/DubFlow-v*-windows-x64-setup.exe
           (Get-FileHash $archive.FullName -Algorithm SHA256).Hash.ToLower() + "  " + $archive.Name |
             Set-Content dist/SHA256SUMS-windows.txt
       - uses: actions/upload-artifact@v4
         with:
           name: release-windows
           path: |
-            dist/DubFlow-v*-windows-x64.zip
+            dist/DubFlow-v*-windows-x64-setup.exe
             dist/SHA256SUMS-windows.txt
 
   publish:

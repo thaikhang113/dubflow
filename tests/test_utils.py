@@ -5,6 +5,11 @@ from autodub.utils import (
 )
 
 
+def test_data_root_honors_runtime_override(monkeypatch, tmp_path):
+    monkeypatch.setenv("DUBFLOW_DATA_DIR", str(tmp_path))
+    from autodub.utils import data_root
+    assert data_root() == str(tmp_path)
+
 def test_setup_logging_returns_logger():
     logger = setup_logging("test_logger")
     assert isinstance(logger, logging.Logger)

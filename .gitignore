@@ -49,6 +49,8 @@ dist/
 pw-browsers/
 smoke_test_result.json
 smoke_err.txt
+source-smoke.stderr
+smoke_startup_trace.txt
 
 # Backend (chay tren may chu rieng)
 control_server/node_modules/

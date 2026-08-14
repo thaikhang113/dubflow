@@ -29,7 +29,21 @@ from autodub_gui.ui.toast import TOASTS
 
 APP_NAME = "DubFlow"
 APP_TAGLINE = "Lồng tiếng video bằng AI"
-APP_VERSION = "3.0.0"
+APP_VERSION = "3.0.2"
+
+def _runtime_version() -> str:
+    """Read release version written into frozen bundles."""
+    if not getattr(sys, "frozen", False):
+        return APP_VERSION
+    path = os.path.join(os.path.dirname(os.path.abspath(sys.executable)),
+                        "VERSION")
+    try:
+        value = open(path, encoding="utf-8").read().strip()
+    except OSError:
+        return APP_VERSION
+    return value or APP_VERSION
+
+APP_VERSION = _runtime_version()
 
 # -- Danh mục trang ----------------------------------------------------
 ROW_HOME, ROW_NEW, ROW_PROJECTS, ROW_BATCH, ROW_DOWNLOAD = 0, 1, 2, 3, 4
@@ -156,15 +170,19 @@ class MainWindow(QMainWindow):
         self.switch_page(ROW_NEW)
         self.refresh_system_status()
         self._install_shortcuts()
-        self._schedule_prewarm()
+        if os.environ.get("AUTODUB_SMOKE") != "1":
+            self._schedule_prewarm()
         # Kiểm tra tiền chuyến bay sau khi cửa sổ đã hiện — không chặn mở app.
         self._preflight_worker: QThread | None = None
         # Màn chào lần chạy đầu tiên — hiện trước kiểm tra tiền chuyến bay
         # để người mới thấy bức tranh chung trước khi bị hỏi từng thứ thiếu.
-        QTimer.singleShot(_FIRST_RUN_DELAY_MS, self._maybe_first_run)
+        if os.environ.get("DUBFLOW_BOOTSTRAP_SYNC") != "1":
+            QTimer.singleShot(_FIRST_RUN_DELAY_MS, self._maybe_first_run)
         # Hỏi GitHub có bản mới không — nền, im lặng khi lỗi mạng.
         self._update_worker: QThread | None = None
-        QTimer.singleShot(_UPDATE_CHECK_DELAY_MS, self._check_updates)
+        self._update_check_started = False
+        if os.environ.get("DUBFLOW_BOOTSTRAP_SYNC") != "1":
+            QTimer.singleShot(_UPDATE_CHECK_DELAY_MS, self._check_updates)
 
     # -- Dựng sẵn các trang lúc máy rảnh -------------------------------
     def _schedule_prewarm(self) -> None:
@@ -446,23 +464,27 @@ class MainWindow(QMainWindow):
     # -- Kiểm tra tiền chuyến bay --------------------------------------
     def _maybe_first_run(self) -> None:
         """Hiện wizard cài đặt nếu đây là lần chạy đầu tiên trên máy này."""
-        try:
-            showed = False
-        except Exception:  # noqa: BLE001 — wizard hỏng không được chặn app
-            showed = False
-
-        # Fallback: nếu wizard không hiện thì vẫn kiểm tra first_run cũ
-        if not showed:
-            try:
-                from autodub_gui.first_run import maybe_show_first_run
-                maybe_show_first_run(self)
-            except Exception:  # noqa: BLE001
-                pass
+        if os.environ.get("AUTODUB_SMOKE") == "1":
+            return
+        from autodub_gui.first_run import maybe_show_first_run
+        maybe_show_first_run(self)
+        from autodub_gui import bootstrap
+        if not bootstrap.is_complete():
+            TOASTS.warn("Hoàn tất cài đặt DubFlow trước khi sử dụng.")
+            self.close()
+            return
+        self._check_updates()
 
     def _check_updates(self) -> None:
         """Hỏi bản mới ở luồng nền; chỉ báo nhẹ khi thực sự có bản mới."""
         if os.environ.get("AUTODUB_SMOKE") == "1":
             return  # phiên chạy thử tự động không gọi mạng
+        from autodub_gui import bootstrap
+        if not bootstrap.is_complete():
+            return  # Không chen updater vào wizard cài đặt lần đầu.
+        if self._update_check_started:
+            return
+        self._update_check_started = True
         from autodub_gui.workers import UpdateCheckWorker
 
         try:
@@ -478,12 +500,22 @@ class MainWindow(QMainWindow):
         worker.start()
 
     def _on_update_found(self, info) -> None:
-        from autodub_gui.system_open import open_url
+        from autodub_gui.update_dialog import UpdateDialog
 
-        TOASTS.info(
-            f"Có bản DubFlow mới v{info.version} (bạn đang dùng v{APP_VERSION}).",
-            action_label="Tải bản mới",
-            on_action=lambda url=info.url: open_url(url))
+        self._update_dialog = UpdateDialog(info, self)
+        self._update_dialog.install_requested.connect(self._install_update)
+        self._update_dialog.show()
+
+    def _install_update(self, package_path: str) -> None:
+        from autodub.updates import launch_installer
+
+        try:
+            launch_installer(package_path)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Không thể cài cập nhật", str(exc))
+            return
+        self._force_close = True
+        self.close()
 
     def _run_preflight(self) -> None:
         """Kiểm tra máy ở luồng nền; chỉ báo khi có mục chặn hoặc cảnh báo."""
@@ -604,17 +636,16 @@ def _smoke_report(window: MainWindow) -> int:
     """Chế độ tự kiểm tra (AUTODUB_SMOKE=1): ghi kết quả chẩn đoán rồi thoát."""
     import json
     import shutil
+    import traceback
 
-    from autodub.utils import app_root
-
-    for row in (*(p[0] for p in PAGES), ROW_EDITOR, ROW_EDITOR_LAUNCHER):
-        window._ensure_page(row)
+    from autodub.utils import app_root, data_root
 
     settings = Settings.load(override=True)
     from autodub.speech.tts.voices import catalog
 
     checks = {
-        "gui_constructed": window.pages.count() == PAGE_COUNT,
+        "smoke_error": None,
+        "gui_constructed": True,
         "page_count": window.pages.count(),
         "app_root": app_root(),
         "cwd": os.getcwd(),
@@ -635,19 +666,27 @@ def _smoke_report(window: MainWindow) -> int:
         "playwright_importable": True,
         "new_modules_importable": True,
         "multimedia_importable": True,
+        "bundled_voice_manifest": os.path.isfile(
+            __import__("autodub.utils", fromlist=["bundled_file"]).bundled_file(
+                "voices", "preset_voices_vn", "voices_manifest.json"
+            )
+        ),
         "video_playable": None,
         "app_fonts_loaded": 0,
     }
-    _probe_optional_imports(checks)
-    _probe_video_playback(checks, settings)
-    _probe_env_file(checks)
+    try:
+        _probe_optional_imports(checks)
+        _probe_video_playback(checks, settings)
+        _probe_env_file(checks)
+    except Exception:
+        checks["smoke_error"] = traceback.format_exc()
 
     required = ("gui_constructed", "env_path_writable", "yt_dlp_importable",
-                "faster_whisper_importable", "worker_scripts_found",
-                "new_modules_importable", "multimedia_importable")
+                "worker_scripts_found", "new_modules_importable",
+                "multimedia_importable", "bundled_voice_manifest")
     checks["ok"] = all(checks.get(k) for k in required)
 
-    out = os.path.join(app_root(), "smoke_test_result.json")
+    out = os.path.join(data_root(), "smoke_test_result.json")
     with open(out, "w", encoding="utf-8") as f:
         json.dump(checks, f, ensure_ascii=False, indent=2)
     return 0 if checks["ok"] else 1
@@ -768,7 +807,7 @@ def main() -> int:
         import ctypes
         try:
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-                "VoxDub.Studio")
+                "DubFlow.Studio")
         except (AttributeError, OSError):
             pass  # Windows quá cũ — taskbar dùng icon mặc định, không sao
     QApplication.setHighDpiScaleFactorRoundingPolicy(
@@ -799,33 +838,58 @@ def main() -> int:
 
     # Tạo .env từ .env.example nếu chưa có — tránh Settings.load() dùng toàn
     # giá trị mặc định mà không ghi lại được gì cho lần sau.
-    from autodub.utils import app_root as _app_root
-    _env_path = os.path.join(_app_root(), ".env")
+    from autodub.utils import app_root as _app_root, data_root as _data_root
+    _env_path = os.path.join(_data_root(), ".env")
     _env_example = os.path.join(_app_root(), ".env.example")
     if not os.path.isfile(_env_path) and os.path.isfile(_env_example):
         import shutil as _shutil
         try:
+            os.makedirs(_data_root(), exist_ok=True)
             _shutil.copy(_env_example, _env_path)
         except OSError:
             pass
 
     # Nếu người dùng (hoặc wizard) đã tải FFmpeg về bin/ thì thêm ngay vào PATH
     # để shutil.which("ffmpeg") và preflight tìm thấy ngay trong cùng phiên.
-    _local_bin = os.path.join(_app_root(), "bin")
+    _local_bin = os.path.join(_data_root(), "bin")
     if os.path.isdir(_local_bin):
         _cur_path = os.environ.get("PATH", "")
         if _local_bin.lower() not in _cur_path.lower():
             os.environ["PATH"] = _local_bin + os.pathsep + _cur_path
 
+    from autodub_gui import bootstrap
+
+    needs_bootstrap = (
+        os.environ.get("AUTODUB_SMOKE") != "1"
+        and not bootstrap.is_complete()
+    )
+    if needs_bootstrap:
+        os.environ["DUBFLOW_BOOTSTRAP_SYNC"] = "1"
+
     settings = Settings.load()
     window = MainWindow()      # phím tắt được cửa sổ tự đăng ký khi dựng
+
+    # Complete first-run setup before exposing the main window. This keeps
+    # partially installed apps from looking ready while required engines are
+    # still missing.
+    if os.environ.get("AUTODUB_SMOKE") != "1":
+        from autodub_gui.first_run import maybe_show_first_run
+        maybe_show_first_run(window)
+        if not bootstrap.is_complete():
+            window.close()
+            os.environ.pop("DUBFLOW_BOOTSTRAP_SYNC", None)
+            return 0
+        settings = Settings.load(override=True)
+
+    os.environ.pop("DUBFLOW_BOOTSTRAP_SYNC", None)
     window.show()
 
     # Tải + enroll voice library nếu chưa có (chỉ khi VieNeu đã cài).
-    # Chạy SAU window.show() để app loop đã khởi động, dialog mới hiển thị đúng.
+    # Chạy sau khi cửa sổ chính hiển thị để dialog hiển thị đúng.
     if os.environ.get("AUTODUB_SMOKE") != "1":
         from autodub_gui.voice_setup_dialog import VoiceSetupDialog
         VoiceSetupDialog.ensure_voices(settings, window)
+        window._check_updates()
 
     startup_timer = _install_startup_watch(window)
 

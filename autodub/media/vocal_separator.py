@@ -20,8 +20,10 @@ import threading
 from autodub.resources import GPU_LOCK
 from autodub.utils import (
     bundled_file,
-    ffmpeg_timeout_s,
+    demucs_model_dir,
+    demucs_venv_python,
     gpu_venv_dir,
+    ffmpeg_timeout_s,
     setup_logging,
 )
 
@@ -56,7 +58,7 @@ class DemucsCache:
             return False
         if self._proc is not None and self._proc.poll() is None:
             return True
-        python = gpu_venv_python()
+        python = demucs_venv_python()
         if not python:
             self._failed = True
             return False
@@ -67,10 +69,14 @@ class DemucsCache:
             self._failed = True
             return False
         try:
+            env = dict(os.environ)
+            env.setdefault("TORCH_HOME",
+                           os.path.join(demucs_model_dir(), "torch"))
             self._proc = subprocess.Popen(
                 [python, _WORKER_SCRIPT, "--serve"],
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL, encoding="utf-8", errors="replace")
+                stderr=subprocess.DEVNULL, encoding="utf-8", errors="replace",
+                env=env)
             ready = json.loads(self._read_line(_SEPARATE_TIMEOUT))
         except Exception as e:
             logger.warning(f"Demucs cache không khởi động được ({e}) — "
@@ -243,13 +249,10 @@ def separate_vocals(
 
 
 def gpu_venv_python() -> str:
-    """Trình thông dịch của venv có torch bản CUDA, hoặc chuỗi rỗng.
+    """Trình thông dịch của venv CUDA cũ, hoặc chuỗi rỗng.
 
-    ``DEMUCS_VENV_PYTHON`` trong .env ghi đè, cho ai muốn trỏ tới venv khác.
+    Dùng cho Whisper và scheduling GPU; không trả venv Demucs CPU.
     """
-    override = os.environ.get("DEMUCS_VENV_PYTHON", "").strip()
-    if override:
-        return override if os.path.isfile(override) else ""
     venv = gpu_venv_dir()
     if not venv:
         return ""
@@ -274,7 +277,7 @@ def _run_demucs_gpu_worker(
     Trả về False để quay về đường CPU trong tiến trình chính (không có venv,
     venv đó chưa cài demucs, hoặc tiến trình con chết).
     """
-    python = gpu_venv_python()
+    python = demucs_venv_python()
     if not python:
         return False
 
@@ -286,6 +289,8 @@ def _run_demucs_gpu_worker(
     if _low_ram():
         cmd.append("--chunked")
     logger.info(f"Running Demucs ({model_name}) in GPU worker on {input_wav}")
+    env = dict(os.environ)
+    env.setdefault("TORCH_HOME", os.path.join(demucs_model_dir(), "torch"))
     try:
         # GPU_LOCK: pipeline đã *dự đoán* ASR không dùng GPU trước khi cho hai
         # việc chạy song song. Lock là lưới an toàn cho lúc dự đoán sai — khi
@@ -295,7 +300,7 @@ def _run_demucs_gpu_worker(
         with GPU_LOCK:
             from autodub.cancel import run_registered
             result = run_registered(
-                cmd, capture_output=True, encoding="utf-8",
+                cmd, capture_output=True, encoding="utf-8", env=env,
                 errors="replace", text=True, timeout=3600)
     except subprocess.TimeoutExpired:
         logger.warning("Demucs GPU worker quá 60 phút — chuyển sang CPU")
@@ -312,20 +317,49 @@ def _run_demucs_gpu_worker(
     return True
 
 
-def _run_demucs(input_wav: str, vocals_out: str, no_vocals_out: str, model_name: str) -> None:
-    """Run Demucs via its Python API; write stems with soundfile.
+def _run_demucs(input_wav: str, vocals_out: str, no_vocals_out: str,
+                model_name: str) -> None:
+    """Run CPU Demucs in persistent external venv.
 
-    Dùng chung :func:`autodub.media.demucs_worker.separate_file` với tiến
-    trình con GPU — một chỗ logic duy nhất: đọc float32, denormalize tại
-    chỗ, và tự chuyển sang tách theo khúc khi video dài / máy ít RAM.
+    Frozen app excludes torch/Demucs, so CPU fallback must cross same worker
+    boundary as GPU path.
     """
-    from autodub.media.demucs_worker import separate_file
-
-    logger.info(f"Loading Demucs model: {model_name}")
-    logger.info(f"Running Demucs ({model_name}) on {input_wav}")
-    separate_file(input_wav, vocals_out, no_vocals_out,
-                  model_name=model_name, device="cpu",
-                  force_chunked=_low_ram())
+    python = demucs_venv_python()
+    if not python:
+        raise RuntimeError(
+            "Chưa cài Demucs. Chạy lại first-run setup để cài .venv-demucs."
+        )
+    cmd = [
+        python, _WORKER_SCRIPT,
+        "--input", os.path.abspath(input_wav),
+        "--vocals", os.path.abspath(vocals_out),
+        "--no-vocals", os.path.abspath(no_vocals_out),
+        "--model", model_name,
+    ]
+    if _low_ram():
+        cmd.append("--chunked")
+    logger.info(f"Running Demucs ({model_name}) in CPU worker on {input_wav}")
+    env = dict(os.environ)
+    env.setdefault("TORCH_HOME", os.path.join(demucs_model_dir(), "torch"))
+    try:
+        result = subprocess.run(
+            cmd, env=env, capture_output=True, encoding="utf-8",
+            errors="replace", text=True, timeout=_SEPARATE_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("Demucs CPU worker timed out") from exc
+    lines = [line.strip() for line in (result.stdout or "").splitlines()
+             if line.strip()]
+    try:
+        response = json.loads(lines[-1])
+    except (json.JSONDecodeError, IndexError) as exc:
+        raise RuntimeError(
+            f"Demucs CPU worker returned no JSON: {(result.stderr or '')[-300:]}"
+        ) from exc
+    if result.returncode != 0 or not response.get("ok"):
+        raise RuntimeError(
+            f"Demucs CPU worker failed: {response.get('error', 'unknown error')}"
+        )
 
 
 def _normalize(src: str, dst: str, sample_rate: str, channels: int = 1) -> None:

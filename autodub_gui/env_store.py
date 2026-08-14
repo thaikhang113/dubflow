@@ -10,9 +10,9 @@ from __future__ import annotations
 import os
 import tempfile
 
-from autodub.utils import app_root
+from autodub.utils import data_root
 
-ENV_PATH = os.path.join(app_root(), ".env")
+ENV_PATH = os.path.join(data_root(), ".env")
 
 _TRUE_WORDS = ("1", "true", "yes", "on")
 _FALSE_WORDS = ("0", "false", "no", "off")

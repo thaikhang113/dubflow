@@ -9,7 +9,7 @@ if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "VoxDub Studio - cai tat ca thanh phan"
+echo "DubFlow - cai tat ca thanh phan"
 echo "Se cai runtime .venv, Demucs, Whisper, VieNeu, Paraformer, PaddleOCR va Chromium."
 echo
 
@@ -33,6 +33,7 @@ fi
 "$PYTHON_BIN" scripts/setup_paraformer.py
 "$PYTHON_BIN" scripts/setup_ocr.py || echo "[CANH BAO] OCR khong cai duoc - app van chay voi blur thu cong"
 "$PYTHON_BIN" scripts/setup_douyin.py
+"$PYTHON_BIN" scripts/setup_demucs.py
 
 echo
 echo "[OK] Cai tat ca thanh phan xong."

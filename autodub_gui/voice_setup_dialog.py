@@ -93,7 +93,7 @@ class VoiceSetupDialog(QDialog):
 
         # Mô tả
         desc = QLabel(
-            "Lần đầu chạy app, VoxDub cần tải bộ giọng đọc từ máy chủ.\n"
+            "Lần đầu chạy app, DubFlow cần tải bộ giọng đọc từ máy chủ.\n"
             "Quá trình này chỉ diễn ra MỘT LẦN DUY NHẤT.")
         desc.setWordWrap(True)
         desc.setStyleSheet(f"color: {tokens.TEXT_SECONDARY};")

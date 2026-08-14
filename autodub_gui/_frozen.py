@@ -10,7 +10,7 @@ import os
 import subprocess
 import sys
 
-from autodub.utils import app_root
+from autodub.utils import app_root, data_root
 
 
 def is_frozen() -> bool:
@@ -20,7 +20,7 @@ def is_frozen() -> bool:
 def browsers_dir() -> str:
     """Thư mục chứa Chromium của Playwright — nằm cạnh app để bản đóng gói
     tự quản lý, không rơi vào %LOCALAPPDATA% mặc định."""
-    return os.path.join(app_root(), "pw-browsers")
+    return os.path.join(data_root(), "pw-browsers")
 
 
 def libs_dir() -> str:
@@ -29,7 +29,7 @@ def libs_dir() -> str:
     Các tính năng tùy chọn (Douyin/playwright...) không đóng trong exe —
     script 'Cai dat tinh nang Douyin.bat' cài chúng vào đây để exe nhỏ gọn.
     """
-    return os.path.join(app_root(), "libs")
+    return os.path.join(data_root(), "libs")
 
 
 def _prepend_path(*dirs: str) -> None:
@@ -80,7 +80,11 @@ def init() -> None:
 
     # ffmpeg.exe / yt-dlp.exe thả cạnh exe (hoặc trong bin/) là dùng được ngay,
     # không cần người dùng chỉnh PATH hệ thống.
-    _prepend_path(root, os.path.join(root, "bin"))
+    _prepend_path(
+        root,
+        os.path.join(root, "bin"),
+        os.path.join(data_root(), "bin"),
+    )
 
     # Chromium của Playwright sống cạnh app (nút tải trong tab Cài đặt).
     os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", browsers_dir())
@@ -98,6 +102,9 @@ def init() -> None:
     if not is_frozen():
         return
 
+    runtime_root = data_root()
+    os.makedirs(runtime_root, exist_ok=True)
+    os.environ.setdefault("DUBFLOW_DATA_DIR", runtime_root)
     # Đường dẫn tương đối (thư mục output, downloads…) neo vào cạnh exe
     # thay vì CWD bất kỳ mà shortcut khởi chạy.
-    os.chdir(root)
+    os.chdir(runtime_root)

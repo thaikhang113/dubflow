@@ -134,7 +134,7 @@ class ConfirmDialog(QDialog):
             buttons.addWidget(btn_retry)
         if on_open_log is not None:
             btn_log = GhostButton("Mở log", icon=icons.folder(tokens.TEXT_SECONDARY))
-            btn_log.setToolTip("Mở thư mục nhật ký VoxDub")
+            btn_log.setToolTip("Mở thư mục nhật ký DubFlow")
             btn_log.clicked.connect(lambda: (self.accept(), on_open_log()))
             buttons.addWidget(btn_log)
         buttons.addStretch()

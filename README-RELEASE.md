@@ -6,8 +6,8 @@ synthesis, subtitle generation, and video export.
 
 ## Supported release targets
 
-- Windows 10/11 x64: PyInstaller onedir bundle (`DubFlow.exe`).
-- Linux x86_64: PyInstaller onedir bundle in `tar.gz`.
+- Windows 10/11 x64: Inno Setup installer (`DubFlow-...-setup.exe`).
+- Linux x86_64: Debian package (`dubflow_<version>_amd64.deb`).
 - CPU mode is the baseline. NVIDIA acceleration is optional and depends on
   the installed driver and model runtime.
 
@@ -26,17 +26,23 @@ Linux:
 ```bash
 python3 -m pip install -e .
 python3 -m pip install pyinstaller
-python3 scripts/build_linux.py --version 0.1.0
+python3 scripts/build_linux.py --version 3.0.2
+python3 scripts/build_deb.py --no-build --version 3.0.2
 ```
 
-Linux build needs system FFmpeg and Qt runtime libraries. The build does not
-include ASR/TTS models, CUDA, or user credentials.
+Linux build needs Qt runtime libraries and `dpkg-deb`. The `.deb` does not
+require Python on the host: first-run setup downloads a verified portable
+Python 3.12 runtime into the user data directory. FFmpeg, ASR/TTS models,
+CUDA support, and user credentials are not included in the package.
 
 ## Release workflow
 
-Push a semantic-version tag such as `v0.1.0`. GitHub Actions builds both
+Push a semantic-version tag such as `v3.0.2`. GitHub Actions builds both
 platforms, writes SHA256 checksum files, and publishes one GitHub Release.
 Do not publish artifacts from `main` manually.
+
+Each release also includes a platform checksum file. DubFlow uses these files
+for in-app update verification before launching the installer.
 
 ## Release rules
 

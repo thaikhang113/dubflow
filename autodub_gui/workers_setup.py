@@ -5,17 +5,19 @@
 """
 from __future__ import annotations
 
-import io
 import os
+import hashlib
 import shutil
 import subprocess
 import sys
+import tarfile
+import tempfile
 import urllib.request
 import zipfile
 
 from PySide6.QtCore import QThread, Signal
 
-from autodub.utils import app_root
+from autodub.utils import app_root, data_root
 from autodub_gui.status_text import STATUS_ERROR, STATUS_OK
 
 # --------------------------------------------------------------------------- #
@@ -37,13 +39,81 @@ _NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 #: Giữ khớp với thứ tự dò trong các file .bat do build_exe.py sinh ra —
 #: 3.13+ chưa có wheel cho onnxruntime/ctranslate2 nên KHÔNG được chọn.
 _SUPPORTED_PY = ("3.12", "3.11", "3.10")
+_PORTABLE_PYTHON_DIR = ".python-runtime"
+_PORTABLE_PYTHON_URL = (
+    "https://github.com/astral-sh/python-build-standalone/releases/download/"
+    "20260807/cpython-3.12.13%2B20260807-x86_64-unknown-linux-gnu-"
+    "install_only_stripped.tar.gz"
+)
+_PORTABLE_PYTHON_SHA256 = (
+    "506191be3ee7bd190a8834dcdc1b3bc70aab50608deccc711935aa007239cabd"
+)
+
+def _portable_python() -> str:
+    root = os.path.join(data_root(), _PORTABLE_PYTHON_DIR)
+    candidate = os.path.join(root, "bin", "python3")
+    return candidate if os.path.isfile(candidate) else ""
+
+def _download_portable_python(log, progress) -> str:
+    os.makedirs(data_root(), exist_ok=True)
+    root = os.path.join(data_root(), _PORTABLE_PYTHON_DIR)
+    archive_path = os.path.join(data_root(), "_python-runtime.tar.gz")
+    temp_root = tempfile.mkdtemp(prefix="dubflow-python-", dir=data_root())
+    try:
+        log("Đang tải Python runtime portable cho Linux...")
+        digest = hashlib.sha256()
+        request = urllib.request.Request(
+            _PORTABLE_PYTHON_URL,
+            headers={"User-Agent": "DubFlow-Setup/1.0"},
+        )
+        with urllib.request.urlopen(request, timeout=120) as response:
+            total = int(response.headers.get("Content-Length") or 0)
+            downloaded = 0
+            with open(archive_path, "wb") as handle:
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    handle.write(chunk)
+                    digest.update(chunk)
+                    downloaded += len(chunk)
+                    if total:
+                        progress(min(90, int(downloaded * 90 / total)))
+        if digest.hexdigest() != _PORTABLE_PYTHON_SHA256:
+            raise RuntimeError("Python runtime tải về không khớp SHA256.")
+
+        with tarfile.open(archive_path, "r:gz") as archive:
+            members = archive.getmembers()
+            for member in members:
+                target = os.path.realpath(os.path.join(temp_root, member.name))
+                if not target.startswith(os.path.realpath(temp_root) + os.sep):
+                    raise RuntimeError("Python runtime có đường dẫn archive không an toàn.")
+            archive.extractall(temp_root)
+        os.makedirs(os.path.dirname(root), exist_ok=True)
+        if os.path.isdir(root):
+            shutil.rmtree(root)
+        shutil.move(os.path.join(temp_root, "python"), root)
+        result = _portable_python()
+        if not result:
+            raise RuntimeError("Không tìm thấy Python executable sau khi giải nén.")
+        progress(100)
+        return result
+    finally:
+        try:
+            os.remove(archive_path)
+        except OSError:
+            pass
+        shutil.rmtree(temp_root, ignore_errors=True)
 
 
 def _probe_python(cmd: list[str]) -> str:
     """Trả về đường dẫn thật của trình thông dịch nếu chạy được, else ""."""
     try:
         out = subprocess.run(
-            [*cmd, "-c", "import sys; print(sys.executable)"],
+            [*cmd, "-c",
+             "import sys; "
+             "print(sys.executable if (3, 10) <= sys.version_info[:2] <= "
+             "(3, 12) else '')"],
             capture_output=True, text=True, timeout=15,
             creationflags=_NO_WINDOW,
         )
@@ -57,16 +127,32 @@ def _probe_python(cmd: list[str]) -> str:
 def _find_python() -> str:
     """Đường dẫn Python chạy được scripts/setup_*.py.
 
-    Bản đóng gói: ``sys.executable`` là VoxDub.exe — không chạy được .py, nên
+    Bản đóng gói: ``sys.executable`` là DubFlow.exe — không chạy được .py, nên
     phải mượn Python của máy. Bản dev: Python đang chạy app có thể là phiên
     bản quá mới (3.13+) so với các gói mà script cần cài, nên vẫn ưu tiên dò
     3.12/3.11/3.10 qua ``py`` launcher trước, giống các file .bat.
     """
+    if sys.platform != "win32":
+        portable = _portable_python()
+        if portable and _probe_python([portable]):
+            return portable
+
     if sys.platform == "win32":
         for version in _SUPPORTED_PY:
             found = _probe_python(["py", f"-{version}"])
             if found:
                 return found
+        candidates = (
+            os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs",
+                         "Python", "Python312", "python.exe"),
+            os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs",
+                         "Python", "Python311", "python.exe"),
+            os.path.join(os.environ.get("ProgramFiles", ""), "Python312",
+                         "python.exe"),
+        )
+        for candidate in candidates:
+            if os.path.isfile(candidate) and _probe_python([candidate]):
+                return candidate
 
     # Python đang chạy app — chỉ dùng khi bản thân nó được hỗ trợ.
     if not getattr(sys, "frozen", False):
@@ -74,7 +160,10 @@ def _find_python() -> str:
         if current in _SUPPORTED_PY:
             return sys.executable
 
-    for candidate in ("py", "python3", "python"):
+    candidates = (
+        "python3.12", "python3.11", "python3.10", "python3", "python"
+    ) if sys.platform != "win32" else ()
+    for candidate in candidates:
         exe = shutil.which(candidate)
         if exe and _probe_python([exe]):
             return exe
@@ -82,6 +171,57 @@ def _find_python() -> str:
     raise RuntimeError(
         "Không tìm thấy Python 3.10–3.12 trên máy. Hãy cài Python 3.12 từ "
         "python.org (nhớ tích 'Add python.exe to PATH') rồi bấm Thử lại.")
+
+class PythonRuntimeWorker(QThread):
+    """Ensure external Python exists for first-run setup scripts."""
+
+    progress = Signal(int)
+    log = Signal(str)
+    finished_ok = Signal()
+    failed = Signal(str)
+
+    def run(self) -> None:
+        try:
+            try:
+                python = _find_python()
+                self.log.emit(f"{STATUS_OK} Python đã sẵn sàng: {python}")
+                self.progress.emit(100)
+                self.finished_ok.emit()
+                return
+            except RuntimeError:
+                pass
+
+            if sys.platform == "win32":
+                self.log.emit("Đang cài Python 3.12 qua winget...")
+                self.progress.emit(10)
+                command = [
+                    "winget", "install", "--id", "Python.Python.3.12",
+                    "--scope", "user", "--silent",
+                    "--accept-source-agreements",
+                    "--accept-package-agreements",
+                ]
+                proc = subprocess.run(
+                    command, capture_output=True, text=True,
+                    encoding="utf-8", errors="replace",
+                    timeout=900, creationflags=_NO_WINDOW,
+                )
+                if proc.returncode != 0:
+                    tail = (proc.stderr or proc.stdout or "").strip()[-1200:]
+                    raise RuntimeError(
+                        f"winget cài Python thất bại ({proc.returncode}).\n{tail}")
+            else:
+                python = _download_portable_python(
+                    self.log.emit, self.progress.emit)
+                self.log.emit(f"{STATUS_OK} Python portable đã sẵn sàng: {python}")
+                self.finished_ok.emit()
+                return
+
+            python = _find_python()
+            self.log.emit(f"{STATUS_OK} Python đã sẵn sàng: {python}")
+            self.progress.emit(100)
+            self.finished_ok.emit()
+        except Exception as exc:  # noqa: BLE001
+            self.failed.emit(str(exc))
 
 
 def _find_script(rel_path: str) -> str:
@@ -102,11 +242,43 @@ def _find_script(rel_path: str) -> str:
 # --------------------------------------------------------------------------- #
 
 # URL ffmpeg static build đầy đủ (có libass) — Windows 64-bit
-_FFMPEG_URL = (
-    "https://github.com/BtbN/ffmpeg-builds/releases/download/latest/"
-    "ffmpeg-master-latest-win64-gpl.zip"
+_FFMPEG_URLS = {
+    "win32": (
+        "https://github.com/BtbN/ffmpeg-builds/releases/download/latest/"
+        "ffmpeg-master-latest-win64-gpl.zip"
+    ),
+    "linux": (
+        "https://github.com/BtbN/ffmpeg-builds/releases/download/latest/"
+        "ffmpeg-master-latest-linux64-gpl.tar.xz"
+    ),
+}
+_FFMPEG_CHECKSUMS_URL = (
+    "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/"
+    "checksums.sha256"
 )
 _CHUNK = 65536   # 64 KB mỗi lần đọc
+
+def _verify_ffmpeg_archive(path: str, archive_name: str) -> None:
+    request = urllib.request.Request(
+        _FFMPEG_CHECKSUMS_URL,
+        headers={"User-Agent": "DubFlow-Setup/1.0"},
+    )
+    with urllib.request.urlopen(request, timeout=60) as response:
+        checksums = response.read().decode("utf-8", errors="replace")
+    expected = ""
+    for line in checksums.splitlines():
+        fields = line.strip().split()
+        if len(fields) >= 2 and fields[-1] == archive_name:
+            expected = fields[0].lower()
+            break
+    if len(expected) != 64:
+        raise RuntimeError(f"Không tìm thấy checksum cho {archive_name}.")
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    if digest.hexdigest().lower() != expected:
+        raise RuntimeError("FFmpeg tải về không khớp SHA256.")
 
 
 class FFmpegDownloadWorker(QThread):
@@ -119,9 +291,11 @@ class FFmpegDownloadWorker(QThread):
 
     def run(self) -> None:  # noqa: C901
         try:
-            bin_dir = os.path.join(app_root(), "bin")
-            ffmpeg_exe = os.path.join(bin_dir, "ffmpeg.exe")
-            ffprobe_exe = os.path.join(bin_dir, "ffprobe.exe")
+            os.environ.setdefault("DUBFLOW_DATA_DIR", data_root())
+            bin_dir = os.path.join(data_root(), "bin")
+            suffix = ".exe" if sys.platform == "win32" else ""
+            ffmpeg_exe = os.path.join(bin_dir, f"ffmpeg{suffix}")
+            ffprobe_exe = os.path.join(bin_dir, f"ffprobe{suffix}")
 
             # Nếu đã có sẵn thì bỏ qua tải
             if os.path.isfile(ffmpeg_exe) and os.path.isfile(ffprobe_exe):
@@ -131,71 +305,99 @@ class FFmpegDownloadWorker(QThread):
                 self.finished_ok.emit()
                 return
 
-            # Nếu ffmpeg có trên PATH hệ thống thì dùng luôn
-            if shutil.which("ffmpeg") and shutil.which("ffprobe"):
-                self.log.emit(f"{STATUS_OK} FFmpeg đã có trên PATH hệ thống.")
-                self.progress.emit(100)
-                self.finished_ok.emit()
-                return
-
             os.makedirs(bin_dir, exist_ok=True)
-            zip_path = os.path.join(bin_dir, "_ffmpeg_download.zip")
+            archive_path = os.path.join(
+                bin_dir,
+                "_ffmpeg_download.zip"
+                if sys.platform == "win32"
+                else "_ffmpeg_download.tar.xz",
+            )
+            archive_name = (
+                "ffmpeg-master-latest-win64-gpl.zip"
+                if sys.platform == "win32"
+                else "ffmpeg-master-latest-linux64-gpl.tar.xz"
+            )
 
-            # --- Tải file zip ---
-            self.log.emit(f"Đang kết nối: {_FFMPEG_URL}")
+            # --- Tải archive ---
+            url = _FFMPEG_URLS.get(sys.platform)
+            if not url:
+                raise RuntimeError(f"Unsupported platform: {sys.platform}")
+            self.log.emit(f"Đang kết nối: {url}")
             self.progress.emit(2)
-
             req = urllib.request.Request(
-                _FFMPEG_URL,
-                headers={"User-Agent": "VoxDub-Setup/1.0"},
+                url,
+                headers={"User-Agent": "DubFlow-Setup/1.0"},
             )
             with urllib.request.urlopen(req, timeout=60) as resp:
                 total = int(resp.headers.get("Content-Length", 0))
                 downloaded = 0
-                buf = io.BytesIO()
-                while True:
-                    chunk = resp.read(_CHUNK)
-                    if not chunk:
-                        break
-                    buf.write(chunk)
-                    downloaded += len(chunk)
-                    if total:
-                        pct = int(downloaded / total * 75)   # tải = 0–75%
-                        self.progress.emit(pct)
-                        mb = downloaded / 1_048_576
-                        total_mb = total / 1_048_576
-                        self.log.emit(
-                            f"Đang tải: {mb:.1f} / {total_mb:.0f} MB")
+                with open(archive_path, "wb") as archive_file:
+                    while True:
+                        chunk = resp.read(_CHUNK)
+                        if not chunk:
+                            break
+                        archive_file.write(chunk)
+                        downloaded += len(chunk)
+                        if total:
+                            pct = int(downloaded / total * 75)
+                            self.progress.emit(pct)
+                            mb = downloaded / 1_048_576
+                            total_mb = total / 1_048_576
+                            self.log.emit(
+                                f"Đang tải: {mb:.1f} / {total_mb:.0f} MB")
 
+            self.log.emit("Đang kiểm tra SHA256 FFmpeg...")
+            self.progress.emit(75)
+            _verify_ffmpeg_archive(archive_path, archive_name)
             self.log.emit("Tải xong. Đang giải nén...")
             self.progress.emit(76)
 
-            # --- Giải nén chỉ lấy ffmpeg.exe và ffprobe.exe ---
-            buf.seek(0)
-            with zipfile.ZipFile(buf) as zf:
+            # --- Giải nén chỉ lấy ffmpeg và ffprobe ---
+            archive = (
+                zipfile.ZipFile(archive_path)
+                if sys.platform == "win32"
+                else tarfile.open(archive_path, "r:xz")
+            )
+            with archive as zf:
                 extracted = 0
-                for info in zf.infolist():
+                members = (
+                    zf.infolist()
+                    if sys.platform == "win32"
+                    else zf.getmembers()
+                )
+                for info in members:
                     name = info.filename.replace("\\", "/")
-                    # Lấy ffmpeg.exe và ffprobe.exe từ bất kỳ subdir nào
+                    if name.startswith("/") or ".." in name.split("/"):
+                        continue
                     basename = name.split("/")[-1]
-                    if basename in ("ffmpeg.exe", "ffprobe.exe"):
+                    if basename in (f"ffmpeg{suffix}", f"ffprobe{suffix}"):
                         dest = os.path.join(bin_dir, basename)
-                        with zf.open(info) as src, open(dest, "wb") as dst:
-                            shutil.copyfileobj(src, dst)
+                        if sys.platform == "win32":
+                            with zf.open(info) as src, open(dest, "wb") as dst:
+                                shutil.copyfileobj(src, dst)
+                        else:
+                            src = zf.extractfile(info)
+                            if src is None:
+                                continue
+                            with src, open(dest, "wb") as dst:
+                                shutil.copyfileobj(src, dst)
+                        if sys.platform != "win32":
+                            os.chmod(dest, 0o755)
                         extracted += 1
                         self.log.emit(f"  Giải nén: {basename}")
                         self.progress.emit(76 + extracted * 10)
                         if extracted >= 2:
                             break
 
-            # Xóa file zip tạm
+            # Xóa archive tạm
             try:
-                os.remove(zip_path)
+                os.remove(archive_path)
             except OSError:
                 pass
 
             if not os.path.isfile(ffmpeg_exe):
-                raise RuntimeError("Không tìm thấy ffmpeg.exe trong file zip.")
+                raise RuntimeError(
+                    f"Không tìm thấy ffmpeg{suffix} trong gói FFmpeg.")
 
             # Patch PATH cho lần chạy này
             _patch_path(bin_dir)
@@ -216,6 +418,7 @@ _SCRIPT_LINES_ESTIMATE = {
     "setup_vieneu.py":    35,
     "setup_whisper.py":   25,
     "setup_paraformer.py": 30,
+    "setup_demucs.py":    35,
 }
 
 
@@ -233,6 +436,7 @@ class SetupScriptWorker(QThread):
 
     def run(self) -> None:
         try:
+            os.environ.setdefault("DUBFLOW_DATA_DIR", data_root())
             script_path = _find_script(self._script_rel)
             python_exe  = _find_python()
 
@@ -249,7 +453,7 @@ class SetupScriptWorker(QThread):
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                cwd=app_root(),
+                cwd=data_root(),
                 creationflags=_NO_WINDOW,
             )
 

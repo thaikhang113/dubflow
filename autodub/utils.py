@@ -6,7 +6,7 @@ import tempfile
 
 
 def app_root() -> str:
-    """Thư mục gốc chứa ``models/``, ``.env``, ``output/`` và các venv phụ.
+    """Thư mục chứa binary và tài nguyên đi kèm ứng dụng.
 
     - Bản đóng gói: thư mục chứa tệp .exe — dữ liệu ngoài luôn nằm CẠNH ứng
       dụng, không bao giờ nằm trong gói.
@@ -17,18 +17,62 @@ def app_root() -> str:
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-#: Venv được dò khi cần bản torch có CUDA (tách nhạc nền bằng card đồ họa,
-#: và các thư viện cuBLAS/cuDNN cho Whisper).
+def data_root() -> str:
+    """Thư mục dữ liệu có thể ghi của app.
+
+    Source checkout giữ dữ liệu cạnh source để không phá workflow hiện tại.
+    Bản cài đặt dùng thư mục user, tránh ghi model/config vào ``/opt`` hoặc
+    ``Program Files``.
+    """
+    override = os.environ.get("DUBFLOW_DATA_DIR", "").strip()
+    if override:
+        return os.path.abspath(os.path.expanduser(override))
+    if not getattr(sys, "frozen", False):
+        return app_root()
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+        return os.path.join(base, "DubFlow")
+    base = os.environ.get("XDG_DATA_HOME")
+    if not base:
+        base = os.path.join(os.path.expanduser("~"), ".local", "share")
+    return os.path.join(base, "dubflow")
+
+
+#: Venv Demucs được cài riêng để không kéo torch vào môi trường app chính.
+DEMUCS_VENVS = (".venv-demucs", ".venv-gpu")
+
+#: Venv có torch CUDA tùy chọn cho Whisper. Không dùng venv Demucs CPU ở đây.
 GPU_VENVS = (".venv-gpu",)
 
 
 def gpu_venv_dir() -> str:
     """Thư mục venv có torch bản CUDA, hoặc chuỗi rỗng nếu không có."""
     for venv in GPU_VENVS:
-        path = os.path.join(app_root(), venv)
+        path = os.path.join(data_root(), venv)
         if os.path.isdir(path):
             return path
     return ""
+
+def demucs_venv_dir() -> str:
+    """Thư mục venv Demucs đã cài, hoặc chuỗi rỗng nếu chưa có."""
+    for venv in DEMUCS_VENVS:
+        path = os.path.join(data_root(), venv)
+        if os.path.isdir(path):
+            return path
+    return ""
+
+def demucs_venv_python() -> str:
+    """Trình thông dịch Demucs, dù chạy CPU hay CUDA."""
+    venv = demucs_venv_dir()
+    if not venv:
+        return ""
+    exe = os.path.join(venv, "Scripts" if os.name == "nt" else "bin",
+                       "python.exe" if os.name == "nt" else "python")
+    return exe if os.path.isfile(exe) else ""
+
+def demucs_model_dir() -> str:
+    """Thư mục cache model Demucs dùng bởi torch hub."""
+    return os.path.join(data_root(), "models", "demucs")
 
 
 def bundled_file(*relative: str) -> str:
@@ -62,8 +106,8 @@ _FILE_HANDLER: logging.Handler | None = None
 
 
 def logs_dir() -> str:
-    """Thư mục log của ứng dụng: ``<app_root>/logs`` (cạnh exe khi đóng gói)."""
-    return ensure_dir(os.path.join(app_root(), "logs"))
+    """Thư mục log của ứng dụng."""
+    return ensure_dir(os.path.join(data_root(), "logs"))
 
 
 def init_file_logging() -> str:
@@ -118,14 +162,14 @@ def save_json_atomic(data: object, path: str) -> None:
 
 
 def fonts_dir() -> str:
-    """Thư mục font kèm app: ``<app_root>/fonts`` (cạnh exe khi đóng gói).
+    """Thư mục font người dùng.
 
     Nằm NGOÀI bundle PyInstaller có chủ đích: người dùng tự thả thêm file
     .ttf/.otf (ví dụ tải từ fonts.google.com) là app nhận ngay, không cần
     build lại. Cả GUI (QFontDatabase) lẫn ffmpeg/libass (fontsdir) cùng đọc
     thư mục này nên font chọn trong app luôn render đúng trên video.
     """
-    return os.path.join(app_root(), "fonts")
+    return os.path.join(data_root(), "fonts")
 
 
 def bundled_font_files() -> list[str]:

@@ -19,10 +19,11 @@ from setup_support import is_nonempty_file, retry_call
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VENV_DIR = os.path.join(PROJECT_ROOT, ".venv-vieneu")
+DATA_ROOT = os.environ.get("DUBFLOW_DATA_DIR", PROJECT_ROOT)
+VENV_DIR = os.path.join(DATA_ROOT, ".venv-vieneu")
 VENV_PY = os.path.join(VENV_DIR, "Scripts" if os.name == "nt" else "bin",
                        "python.exe" if os.name == "nt" else "python")
-MODEL_DIR = os.path.join(PROJECT_ROOT, "models", "vieneu")
+MODEL_DIR = os.path.join(DATA_ROOT, "models", "vieneu")
 MARKER = os.path.join(MODEL_DIR, "installed_ok.json")
 VOICES_JSON = os.path.join(MODEL_DIR, "voices.json")
 

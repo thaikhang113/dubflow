@@ -18,7 +18,7 @@ import sys
 from dataclasses import dataclass
 
 from autodub.config import Settings
-from autodub.utils import app_root
+from autodub.utils import app_root, data_root
 
 #: Đĩa trống tối thiểu (GB). Một video 30 phút cần ~5-8 GB tệp trung gian
 #: (WAV tách nhạc, từng đoạn TTS, video xuất) nên dưới 2 GB coi như chặn.
@@ -88,7 +88,8 @@ def _check_ffmpeg(settings: Settings) -> CheckResult:
     """FFmpeg có mặt và có bộ lọc phụ đề (libass) không."""
     title = "FFmpeg"
     # Kiểm tra cả thư mục bin/ cục bộ (tải bởi wizard) lẫn PATH hệ thống
-    local_ffmpeg = os.path.join(app_root(), "bin", "ffmpeg.exe")
+    suffix = ".exe" if os.name == "nt" else ""
+    local_ffmpeg = os.path.join(data_root(), "bin", f"ffmpeg{suffix}")
     ffmpeg_cmd = shutil.which("ffmpeg") or (
         local_ffmpeg if os.path.isfile(local_ffmpeg) else None)
     if not ffmpeg_cmd:
@@ -121,7 +122,9 @@ def _check_ffmpeg(settings: Settings) -> CheckResult:
 
 def _check_ffprobe(settings: Settings) -> CheckResult:
     """ffprobe — đọc thời lượng/thông số video, đi kèm gói FFmpeg."""
-    if shutil.which("ffprobe"):
+    suffix = ".exe" if os.name == "nt" else ""
+    local_ffprobe = os.path.join(data_root(), "bin", f"ffprobe{suffix}")
+    if shutil.which("ffprobe") or os.path.isfile(local_ffprobe):
         return CheckResult(key="ffprobe", title="FFprobe", level="ok",
                            message="Sẵn sàng.")
     return CheckResult(

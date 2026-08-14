@@ -1,12 +1,12 @@
 @echo off
 chcp 65001 >nul
 setlocal
-title VoxDub Studio - Cai tat ca
+title DubFlow - Cai tat ca
 cd /d "%~dp0"
 
 echo.
 echo ============================================================
-echo   VoxDub Studio - CAI TAT CA THANH PHAN
+echo   DubFlow - CAI TAT CA THANH PHAN
 echo ============================================================
 echo   Se cai runtime .venv, Demucs, Whisper, VieNeu,
 echo   Paraformer, PaddleOCR va Chromium.
@@ -45,6 +45,8 @@ if errorlevel 1 goto :fail
 py -3 scripts\setup_ocr.py
 if errorlevel 1 echo [CANH BAO] OCR khong cai duoc - app van chay voi blur thu cong
 py -3 scripts\setup_douyin.py
+if errorlevel 1 goto :fail
+py -3 scripts\setup_demucs.py
 if errorlevel 1 goto :fail
 
 echo.

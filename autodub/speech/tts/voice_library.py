@@ -19,7 +19,7 @@ import json
 import os
 from dataclasses import dataclass
 
-from autodub.utils import app_root, setup_logging
+from autodub.utils import data_root, setup_logging
 
 logger = setup_logging("autodub.voice_library")
 
@@ -55,7 +55,7 @@ class LibraryVoice:
 
 def library_dir() -> str:
     """Thư mục ``voices/`` cạnh ứng dụng (có thể chưa tồn tại)."""
-    return os.path.join(app_root(), "voices")
+    return os.path.join(data_root(), "voices")
 
 
 def _entry_to_voice(entry: dict, folder: str) -> LibraryVoice | None:

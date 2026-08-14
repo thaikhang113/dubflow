@@ -23,11 +23,14 @@ def run(command: list[str]) -> None:
     subprocess.run(command, cwd=ROOT, check=True)
 
 
-def assemble() -> None:
+def assemble(version: str) -> None:
+    clean_distribution_artifacts()
+    with open(os.path.join(DIST, "VERSION"), "w", encoding="utf-8") as handle:
+        handle.write(f"{version}\n")
     os.makedirs(os.path.join(DIST, "scripts"), exist_ok=True)
     for name in ("setup_support.py", "setup_vieneu.py",
-                 "setup_paraformer.py", "setup_whisper.py",
-                 "setup_douyin.py"):
+                 "setup_paraformer.py", "setup_whisper.py", "setup_ocr.py",
+                 "setup_douyin.py", "setup_demucs.py", "setup_voices.py"):
         shutil.copy2(
             os.path.join(ROOT, "scripts", name),
             os.path.join(DIST, "scripts", name),
@@ -39,12 +42,33 @@ def assemble() -> None:
     fonts = os.path.join(ROOT, "fonts")
     if os.path.isdir(fonts):
         shutil.copytree(fonts, os.path.join(DIST, "fonts"), dirs_exist_ok=True)
+    voices = os.path.join(ROOT, "voices", "preset_voices_vn")
+    if os.path.isdir(voices):
+        shutil.copytree(
+            voices,
+            os.path.join(DIST, "_internal", "voices", "preset_voices_vn"),
+            dirs_exist_ok=True,
+        )
+
+
+def clean_distribution_artifacts() -> None:
+    for generated in (".env", "smoke_test_result.json", "smoke_startup_trace.txt"):
+        path = os.path.join(DIST, generated)
+        if os.path.isfile(path):
+            os.remove(path)
+    for generated_dir in ("bin", "logs", "output", "downloads", "VN"):
+        path = os.path.join(DIST, generated_dir)
+        if os.path.isdir(path):
+            shutil.rmtree(path, ignore_errors=True)
 
 
 def smoke_test() -> None:
     env = dict(os.environ, AUTODUB_SMOKE="1", QT_QPA_PLATFORM="offscreen")
     run_env = [os.path.join(DIST, "DubFlow")]
-    subprocess.run(run_env, cwd=DIST, env=env, check=True, timeout=180)
+    try:
+        subprocess.run(run_env, cwd=DIST, env=env, check=True, timeout=180)
+    finally:
+        clean_distribution_artifacts()
 
 
 def archive(version: str) -> str:
@@ -57,7 +81,7 @@ def archive(version: str) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-test", action="store_true")
-    parser.add_argument("--version", default="0.1.0")
+    parser.add_argument("--version", default="3.0.2")
     args = parser.parse_args()
     started = time.time()
 
@@ -69,7 +93,7 @@ def main() -> int:
     ])
     if not os.path.isfile(os.path.join(DIST, "DubFlow")):
         raise SystemExit("PyInstaller finished without dist/DubFlow/DubFlow")
-    assemble()
+    assemble(args.version)
     if not args.no_test:
         smoke_test()
     output = archive(args.version)

@@ -14,8 +14,9 @@ import sys
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LIBS_DIR = os.path.join(PROJECT_ROOT, "libs")
-BROWSERS_DIR = os.path.join(PROJECT_ROOT, "pw-browsers")
+DATA_ROOT = os.environ.get("DUBFLOW_DATA_DIR", PROJECT_ROOT)
+LIBS_DIR = os.path.join(DATA_ROOT, "libs")
+BROWSERS_DIR = os.path.join(DATA_ROOT, "pw-browsers")
 TAG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                         "python_tag.txt")
 

@@ -101,11 +101,10 @@ wheels = [
 
 [[package]]
 name = "autodub"
-version = "2.1.0"
+version = "3.0.2"
 source = { editable = "." }
 dependencies = [
     { name = "audioop-lts", marker = "python_full_version >= '3.13'" },
-    { name = "cryptography" },
     { name = "faster-whisper" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
@@ -134,7 +133,6 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "audioop-lts", marker = "python_full_version >= '3.13'", specifier = ">=0.2.2" },
-    { name = "cryptography", specifier = ">=42.0.0" },
     { name = "demucs", marker = "extra == 'demucs'", specifier = ">=4.0.0" },
     { name = "faster-whisper", specifier = ">=1.0.0" },
     { name = "google-genai", marker = "extra == 'content'", specifier = ">=1.0.0" },

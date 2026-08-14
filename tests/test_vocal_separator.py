@@ -186,10 +186,10 @@ def test_demucs_cache_failure_falls_back_to_one_shot(tmp_path):
     assert result["no_vocals"] == os.path.join(work_dir, "no_vocals.wav")
 
 
-def test_demucs_cache_ensure_fails_without_gpu_venv():
-    """Không có venv GPU → _ensure trả False một lần rồi nhớ luôn."""
+def test_demucs_cache_ensure_fails_without_demucs_venv():
+    """Không có venv Demucs → _ensure trả False một lần rồi nhớ luôn."""
     cache = vocal_separator.DemucsCache()
-    with mock.patch("autodub.media.vocal_separator.gpu_venv_python",
+    with mock.patch("autodub.media.vocal_separator.demucs_venv_python",
                     return_value="") as probe:
         assert cache.separate("in.wav", "v.wav", "nv.wav", False) is False
         assert cache.separate("in.wav", "v.wav", "nv.wav", False) is False

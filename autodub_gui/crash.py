@@ -4,7 +4,7 @@ Mặc định PySide6 chỉ in traceback ra console — bản đóng gói không
 nên ứng dụng "chết im lặng" và người dùng không biết chuyện gì xảy ra. Móc
 ``sys.excepthook`` ở đây bảo đảm mọi lỗi thoát ra khỏi vòng lặp sự kiện đều:
 
-1. được ghi đầy đủ vào tệp log (``logs/voxdub.log``), và
+1. được ghi đầy đủ vào tệp log (``logs/dubflow.log``), và
 2. hiện hộp thoại tiếng Việt với nút mở thư mục log để người dùng gửi kèm
    khi cần trợ giúp.
 
@@ -51,7 +51,7 @@ def _show_dialog(detail: str) -> None:
 
         support = _support_url()
         message = (
-            "VoxDub vừa gặp một lỗi ngoài dự kiến. Công việc đang chạy có thể "
+            "DubFlow vừa gặp một lỗi ngoài dự kiến. Công việc đang chạy có thể "
             "bị gián đoạn — hãy lưu lại rồi khởi động lại ứng dụng.\n\n"
             "Chi tiết lỗi đã được ghi vào tệp log. ")
         if support:

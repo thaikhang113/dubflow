@@ -57,12 +57,29 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e .
           python -m pip install pyinstaller
+      - name: Resolve version
+        id: version
+        run: |
+          version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          echo "value=$version" >> "$GITHUB_OUTPUT"
       - name: Build Linux bundle
-        run: python scripts/build_linux.py --no-test --version 0.1.0
+        run: python scripts/build_linux.py --no-test --version "${{ steps.version.outputs.value }}"
+      - name: Build Debian package
+        run: python scripts/build_deb.py --no-build --version "${{ steps.version.outputs.value }}"
+      - name: Validate Debian package
+        run: |
+          set -euo pipefail
+          package="dist/dubflow_${{ steps.version.outputs.value }}_amd64.deb"
+          test -f "$package"
+          dpkg-deb --info "$package"
+          dpkg-deb --contents "$package" | grep -F "/opt/dubflow/DubFlow"
+          dpkg-deb --contents "$package" | grep -F "/usr/share/applications/dubflow.desktop"
+          test "$(dpkg-deb -f "$package" Package)" = "dubflow"
+          test "$(dpkg-deb -f "$package" Architecture)" = "amd64"
       - uses: actions/upload-artifact@v4
         with:
-          name: DubFlow-linux-x86_64
-          path: dist/DubFlow-v*-linux-x86_64.tar.gz
+          name: DubFlow-linux-amd64
+          path: dist/dubflow_*_amd64.deb
 
   build-windows:
     name: Build / Windows x64
@@ -82,7 +99,21 @@ jobs:
           python -m pip install pyinstaller
       - name: Build Windows bundle
         run: python scripts/build_exe.py --no-test --no-zip
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            $iscc = "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+          }
+          if (-not (Test-Path $iscc)) {
+            throw "ISCC.exe not found"
+          }
+          & $iscc scripts\DubFlow.iss
       - uses: actions/upload-artifact@v4
         with:
           name: DubFlow-windows-x64
-          path: dist/DubFlow
+          path: dist/DubFlow-v*-windows-x64-setup.exe

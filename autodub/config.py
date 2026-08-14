@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from dotenv import load_dotenv
 
-from autodub.utils import app_root
+from autodub.utils import app_root, data_root
 
 
 class ConfigError(Exception):
@@ -317,7 +317,7 @@ class Settings:
         else:
             # Luôn là tệp .env nằm cạnh ứng dụng (thư mục chứa exe khi đã
             # đóng gói) — không phụ thuộc thư mục người dùng đang đứng.
-            load_dotenv(os.path.join(app_root(), ".env"), override=override)
+            load_dotenv(os.path.join(data_root(), ".env"), override=override)
 
         def env(key: str, default: str = "", *aliases: str) -> str:
             for k in (key, *aliases):
@@ -339,10 +339,10 @@ class Settings:
                 return float(default)
 
         def env_dir(key: str, default: str) -> str:
-            """Mục thư mục; đường dẫn tương đối neo vào thư mục ứng dụng."""
+            """Mục thư mục; đường dẫn tương đối neo vào data root."""
             value = env(key, default).strip()
             if value and not os.path.isabs(value):
-                value = os.path.normpath(os.path.join(app_root(), value))
+                value = os.path.normpath(os.path.join(data_root(), value))
             return value
 
         def env_multiline(key: str) -> str:
@@ -541,13 +541,13 @@ class Settings:
         if self.asr_venv_python:
             return self.asr_venv_python
         exe = "Scripts/python.exe" if os.name == "nt" else "bin/python"
-        return os.path.join(app_root(), ".venv-asr", *exe.split("/"))
+        return os.path.join(data_root(), ".venv-asr", *exe.split("/"))
 
     def paraformer_model_dir_path(self) -> str:
         """Thư mục chứa model Paraformer + silero-VAD (+ chấm câu)."""
         if self.paraformer_model_dir:
             return self.paraformer_model_dir
-        return os.path.join(app_root(), "models", "paraformer-zh")
+        return os.path.join(data_root(), "models", "paraformer-zh")
 
     def paraformer_configured(self) -> bool:
         """venv ASR và dấu hiệu cài đặt xong đều có mặt hay chưa."""
@@ -560,13 +560,13 @@ class Settings:
         if self.whisper_venv_python:
             return self.whisper_venv_python
         exe = "Scripts/python.exe" if os.name == "nt" else "bin/python"
-        return os.path.join(app_root(), ".venv-whisper", *exe.split("/"))
+        return os.path.join(data_root(), ".venv-whisper", *exe.split("/"))
 
     def whisper_model_dir_path(self) -> str:
         """Thư mục cache model Whisper (HuggingFace)."""
         if self.whisper_model_dir:
             return self.whisper_model_dir
-        return os.path.join(app_root(), "models", "whisper")
+        return os.path.join(data_root(), "models", "whisper")
 
     def whisper_venv_configured(self) -> bool:
         """venv Whisper đã cài và có marker hay chưa."""
@@ -578,12 +578,12 @@ class Settings:
         if self.ocr_venv_python:
             return self.ocr_venv_python
         exe = "Scripts/python.exe" if os.name == "nt" else "bin/python"
-        return os.path.join(app_root(), ".venv-ocr", *exe.split("/"))
+        return os.path.join(data_root(), ".venv-ocr", *exe.split("/"))
 
     def ocr_model_dir_path(self) -> str:
         if self.ocr_model_dir:
             return self.ocr_model_dir
-        return os.path.join(app_root(), "models", "ocr")
+        return os.path.join(data_root(), "models", "ocr")
 
     def ocr_configured(self) -> bool:
         return (self.ocr_enabled
@@ -596,13 +596,13 @@ class Settings:
         if self.vieneu_venv_python:
             return self.vieneu_venv_python
         exe = "Scripts/python.exe" if os.name == "nt" else "bin/python"
-        return os.path.join(app_root(), ".venv-vieneu", *exe.split("/"))
+        return os.path.join(data_root(), ".venv-vieneu", *exe.split("/"))
 
     def vieneu_model_dir_path(self) -> str:
         """Thư mục chứa các tệp model VieNeu đã tải về."""
         if self.vieneu_model_dir:
             return self.vieneu_model_dir
-        return os.path.join(app_root(), "models", "vieneu")
+        return os.path.join(data_root(), "models", "vieneu")
 
     def vieneu_custom_voices_path(self) -> str:
         """Tệp JSON chứa giọng người dùng tự thêm.
