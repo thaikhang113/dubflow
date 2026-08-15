@@ -93,7 +93,7 @@ _KARAOKE_EFFECTS = [
 
 _OCR_BACKENDS = [
     ("PaddleOCR — nhanh, ổn định", "paddle"),
-    ("Hybrid — Paddle + DeepSeek fallback", "hybrid"),
+    ("Hybrid — tự chọn GPU AMD/NVIDIA", "hybrid"),
 ]
 
 _VSR_MODES = [
@@ -248,8 +248,8 @@ FIELDS: tuple[Field, ...] = (
           "hoặc quá lớn sẽ tự động bỏ qua; vùng khoanh thủ công vẫn được giữ."),
     Field("OCR_BACKEND", COMBO, "Backend OCR",
           TAB_PERF, "Che phụ đề cứng", "hybrid",
-          "Hybrid dùng PaddleOCR trước, chỉ gọi DeepSeek-OCR khi Paddle không "
-          "tìm được phụ đề hoặc logo ổn định.",
+          "Hybrid dùng DeepSeek-OCR trên AMD khi ROCm/DirectML sẵn sàng; "
+          "các máy khác dùng PaddleOCR và tự quay về backend còn lại khi lỗi.",
           options=_OCR_BACKENDS),
     Field("DEEPSEEK_OCR_ENABLED", CHECK, "Bật DeepSeek-OCR fallback",
           TAB_PERF, "Che phụ đề cứng", "false",

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import replace
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
@@ -68,6 +69,20 @@ _PAUSE_TOOLTIP = ("Dừng lại — video đang xử lý sẽ tiếp tục từ 
 
 QUEUE_FILE = "batch_queue.json"     # danh sách chờ, sống qua các lần mở app
 
+
+BATCH_SUBTITLE_DEFAULT = "burn"
+
+def default_batch_subtitle_mode() -> str:
+    return BATCH_SUBTITLE_DEFAULT
+
+def batch_settings_with_style(settings, style_key: str):
+    note = consts.style_note(style_key)
+    if not note:
+        return settings
+    merged = "\n".join(
+        part for part in (settings.translate_style_notes, note) if part
+    ).strip()
+    return replace(settings, translate_style_notes=merged)
 
 class BatchPage(BasePage):
     """Danh sách video chờ lồng tiếng."""
@@ -255,15 +270,16 @@ class BatchPage(BasePage):
         self.opt_duck.setEnabled(False)
         self.opt_subtitle = LabeledCombo("Phụ đề", consts.SUBTITLE_MODES,
                                          "Cách hiện phụ đề trên video kết quả")
-        # Chọn sẵn theo Cài đặt — trước đây luôn rơi về "Không" dù người
-        # dùng đã đặt kiểu phụ đề mặc định khác.
-        try:
-            self.opt_subtitle.set_key(self._settings_provider().subtitle_mode)
-        except Exception:  # noqa: BLE001 — cấu hình hỏng thì giữ mặc định
-            pass
+        self.opt_subtitle.set_key(default_batch_subtitle_mode())
+        self.opt_translate_style = LabeledCombo(
+            "Phong cách dịch",
+            [(label, key) for label, key, _note in consts.TRANSLATE_STYLES],
+            "Cách diễn đạt bản dịch cho toàn bộ video trong danh sách",
+        )
         section.add_layout(self._grid(
             [self.opt_lang, self.opt_voice, self.opt_bg, self.opt_duck,
-             self.opt_subtitle, self._build_style_block()]))
+             self.opt_subtitle, self.opt_translate_style,
+             self._build_style_block()]))
 
         self.chk_audio_only = QCheckBox("Chỉ xuất âm thanh và phụ đề")
         self.chk_reuse = QCheckBox("Giữ bộ giọng giữa các video để chạy nhanh hơn")
@@ -632,8 +648,10 @@ class BatchPage(BasePage):
         self._refresh_table()
         self._set_running(True)
 
+        settings = batch_settings_with_style(
+            self._settings_provider(), self.opt_translate_style.current_key())
         worker = BatchWorker(
-            self._settings_provider(), self._template(), items,
+            settings, self._template(), items,
             retry_done=self.chk_retry.isChecked(),
             reuse_tts=self.chk_reuse.isChecked())
         worker.progress.connect(self._on_progress)

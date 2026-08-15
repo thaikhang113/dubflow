@@ -72,3 +72,39 @@ def test_worker_rejects_unavailable_gpu_backend():
 
     with pytest.raises(RuntimeError, match="GPU backend"):
         runtime_options("rocm", cuda_ready=False, bf16_ready=False)
+
+def test_amd_gpu_prefers_deepseek_when_configured():
+    from autodub.media.ocr import preferred_ocr_backend
+
+    class Settings:
+        ocr_backend = "hybrid"
+        deepseek_ocr_enabled = True
+
+        @staticmethod
+        def deepseek_ocr_configured():
+            return True
+
+    class GPU:
+        vendor = "amd"
+        compute_available = True
+        compute_backend = "rocm"
+
+    assert preferred_ocr_backend(Settings(), GPU()) == "deepseek"
+
+def test_amd_gpu_falls_back_to_paddle_when_deepseek_unavailable():
+    from autodub.media.ocr import preferred_ocr_backend
+
+    class Settings:
+        ocr_backend = "hybrid"
+        deepseek_ocr_enabled = False
+
+        @staticmethod
+        def deepseek_ocr_configured():
+            return False
+
+    class GPU:
+        vendor = "amd"
+        compute_available = True
+        compute_backend = "directml"
+
+    assert preferred_ocr_backend(Settings(), GPU()) == "paddle"

@@ -6,6 +6,7 @@ import math
 import os
 import subprocess
 
+from autodub.gpu import detect_gpu
 from autodub.media.ocr_regions import (
     detections_to_logo_regions,
     detections_to_regions,
@@ -14,6 +15,23 @@ from autodub.media.ocr_regions import (
 from autodub.utils import setup_logging
 
 logger = setup_logging("autodub.ocr")
+
+def preferred_ocr_backend(settings, gpu_info=None) -> str:
+    if getattr(settings, "ocr_backend", "paddle") != "hybrid":
+        return "paddle"
+    if not (
+        getattr(settings, "deepseek_ocr_enabled", False)
+        and getattr(settings, "deepseek_ocr_configured", lambda: False)()
+    ):
+        return "paddle"
+    gpu_info = gpu_info or detect_gpu()
+    if (
+        getattr(gpu_info, "vendor", "") == "amd"
+        and getattr(gpu_info, "compute_available", False)
+        and getattr(gpu_info, "compute_backend", "") in ("rocm", "directml")
+    ):
+        return "deepseek"
+    return "paddle"
 
 
 def _sample_times(duration: float, interval: float) -> list[float]:
@@ -110,13 +128,23 @@ def detect_regions_with_logo(
         and getattr(settings, "deepseek_ocr_enabled", False)
         and getattr(settings, "deepseek_ocr_configured", lambda: False)()
     )
+    primary = preferred_ocr_backend(settings)
+    fallback = (
+        "paddle" if primary == "deepseek" else "deepseek"
+        if deepseek_ready else None
+    )
+    fallback_used = False
     try:
-        detections = _run_detections(video_path, duration, settings)
-    except Exception:
-        if not deepseek_ready:
+        detections = _run_engine_detections(
+            video_path, duration, settings, backend=primary)
+    except Exception as exc:
+        if fallback is None:
             raise
-        logger.warning("PaddleOCR không sẵn sàng; chuyển sang DeepSeek-OCR")
-        detections = []
+        logger.warning(
+            f"{primary} OCR không sẵn sàng; chuyển sang {fallback}: {exc}")
+        detections = _run_engine_detections(
+            video_path, duration, settings, backend=fallback)
+        fallback_used = True
     subtitle_regions = detections_to_regions(
         detections, video_w, video_h,
         min_confidence=settings.ocr_min_confidence,
@@ -131,10 +159,10 @@ def detect_regions_with_logo(
         min_confidence=settings.ocr_min_confidence,
         subtitle_y_min=getattr(settings, "ocr_subtitle_y_min", 0.65),
     )
-    if deepseek_ready and (not subtitle_regions or not logo_regions):
+    if fallback and not fallback_used and (not subtitle_regions or not logo_regions):
         try:
             deepseek_detections = _run_engine_detections(
-                video_path, duration, settings, backend="deepseek")
+                video_path, duration, settings, backend=fallback)
             detections.extend(deepseek_detections)
             subtitle_regions = detections_to_regions(
                 detections, video_w, video_h,

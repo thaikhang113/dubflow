@@ -290,3 +290,19 @@ def test_observer_receives_events(env):
 
     assert events == [(0, 1, "https://a.com/1", "start"),
                       (0, 1, "https://a.com/1", "success")]
+
+def test_batch_template_defaults_to_burn_subtitles():
+    from autodub_gui.pages.batch_page import default_batch_subtitle_mode
+
+    assert default_batch_subtitle_mode() == "burn"
+
+def test_batch_style_runtime_settings_preserve_custom_notes():
+    from autodub_gui.pages.batch_page import batch_settings_with_style
+
+    settings = Settings(translate_style_notes="Giữ thuật ngữ riêng.")
+    updated = batch_settings_with_style(settings, "social")
+
+    assert updated is not settings
+    assert "Giữ thuật ngữ riêng." in updated.translate_style_notes
+    assert "Câu ngắn, nhịp nhanh" in updated.translate_style_notes
+    assert settings.translate_style_notes == "Giữ thuật ngữ riêng."
