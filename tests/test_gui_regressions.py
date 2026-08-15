@@ -125,6 +125,104 @@ def test_download_worker_cancel_interrupts_retry_backoff(monkeypatch, tmp_path) 
     assert not thread.is_alive()
     assert calls == ["download"]
 
+def test_prefetch_worker_forwards_download_progress(monkeypatch, tmp_path) -> None:
+    from autodub_gui.workers import PrefetchWorker
+
+    received = []
+
+    def fake_download(_url, _output_dir, **kwargs):
+        kwargs["progress"]({
+            "status": "downloading",
+            "downloaded_bytes": 25,
+            "total_bytes": 100,
+            "speed_bytes_s": 10.0,
+            "eta_s": 8,
+            "percent": 25,
+        })
+        path = tmp_path / "video.mp4"
+        path.write_bytes(b"video")
+        return str(path)
+
+    monkeypatch.setattr("autodub.media.downloader.download_video", fake_download)
+    worker = PrefetchWorker("https://example.com/video", str(tmp_path))
+    worker.progress.connect(received.append)
+
+    worker.run()
+
+    assert received == [{
+        "status": "downloading",
+        "downloaded_bytes": 25,
+        "total_bytes": 100,
+        "speed_bytes_s": 10.0,
+        "eta_s": 8,
+        "percent": 25,
+    }]
+
+
+def test_prefetch_worker_passes_cancel_event_to_downloader(monkeypatch, tmp_path) -> None:
+    from autodub_gui.workers import PrefetchWorker
+
+    received = {}
+
+    def fake_download(_url, _output_dir, **kwargs):
+        received["cancel_event"] = kwargs["cancel_event"]
+        return str(tmp_path / "video.mp4")
+
+    monkeypatch.setattr("autodub.media.downloader.download_video", fake_download)
+    worker = PrefetchWorker("https://example.com/video", str(tmp_path))
+
+    worker.cancel()
+    worker.run()
+
+    assert received["cancel_event"].is_set()
+
+
+def test_prefetch_worker_does_not_emit_success_after_cancel(monkeypatch, tmp_path) -> None:
+    from autodub_gui.workers import PrefetchWorker
+
+    finished = []
+
+    def fake_download(_url, _output_dir, **kwargs):
+        kwargs["cancel_event"].set()
+        return str(tmp_path / "video.mp4")
+
+    monkeypatch.setattr("autodub.media.downloader.download_video", fake_download)
+    worker = PrefetchWorker("https://example.com/video", str(tmp_path))
+    worker.finished_ok.connect(finished.append)
+
+    worker.run()
+
+    assert finished == []
+
+
+def test_video_step_shows_and_clears_download_progress(monkeypatch) -> None:
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from autodub_gui.pages.new_project_steps import VideoStep
+
+    app = QApplication.instance() or QApplication([])
+    step = VideoStep()
+
+    step.set_download_progress({
+        "status": "downloading",
+        "downloaded_bytes": 25,
+        "total_bytes": 100,
+        "speed_bytes_s": 10.0,
+        "eta_s": 8,
+        "percent": 25,
+    })
+
+    assert not step.download_progress.isHidden()
+    assert step.download_progress.value() == 25
+    assert "25%" in step.download_progress_label.text()
+
+    step.clear_download_progress()
+
+    assert step.download_progress.isHidden()
+    assert step.download_progress_label.text() == ""
+    step.deleteLater()
+    app.processEvents()
+
 
 def test_error_modal_supports_recovery_actions() -> None:
     params = inspect.signature(ConfirmDialog.show_error).parameters
@@ -246,9 +344,39 @@ def test_style_summary_uses_instance_style_after_summary_refactor() -> None:
 def test_new_project_refreshes_next_button_after_step_navigation() -> None:
     source = _source("autodub_gui/pages/new_project_page.py")
     assert "self.btn_next.setEnabled(True)" in source
-    assert "self._prefetch_worker is None" in source
+    assert "prefetch_running = (" in source
+    assert "self._prefetch_worker.isRunning()" in source
     assert "prefetch_ready = bool(" in source
     assert "os.path.isfile(self._prefetched_path)" in source
+
+
+def test_new_project_keeps_download_button_locked_while_prefetch_runs(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from autodub.config import Settings
+    import autodub_gui.pages.new_project_page as page_module
+
+    app = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(
+        page_module, "cache_dir", lambda: str(tmp_path / "cache"))
+    page = page_module.NewProjectPage(lambda: Settings())
+
+    class RunningWorker:
+        def isRunning(self):
+            return True
+
+    page._prefetch_worker = RunningWorker()
+    page.btn_next.setEnabled(True)
+    page.btn_next.setText("Tiếp tục")
+    page._refresh_footer()
+
+    assert not page.btn_next.isEnabled()
+    assert page.btn_next.text() == "Đang tải…"
+    page.deleteLater()
+    app.processEvents()
+
 
 def test_new_project_keeps_pipeline_controls_in_ui_and_runtime() -> None:
     steps = _source("autodub_gui/pages/new_project_steps.py")

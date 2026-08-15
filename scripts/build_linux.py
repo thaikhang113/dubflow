@@ -89,7 +89,7 @@ def archive(version: str) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-test", action="store_true")
-    parser.add_argument("--version", default="3.0.9")
+    parser.add_argument("--version", default="3.0.12")
     args = parser.parse_args()
     started = time.time()
 

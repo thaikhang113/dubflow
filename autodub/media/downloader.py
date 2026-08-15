@@ -1,14 +1,46 @@
 """Video download via yt-dlp, with Douyin routed through Playwright."""
 import os
 import re
+import threading
 import time
+from typing import Callable
 from urllib.parse import urlparse, parse_qs
 
 import yt_dlp
 
 from autodub.utils import setup_logging, ensure_dir, save_json_atomic
+from autodub.progress import PipelineCancelled
 
 logger = setup_logging("autodub.downloader")
+
+ProgressCallback = Callable[[dict], None]
+
+def _emit_progress(
+    callback: ProgressCallback | None,
+    status: str,
+    downloaded: int = 0,
+    total: int | None = None,
+    speed: float | None = None,
+    eta: int | None = None,
+) -> None:
+    if callback is None:
+        return
+    percent = None
+    if total and total > 0:
+        percent = min(100, max(0, int(downloaded * 100 / total)))
+    if status == "finished":
+        percent = 100
+    try:
+        callback({
+            "status": status,
+            "downloaded_bytes": max(0, int(downloaded or 0)),
+            "total_bytes": int(total) if total else None,
+            "speed_bytes_s": float(speed) if speed else None,
+            "eta_s": int(eta) if eta is not None else None,
+            "percent": percent,
+        })
+    except Exception:
+        pass
 
 def _extract_info_with_retry(ydl, url: str, attempts: int = 3) -> dict:
     """Retry transient Bilibili metadata failures before failing the job."""
@@ -73,9 +105,13 @@ def download_video(
     url: str, output_dir: str, cookies_from_browser: str | None = None,
     cookies_file: str | None = None,
     douyin_cookies_file: str | None = None,
+    progress: ProgressCallback | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> str:
     if not url:
         raise ValueError("URL cannot be empty")
+    if cancel_event is not None and cancel_event.is_set():
+        raise PipelineCancelled("Video download cancelled")
 
     ensure_dir(output_dir)
 
@@ -86,7 +122,8 @@ def download_video(
     if is_douyin_url(url):
         logger.info(f"Routing to Playwright Douyin extractor: {url}")
         info = download_douyin(
-            url, output_dir, cookies_file=douyin_cookies_file)
+            url, output_dir, cookies_file=douyin_cookies_file,
+            progress=progress, cancel_event=cancel_event)
         _save_meta(output_dir, info.get("title", ""), info.get("uploader", ""))
         return info["filepath"]
 
@@ -110,6 +147,23 @@ def download_video(
         ydl_opts["cookiesfrombrowser"] = (cookies_from_browser,)
     if cookies_file:
         ydl_opts["cookiefile"] = cookies_file
+    if progress is not None or cancel_event is not None:
+        def progress_hook(data: dict) -> None:
+            if cancel_event is not None and cancel_event.is_set():
+                raise PipelineCancelled("Video download cancelled")
+            status = data.get("status", "")
+            if status not in ("downloading", "finished"):
+                return
+            _emit_progress(
+                progress,
+                status,
+                downloaded=data.get("downloaded_bytes", 0),
+                total=(data.get("total_bytes")
+                       or data.get("total_bytes_estimate")),
+                speed=data.get("speed"),
+                eta=data.get("eta"),
+            )
+        ydl_opts["progress_hooks"] = [progress_hook]
 
     logger.info(f"Downloading video from: {canonical}")
 

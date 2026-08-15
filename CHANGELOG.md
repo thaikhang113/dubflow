@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.0.12 - 2026-08-15
+
+### Fixed
+
+- Hủy tải trước video dừng downloader thật, xóa file tạm và không phát kết quả
+  cho URL cũ.
+- Nút `Tiếp tục` giữ trạng thái `Đang tải…` trong lúc prefetch đang chạy.
+- Chuẩn hóa fallback version giữa package, GUI, Linux build và Windows installer.
+
 ## 3.0.9 - 2026-08-15
 
 ### Fixed

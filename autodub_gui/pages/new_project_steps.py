@@ -20,6 +20,7 @@ from autodub_gui.ui.inputs import (
     LabeledCombo, LabeledLineEdit, LabeledSlider, LabeledWidget,
 )
 from autodub_gui.ui.labels import ElidedLabel
+from autodub_gui.ui.progress import ThinProgressBar
 from autodub_gui.ui.style import clear_background
 
 STEP_NAMES = ("Chuẩn bị", "Nhận dạng", "Dịch thuật", "Giọng đọc",
@@ -82,6 +83,15 @@ class VideoStep(_StepPanel):
             "Dán liên kết YouTube, Douyin hoặc liên kết tải trực tiếp")
         self.url.changed.connect(lambda _t: self.changed.emit())
         self.body.addWidget(self.url)
+        self.download_progress = ThinProgressBar(color=tokens.PRIMARY)
+        self.download_progress_label = QLabel("")
+        self.download_progress_label.setStyleSheet(
+            f"color: {tokens.TEXT_MUTED}; font-size: {tokens.FS_META}px; "
+            "background: transparent;")
+        self.download_progress.setHidden(True)
+        self.download_progress_label.setHidden(True)
+        self.body.addWidget(self.download_progress)
+        self.body.addWidget(self.download_progress_label)
 
         self.file_row, self.file_edit = self._picker(
             "Tệp video trên máy", "Chưa chọn tệp nào", self._pick_file)
@@ -164,6 +174,38 @@ class VideoStep(_StepPanel):
         self.body.addWidget(self.info)
         self.finish()
         self._on_source("url")
+
+    def set_download_progress(self, payload: dict) -> None:
+        """Hiện progress tải URL trước khi chuyển sang bước kế tiếp."""
+        self.download_progress.setHidden(False)
+        self.download_progress_label.setHidden(False)
+        percent = payload.get("percent")
+        if percent is None:
+            self.download_progress.set_indeterminate(True)
+        else:
+            self.download_progress.set_indeterminate(False)
+            self.download_progress.setValue(int(percent))
+        detail = "Đang tải video…"
+        if percent is not None:
+            detail += f" {int(percent)}%"
+        total = payload.get("total_bytes")
+        downloaded = payload.get("downloaded_bytes") or 0
+        if total:
+            detail += f" · {format_size(downloaded)} / {format_size(total)}"
+        speed = payload.get("speed_bytes_s")
+        if speed:
+            detail += f" · {format_size(speed)}/s"
+        eta = payload.get("eta_s")
+        if eta is not None:
+            detail += f" · còn {int(eta)} giây"
+        self.download_progress_label.setText(detail)
+
+    def clear_download_progress(self) -> None:
+        self.download_progress.set_indeterminate(False)
+        self.download_progress.setValue(0)
+        self.download_progress.setHidden(True)
+        self.download_progress_label.clear()
+        self.download_progress_label.setHidden(True)
 
     def _picker(self, label: str, placeholder: str,
                 handler) -> tuple[QWidget, LabeledLineEdit]:

@@ -18,19 +18,49 @@ import json
 import os
 import re
 import subprocess
+import threading
 import time
 import urllib.parse
 from pathlib import Path
+from typing import Callable
 
 import requests
 
 from autodub.utils import setup_logging, ensure_dir
+from autodub.progress import PipelineCancelled
 from autodub.media.douyin_cookies import (
     load_douyin_cookies,
     playwright_cookies,
 )
 
 logger = setup_logging("autodub.downloader_douyin")
+
+ProgressCallback = Callable[[dict], None]
+
+def _emit_progress(
+    callback: ProgressCallback | None,
+    status: str,
+    downloaded: int,
+    total: int | None,
+) -> None:
+    if callback is None:
+        return
+    percent = None
+    if total and total > 0:
+        percent = min(100, max(0, int(downloaded * 100 / total)))
+    if status == "finished":
+        percent = 100
+    try:
+        callback({
+            "status": status,
+            "downloaded_bytes": max(0, int(downloaded)),
+            "total_bytes": int(total) if total else None,
+            "speed_bytes_s": None,
+            "eta_s": None,
+            "percent": percent,
+        })
+    except Exception:
+        pass
 
 _UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -180,7 +210,9 @@ def _fetch_share_info(video_id: str, cookies_file: str | None = None) -> dict | 
 
 
 def _download_play_url(
-    uri: str, dest: Path, cookies_file: str | None = None
+    uri: str, dest: Path, cookies_file: str | None = None,
+    progress: ProgressCallback | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> int:
     """Download the MP4 via the aweme play endpoint (no watermark)."""
     quoted = urllib.parse.quote(str(uri), safe="")
@@ -195,6 +227,7 @@ def _download_play_url(
                 url, headers=headers, stream=True,
                 allow_redirects=True, timeout=120) as r:
             r.raise_for_status()
+            total = int(r.headers.get("Content-Length", 0) or 0) or None
             content_type = r.headers.get("Content-Type", "")
             if "video" not in content_type:
                 raise RuntimeError(f"Play endpoint returned {content_type}, not video")
@@ -203,9 +236,11 @@ def _download_play_url(
                     if chunk:
                         f.write(chunk)
                         size += len(chunk)
+                        _emit_progress(progress, "downloading", size, total)
         if size < 10_000:
             raise RuntimeError(f"Play endpoint returned suspiciously small file ({size}B)")
         os.replace(part, dest)
+        _emit_progress(progress, "finished", size, total)
     finally:
         if part.exists():
             part.unlink(missing_ok=True)
@@ -267,6 +302,7 @@ def _extract_via_playwright(
     wait_seconds: float = 20.0,
     headless: bool = True,
     cookies_file: str | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> dict:
     """Open the Douyin page and capture direct CDN URLs for video + audio.
 
@@ -308,10 +344,14 @@ def _extract_via_playwright(
             captured = _capture_playwright_streams(page)
 
             logger.info(f"Loading Douyin page: {url}")
+            if cancel_event is not None and cancel_event.is_set():
+                raise PipelineCancelled("Video download cancelled")
             page.goto(url, wait_until="domcontentloaded", timeout=30000)
 
             deadline = time.time() + wait_seconds
             while time.time() < deadline:
+                if cancel_event is not None and cancel_event.is_set():
+                    raise PipelineCancelled("Video download cancelled")
                 if captured["progressive"] or (captured["dash_video"] and captured["dash_audio"]):
                     break
                 page.wait_for_timeout(500)
@@ -361,7 +401,9 @@ def _extract_via_playwright(
 
 
 def _download_stream(
-    url: str, dest: Path, cookies_file: str | None = None
+    url: str, dest: Path, cookies_file: str | None = None,
+    progress: ProgressCallback | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> int:
     headers = {"User-Agent": _UA, "Referer": _REFERER}
     size = 0
@@ -371,6 +413,7 @@ def _download_stream(
         with _requests_client(cookies_file).get(
                 url, headers=headers, stream=True, timeout=120) as r:
             r.raise_for_status()
+            total = int(r.headers.get("Content-Length", 0) or 0) or None
             content_type = r.headers.get("Content-Type", "").lower()
             if "text/html" in content_type:
                 raise RuntimeError(
@@ -378,9 +421,12 @@ def _download_stream(
                     "or Douyin blocked the request")
             with open(part, "wb") as f:
                 for chunk in r.iter_content(chunk_size=1024 * 256):
+                    if cancel_event is not None and cancel_event.is_set():
+                        raise PipelineCancelled("Video download cancelled")
                     if chunk:
                         f.write(chunk)
                         size += len(chunk)
+                        _emit_progress(progress, "downloading", size, total)
             with open(part, "rb") as f:
                 signature = f.read(16)
             if not _is_video_signature(signature):
@@ -391,6 +437,7 @@ def _download_stream(
                 f"CDN returned suspiciously small file ({size}B) — likely an "
                 "error page, not the video")
         os.replace(part, dest)
+        _emit_progress(progress, "finished", size, total)
     finally:
         if part.exists():
             part.unlink(missing_ok=True)
@@ -439,10 +486,13 @@ def _download_via_playwright(
     out_dir: Path,
     final_path: Path,
     cookies_file: str | None = None,
+    progress: ProgressCallback | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> dict:
     """Fallback: sniff CDN streams from the share page with a headless browser."""
     share_url = f"https://www.iesdouyin.com/share/video/{video_id}/"
-    info = _extract_via_playwright(share_url, cookies_file=cookies_file)
+    info = _extract_via_playwright(
+        share_url, cookies_file=cookies_file, cancel_event=cancel_event)
 
     # The share page may client-side redirect; verify we stayed on our video.
     if info["video_id"] and info["video_id"] != video_id:
@@ -454,12 +504,15 @@ def _download_via_playwright(
     if info["mode"] == "progressive":
         if info.get("video_bytes"):
             final_path.write_bytes(info["video_bytes"])
+            size = final_path.stat().st_size
+            _emit_progress(progress, "finished", size, size)
             return info
         last_error = None
         for stream_url in info.get("video_urls", [info["video_url"]]):
             try:
                 logger.info(f"Downloading progressive MP4 id={video_id}")
-                size = _download_stream(stream_url, final_path, cookies_file)
+                size = _download_stream(
+                    stream_url, final_path, cookies_file, progress, cancel_event)
                 logger.info(f"Stream downloaded: {size:,}B")
                 break
             except (requests.RequestException, RuntimeError) as exc:
@@ -473,10 +526,11 @@ def _download_via_playwright(
         try:
             logger.info(f"Downloading DASH video stream id={video_id}")
             v_size = _download_stream(
-                info["video_url"], tmp_video, cookies_file)
+                info["video_url"], tmp_video, cookies_file, progress, cancel_event)
             logger.info(f"Downloading DASH audio stream id={video_id}")
             a_size = _download_stream(
-                info["audio_url"], tmp_audio, cookies_file)
+                info["audio_url"], tmp_audio, cookies_file,
+                cancel_event=cancel_event)
             logger.info(f"Streams downloaded: video={v_size:,}B audio={a_size:,}B")
             _ffmpeg_mux(tmp_video, tmp_audio, final_path)
         finally:
@@ -494,6 +548,8 @@ def download_douyin(
     output_dir: str,
     filename: str | None = None,
     cookies_file: str | None = None,
+    progress: ProgressCallback | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> dict:
     """Download a Douyin video and return metadata matching download_one() shape.
 
@@ -503,6 +559,8 @@ def download_douyin(
     """
     if not url:
         raise ValueError("URL cannot be empty")
+    if cancel_event is not None and cancel_event.is_set():
+        raise PipelineCancelled("Video download cancelled")
     url = url.strip()
     if "://" not in url:   # link share dán từ app thường thiếu scheme
         url = "https://" + url
@@ -529,7 +587,7 @@ def download_douyin(
         title = share_info["title"]
         try:
             size = _download_play_url(
-                share_info["uri"], final_path, cookies_file)
+                share_info["uri"], final_path, cookies_file, progress, cancel_event)
             logger.info(f"Direct download OK: {size:,}B (uri={share_info['uri']})")
             downloaded = True
         except (requests.RequestException, RuntimeError) as exc:
@@ -539,7 +597,7 @@ def download_douyin(
     # --- Fallback: Playwright stream sniffing (share page, id-verified) ---
     if not downloaded:
         info = _download_via_playwright(
-            video_id, out_dir, final_path, cookies_file)
+            video_id, out_dir, final_path, cookies_file, progress, cancel_event)
         title = title or info["title"]
 
     duration = _ffprobe_duration(final_path)

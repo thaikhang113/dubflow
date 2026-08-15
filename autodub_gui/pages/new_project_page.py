@@ -288,6 +288,7 @@ class NewProjectPage(BasePage):
             self._prefetch_worker.wait(1000)
             self._prefetch_worker = None
         self._prefetched_path = ""
+        self.step_video.clear_download_progress()
         self._restore_next_button()
 
     def _prefetch_temp_dir(self) -> str:
@@ -300,20 +301,39 @@ class NewProjectPage(BasePage):
         if self._prefetch_worker is not None and self._prefetch_worker.isRunning():
             return
         self.btn_next.setEnabled(False)
+        self.step_video.set_download_progress({
+            "status": "downloading",
+            "percent": None,
+            "downloaded_bytes": 0,
+            "total_bytes": None,
+        })
         self.btn_next.setText("Đang tải…")
         worker = PrefetchWorker(url, self._prefetch_temp_dir(), self)
-        worker.finished_ok.connect(self._on_prefetch_done)
-        worker.failed.connect(self._on_prefetch_failed)
+        worker.progress.connect(self.step_video.set_download_progress)
+        worker.finished_ok.connect(
+            lambda path, source_worker=worker:
+            self._on_prefetch_done(source_worker, path))
+        worker.failed.connect(
+            lambda message, source_worker=worker:
+            self._on_prefetch_failed(source_worker, message))
         self._prefetch_worker = worker
         worker.start()
 
-    def _on_prefetch_done(self, path: str) -> None:
+    def _on_prefetch_done(self, worker: PrefetchWorker, path: str) -> None:
+        if worker is not self._prefetch_worker:
+            return
         self._prefetched_path = path
+        self.step_video.clear_download_progress()
         self._restore_next_button()
         self.stepper.set_max_reached(0)
         self._go_to_step(1)
 
-    def _on_prefetch_failed(self, message: str) -> None:
+    def _on_prefetch_failed(
+        self, worker: PrefetchWorker, message: str
+    ) -> None:
+        if worker is not self._prefetch_worker:
+            return
+        self.step_video.clear_download_progress()
         self._restore_next_button()
         TOASTS.warn(f"Tải video thất bại: {message[:120]}")
 
@@ -335,10 +355,15 @@ class NewProjectPage(BasePage):
         # otherwise navigating to step 2 immediately locks this button again.
         prefetch_ready = bool(
             self._prefetched_path and os.path.isfile(self._prefetched_path))
-        if prefetch_ready or (
-            self._prefetch_worker is None
-            or not self._prefetch_worker.isRunning()):
-            self.btn_next.setEnabled(True)
+        prefetch_running = (
+            self._prefetch_worker is not None
+            and self._prefetch_worker.isRunning()
+        )
+        if prefetch_running and not prefetch_ready:
+            self.btn_next.setEnabled(False)
+            self.btn_next.setText("Đang tải…")
+            return
+        self.btn_next.setEnabled(True)
         self.btn_next.setText(self._next_label())
 
     def _on_form_changed(self) -> None:

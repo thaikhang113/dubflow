@@ -873,6 +873,7 @@ class PrefetchWorker(QThread):
 
     finished_ok = Signal(str)   # đường dẫn file vừa tải về
     failed = Signal(str)        # lý do thất bại
+    progress = Signal(object)   # progress payload từ downloader
 
     def __init__(self, url: str, output_dir: str, parent=None):
         super().__init__(parent)
@@ -889,7 +890,12 @@ class PrefetchWorker(QThread):
 
         try:
             ensure_dir(self._output_dir)
-            path = download_video(self._url, self._output_dir)
+            path = download_video(
+                self._url,
+                self._output_dir,
+                progress=self.progress.emit,
+                cancel_event=self._cancel_event,
+            )
             if not self._cancel_event.is_set():
                 self.finished_ok.emit(path)
         except Exception as e:  # noqa: BLE001
