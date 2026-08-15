@@ -38,7 +38,7 @@ def assemble(version: str) -> None:
     for name in ("setup_support.py", "setup_vieneu.py",
                  "setup_paraformer.py", "setup_whisper.py", "setup_ocr.py",
                  "setup_douyin.py", "setup_demucs.py", "setup_voices.py",
-                 "setup_deepseek_ocr.py"):
+                 "setup_deepseek_ocr.py", "setup_vsr.py"):
         shutil.copy2(
             os.path.join(ROOT, "scripts", name),
             os.path.join(DIST, "scripts", name),
@@ -89,7 +89,7 @@ def archive(version: str) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-test", action="store_true")
-    parser.add_argument("--version", default="3.0.7")
+    parser.add_argument("--version", default="3.0.8")
     args = parser.parse_args()
     started = time.time()
 
@@ -107,7 +107,8 @@ def main() -> int:
             os.path.join("autodub", "speech", "tts", "vieneu_worker.py"),
             os.path.join("autodub", "media", "demucs_worker.py"),
             os.path.join("autodub", "media", "ocr_worker.py"),
-            os.path.join("autodub", "media", "deepseek_ocr_worker.py")):
+            os.path.join("autodub", "media", "deepseek_ocr_worker.py"),
+            os.path.join("autodub", "media", "vsr_worker.py")):
         bundled = os.path.join(_bundle_data_dir(), worker)
         if not os.path.isfile(bundled):
             raise SystemExit(f"missing worker in bundle: {bundled}")

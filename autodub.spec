@@ -35,6 +35,8 @@ datas = [
      os.path.join("autodub", "media")),
     (os.path.join(ROOT, "autodub", "media", "deepseek_ocr_worker.py"),
      os.path.join("autodub", "media")),
+    (os.path.join(ROOT, "autodub", "media", "vsr_worker.py"),
+     os.path.join("autodub", "media")),
     # Danh mục giọng CapCut — tài nguyên trong gói, đọc qua bundled_file.
     (os.path.join(ROOT, "autodub", "speech", "tts", "capcut_api",
                   "Voice.json"),

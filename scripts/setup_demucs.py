@@ -32,6 +32,7 @@ WORKER = find_bundled_worker(
 )
 
 DEMUCS_SPEC = "demucs>=4.0.0,<5.0.0"
+DEFAULT_ROCM_INDEX = "https://download.pytorch.org/whl/rocm6.4"
 
 
 def log(message: str) -> None:
@@ -42,6 +43,38 @@ def _env() -> dict[str, str]:
     env = dict(os.environ)
     env["TORCH_HOME"] = TORCH_HOME
     return env
+
+def _has_rocm() -> bool:
+    if sys.platform == "win32":
+        return False
+    try:
+        subprocess.run(
+            ["rocminfo"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+            check=True,
+        )
+        return True
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+def _rocm_index() -> str:
+    return os.environ.get("DUBFLOW_TORCH_INDEX_URL", DEFAULT_ROCM_INDEX)
+
+def _torch_probe() -> tuple[bool, bool]:
+    result = subprocess.run(
+        [VENV_PY, "-c",
+         "import torch; print(int(torch.cuda.is_available())); "
+         "print(int(getattr(torch.version, 'hip', None) is not None))"],
+        capture_output=True,
+        text=True,
+    )
+    values = [line.strip() for line in result.stdout.splitlines()]
+    return (
+        result.returncode == 0 and values[:1] == ["1"],
+        result.returncode == 0 and len(values) > 1 and values[1] == "1",
+    )
 
 
 def step_venv() -> None:
@@ -57,9 +90,29 @@ def step_install() -> None:
         [VENV_PY, "-c", "import demucs, soundfile"],
         capture_output=True,
     )
-    if probe.returncode == 0:
+    cuda_ready, rocm_ready = _torch_probe()
+    wants_rocm = _has_rocm()
+    if probe.returncode == 0 and (not wants_rocm or rocm_ready):
         log("Demucs và soundfile đã cài — bỏ qua")
         return
+    if wants_rocm and not rocm_ready:
+        log(f"ROCm phát hiện — cài Torch ROCm từ {_rocm_index()} ...")
+        retry_call(
+            lambda: subprocess.run(
+                [
+                    VENV_PY, "-m", "pip", "install", "--quiet",
+                    "--no-cache-dir", "--retries", "5", "--timeout", "120",
+                    "--index-url", _rocm_index(), "torch", "torchaudio",
+                ],
+                check=True,
+            ),
+            attempts=3,
+        )
+        cuda_ready, rocm_ready = _torch_probe()
+        if not rocm_ready:
+            raise SystemExit(
+                "!! Torch ROCm cài xong nhưng không nhận GPU; "
+                "kiểm tra driver/runtime rồi chạy lại.")
     log("cài Demucs và dependency âm thanh ...")
     retry_call(
         lambda: subprocess.run(

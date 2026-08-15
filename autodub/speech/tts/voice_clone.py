@@ -58,7 +58,7 @@ def reference_hash(path: str) -> str:
 
 
 def clone_voice_name(ref_hash: str) -> str:
-    return f"VoxDub Clone {ref_hash[:8]}"
+    return f"DubFlow Clone {ref_hash[:8]}"
 
 
 def custom_voice_is_cached(path: str, name: str, ref_hash: str) -> bool:

@@ -80,7 +80,8 @@ def step_pyinstaller() -> None:
             os.path.join("autodub", "speech", "tts", "vieneu_worker.py"),
             os.path.join("autodub", "media", "demucs_worker.py"),
             os.path.join("autodub", "media", "ocr_worker.py"),
-            os.path.join("autodub", "media", "deepseek_ocr_worker.py")):
+            os.path.join("autodub", "media", "deepseek_ocr_worker.py"),
+            os.path.join("autodub", "media", "vsr_worker.py")):
         bundled = os.path.join(_bundle_data_dir(), worker)
         if not os.path.isfile(bundled):
             raise SystemExit(f"!! thiếu worker trong bundle: {bundled}")
@@ -102,7 +103,7 @@ def step_assemble() -> None:
     for script in ("setup_support.py", "setup_vieneu.py",
                    "setup_paraformer.py", "setup_whisper.py",
                    "setup_ocr.py", "setup_douyin.py", "setup_demucs.py",
-                   "setup_voices.py", "setup_deepseek_ocr.py"):
+                   "setup_voices.py", "setup_deepseek_ocr.py", "setup_vsr.py"):
         shutil.copy2(os.path.join(PROJECT_ROOT, "scripts", script),
                      scripts_dst)
 

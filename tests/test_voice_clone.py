@@ -32,12 +32,12 @@ def test_reference_duration_is_limited_to_vieneu_enrollment_window():
 
 
 def test_clone_voice_name_is_stable_and_safe():
-    assert clone_voice_name("a" * 64) == "VoxDub Clone aaaaaaaa"
+    assert clone_voice_name("a" * 64) == "DubFlow Clone aaaaaaaa"
 
 
 def test_worker_accepts_enrolled_custom_voice_names():
-    assert "VoxDub Clone abcdef12" in available_voice_names(
-        ["Preset"], {"VoxDub Clone abcdef12": {}})
+    assert "DubFlow Clone abcdef12" in available_voice_names(
+        ["Preset"], {"DubFlow Clone abcdef12": {}})
 
 
 def test_worker_loads_enrolled_custom_voice_embeddings(tmp_path):

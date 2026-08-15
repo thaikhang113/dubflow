@@ -6,11 +6,21 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist" / "DubFlow"
+
+
+def _force_utf8_stdio() -> None:
+    """Keep Vietnamese build output readable on Windows legacy consoles."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
 
 def run(command: list[str]) -> None:
@@ -64,6 +74,7 @@ def _validate_bundle(bundle: Path, version: str) -> None:
 
 
 def main() -> int:
+    _force_utf8_stdio()
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", required=True)
     parser.add_argument("--no-build", action="store_true")

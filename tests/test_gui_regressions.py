@@ -102,6 +102,30 @@ def test_cancel_processes_stops_registered_child() -> None:
     assert result and isinstance(result[0], PipelineCancelled)
 
 
+def test_download_worker_cancel_interrupts_retry_backoff(monkeypatch, tmp_path) -> None:
+    from autodub_gui.workers import DownloadWorker
+
+    calls: list[str] = []
+
+    def fail_transient(*_args, **_kwargs):
+        calls.append("download")
+        raise RuntimeError("HTTP 503")
+
+    monkeypatch.setattr("autodub.media.downloader.download_one", fail_transient)
+    worker = DownloadWorker(["https://example.com/video"], str(tmp_path))
+
+    thread = threading.Thread(target=worker.run)
+    thread.start()
+    deadline = time.monotonic() + 2
+    while not calls and time.monotonic() < deadline:
+        time.sleep(0.01)
+    worker.cancel()
+    thread.join(1)
+
+    assert not thread.is_alive()
+    assert calls == ["download"]
+
+
 def test_error_modal_supports_recovery_actions() -> None:
     params = inspect.signature(ConfirmDialog.show_error).parameters
 
@@ -139,6 +163,17 @@ def test_stop_buttons_keep_pending_state_until_worker_finishes() -> None:
         assert 'setText("Đang dừng…")' in source
         assert 'setText("Dừng")' in source
         assert "finished.connect" in source
+
+
+def test_help_page_exposes_system_doctor_and_repair_actions() -> None:
+    source = _source("autodub_gui/pages/help_page.py")
+    worker_source = _source("autodub_gui/workers_setup.py")
+
+    assert "self._build_doctor()" in source
+    assert "Kiểm tra hệ thống" in source
+    assert "Tải lại" in source
+    assert "DoctorWorker" in worker_source
+    assert "run_doctor" in worker_source
 
 
 def test_no_arg_changed_signals_use_no_arg_forwarders() -> None:
@@ -470,6 +505,9 @@ def test_help_page_documents_ocr_and_uses_bundled_readme_name():
     assert "Sao chép lệnh cài" not in source
     assert "SetupScriptWorker" in source
     assert "VoiceSetupDialog.ensure_voices" in source
+    assert "CUDA/NVIDIA" not in source
+    assert "AMD dùng ROCm" in source
+    assert "DirectML" in source
 
 def test_help_page_install_rows_use_in_app_buttons(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")

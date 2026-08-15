@@ -17,6 +17,7 @@ import zipfile
 
 from PySide6.QtCore import QThread, Signal
 
+from autodub.doctor import run_doctor
 from autodub.utils import app_root, data_root
 from autodub_gui.status_text import STATUS_ERROR, STATUS_OK
 
@@ -530,6 +531,23 @@ class SetupScriptWorker(QThread):
                 self.failed.emit(
                     f"Script kết thúc với mã lỗi {proc.returncode}:\n{err}")
 
+        except Exception as exc:  # noqa: BLE001
+            self.failed.emit(str(exc))
+
+
+class DoctorWorker(QThread):
+    """Chạy Doctor ngoài luồng GUI; chỉ kiểm tra, không sửa dữ liệu."""
+
+    results = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, settings=None, parent=None):
+        super().__init__(parent)
+        self._settings = settings
+
+    def run(self) -> None:
+        try:
+            self.results.emit(run_doctor(self._settings))
         except Exception as exc:  # noqa: BLE001
             self.failed.emit(str(exc))
 

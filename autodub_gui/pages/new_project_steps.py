@@ -944,14 +944,16 @@ class RunStep(_StepPanel):
     def _update_worker_summary(self) -> None:
         import os
 
+        from autodub.gpu import detect_gpu
         from autodub.sysinfo import available_ram_gb
         from autodub.worker_plan import build_worker_plan
 
+        gpu_info = detect_gpu()
         plan = build_worker_plan(
             mode=self.worker_mode.current_key(),
             cpu_count=os.cpu_count(),
             available_ram_gb=available_ram_gb(),
-            gpu_available=False,
+            gpu_available=gpu_info.compute_available,
             configured={
                 "tts": 3,
                 "parallel": int(self.parallel_workers.value()),
@@ -965,7 +967,7 @@ class RunStep(_StepPanel):
         self.worker_summary.setText(" | ".join(
             f"<b>{label}:</b> {plan[key]['effective']} luong"
             for label, key in labels
-        ))
+        ) + f" | <b>GPU:</b> {gpu_info.label}")
 
     def set_summary(self, rows: list[tuple[str, str]]) -> None:
         """Đổ bảng tóm tắt hai cột."""

@@ -96,6 +96,14 @@ _OCR_BACKENDS = [
     ("Hybrid — Paddle + DeepSeek fallback", "hybrid"),
 ]
 
+_VSR_MODES = [
+    ("STTN detection — khuyên dùng", "sttn-det"),
+    ("STTN tự dò", "sttn-auto"),
+    ("LAMA", "lama"),
+    ("ProPainter — cần máy mạnh", "propainter"),
+    ("OpenCV — nhẹ hơn", "opencv"),
+]
+
 
 # Toàn bộ các mục, xếp theo thẻ rồi theo nhóm.
 FIELDS: tuple[Field, ...] = (
@@ -245,8 +253,17 @@ FIELDS: tuple[Field, ...] = (
           options=_OCR_BACKENDS),
     Field("DEEPSEEK_OCR_ENABLED", CHECK, "Bật DeepSeek-OCR fallback",
           TAB_PERF, "Che phụ đề cứng", "false",
-          "Cần cài riêng DeepSeek-OCR và GPU NVIDIA. Chưa cài thì PaddleOCR "
-          "vẫn chạy bình thường."),
+           "Cần cài riêng DeepSeek-OCR. NVIDIA dùng CUDA; AMD dùng ROCm trên "
+           "Linux hoặc DirectML trên Windows nếu backend tương thích. Chưa cài "
+           "hoặc không tương thích thì PaddleOCR vẫn chạy."),
+    Field("VSR_ENABLED", CHECK, "Dùng AI để xóa phụ đề cứng",
+          TAB_PERF, "Che phụ đề cứng", "true",
+          "VSR phục hồi nền video sau khi OCR tìm vùng chữ. Nếu chưa cài hoặc "
+          "chạy lỗi, ứng dụng tự quay về làm mờ."),
+    Field("VSR_MODE", COMBO, "Chế độ xóa phụ đề",
+          TAB_PERF, "Che phụ đề cứng", "sttn-det",
+          "STTN detection là lựa chọn cân bằng và không tự xóa ngoài vùng OCR.",
+          options=_VSR_MODES),
     Field("OCR_MIN_CONFIDENCE", SLIDER, "Độ tin cậy OCR tối thiểu",
           TAB_PERF, "Che phụ đề cứng", "0.80",
           "Tăng lên nếu OCR nhận nhầm. Chỉ vùng đạt ngưỡng mới được làm mờ.",
@@ -389,6 +406,8 @@ FIELDS: tuple[Field, ...] = (
 # Khóa do ứng dụng tự tính hoặc chỉ dùng nội bộ, không hiện thành ô nhập chữ.
 # Mỗi khóa đều phải kèm lý do rõ ràng.
 EXEMPT_KEYS: dict[str, str] = {
+    "VSR_VENV_PYTHON": "đường dẫn venv VSR tự suy ra hoặc chỉ dành cho cài đặt nâng cao",
+    "VSR_MODEL_DIR": "thư mục model VSR tự suy ra hoặc chỉ dành cho cài đặt nâng cao",
     "DEEPSEEK_OCR_VENV_PYTHON": "đường dẫn venv DeepSeek-OCR tự suy ra hoặc chỉ dành cho cài đặt nâng cao",
     "DEEPSEEK_OCR_MODEL_DIR": "thư mục model DeepSeek-OCR tự suy ra hoặc chỉ dành cho cài đặt nâng cao",
     "VIENEU_VOICE": "chọn ở thẻ Giọng đọc bằng thẻ giọng, không phải ô nhập chữ",
@@ -398,7 +417,7 @@ EXEMPT_KEYS: dict[str, str] = {
     "VIENEU_CLONE_REFERENCE_AUDIO": "clone là tùy chọn theo từng job trong wizard, không cần cấu hình chung",
     "VIENEU_CLONE_MIN_SECONDS": "ngưỡng nội bộ của enrollment VieNeu, không cần chỉnh trong giao diện",
     "VIENEU_CLONE_MAX_SECONDS": "ngưỡng nội bộ của enrollment VieNeu, không cần chỉnh trong giao diện",
-    "OCR_DEVICE": "tự động dùng GPU NVIDIA nếu PaddlePaddle GPU đã cài, nếu không thì dùng CPU",
+    "OCR_DEVICE": "tự động dùng backend GPU phù hợp nếu PaddlePaddle hỗ trợ, nếu không thì dùng CPU",
     "VOICE_RECENT": "ứng dụng tự ghi lại các giọng dùng gần đây",
     "WHISPER_BEAM_SIZE": "nút vặn nâng cao cho người biết việc (đổi tốc độ "
                          "lấy độ chính xác); mặc định giữ nguyên chất lượng, "

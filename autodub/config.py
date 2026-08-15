@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from dotenv import load_dotenv
 
-from autodub.utils import app_root, data_root
+from autodub.utils import app_root, bundled_file, data_root
 
 
 class ConfigError(Exception):
@@ -160,6 +160,10 @@ class Settings:
     deepseek_ocr_enabled: bool = False
     deepseek_ocr_venv_python: str = ""
     deepseek_ocr_model_dir: str = ""
+    vsr_enabled: bool = True
+    vsr_mode: str = "sttn-det"
+    vsr_venv_python: str = ""
+    vsr_model_dir: str = ""
 
     # --- Giọng đọc tiếng Việt (VieNeu — bộ giọng DUY NHẤT) -----------------
     # Chạy trong venv riêng (.venv-vieneu) qua tiến trình con — cài một lần
@@ -393,6 +397,12 @@ class Settings:
             deepseek_ocr_enabled=env_bool("DEEPSEEK_OCR_ENABLED", "false"),
             deepseek_ocr_venv_python=env("DEEPSEEK_OCR_VENV_PYTHON"),
             deepseek_ocr_model_dir=env("DEEPSEEK_OCR_MODEL_DIR"),
+            vsr_enabled=env_bool("VSR_ENABLED", "true"),
+            vsr_mode=_one_of(env("VSR_MODE", "sttn-det"),
+                             ("sttn-det", "sttn-auto", "lama", "propainter",
+                              "opencv"), "sttn-det"),
+            vsr_venv_python=env("VSR_VENV_PYTHON"),
+            vsr_model_dir=env("VSR_MODEL_DIR"),
             vieneu_venv_python=env("VIENEU_VENV_PYTHON"),
             vieneu_model_dir=env("VIENEU_MODEL_DIR"),
             vieneu_voice=env("VIENEU_VOICE", "").strip(),
@@ -618,6 +628,27 @@ class Settings:
                 and os.path.isfile(self.deepseek_ocr_venv_python_path())
                 and os.path.isfile(os.path.join(
                     self.deepseek_ocr_model_dir_path(), "installed_ok.json")))
+
+    def vsr_venv_python_path(self) -> str:
+        if self.vsr_venv_python:
+            return self.vsr_venv_python
+        exe = "Scripts/python.exe" if os.name == "nt" else "bin/python"
+        return os.path.join(data_root(), ".venv-vsr", *exe.split("/"))
+
+    def vsr_model_dir_path(self) -> str:
+        if self.vsr_model_dir:
+            return self.vsr_model_dir
+        return os.path.join(data_root(), "models", "video-subtitle-remover")
+
+    def vsr_worker_path(self) -> str:
+        return bundled_file("autodub", "media", "vsr_worker.py")
+
+    def vsr_configured(self) -> bool:
+        return (self.vsr_enabled
+                and os.path.isfile(self.vsr_venv_python_path())
+                and os.path.isfile(self.vsr_worker_path())
+                and os.path.isfile(os.path.join(
+                    self.vsr_model_dir_path(), "installed_ok.json")))
 
     def vieneu_venv_python_path(self) -> str:
         """Trình thông dịch Python của venv dành riêng cho VieNeu."""

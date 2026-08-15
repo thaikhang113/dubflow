@@ -61,3 +61,8 @@
 
 - Manual `Kiểm tra cập nhật` button in the app header.
 - In-app release download, SHA256 verification, and installer handoff.
+## 3.0.8
+
+- Thêm VSR làm engine chính để xóa phụ đề cứng sau khi OCR tìm vùng chữ.
+- Tự quay về làm mờ nếu VSR chưa cài hoặc xử lý lỗi.
+- Thêm setup, Doctor, cấu hình mode và worker VSR vào bundle Windows/Linux.

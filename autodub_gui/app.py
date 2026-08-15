@@ -29,7 +29,7 @@ from autodub_gui.ui.toast import TOASTS
 
 APP_NAME = "DubFlow"
 APP_TAGLINE = "Lồng tiếng video bằng AI"
-APP_VERSION = "3.0.7"
+APP_VERSION = "3.0.8"
 
 def _runtime_version() -> str:
     """Read release version written into frozen bundles."""

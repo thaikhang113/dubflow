@@ -97,6 +97,23 @@ def test_status_aggregates_jobs_and_cancel_marks_each_job(tmp_path):
     assert (tmp_path / "cancel" / job_id).is_file()
 
 
+def test_status_handles_empty_batch_manifest_without_dividing_by_zero(tmp_path):
+    batch_id = "batch-empty"
+    (tmp_path / "batches").mkdir()
+    (tmp_path / "batches" / f"{batch_id}.json").write_text(
+        json.dumps({"batch_id": batch_id, "job_ids": []}),
+        encoding="utf-8",
+    )
+
+    status = load_batch_status(str(tmp_path), batch_id)
+
+    assert status["ok"] is True
+    assert status["status"] == "running"
+    assert status["percent"] == 0
+    assert status["counts"] == {}
+    assert status["jobs"] == []
+
+
 def test_tool_rejects_unknown_options_and_local_files(tmp_path):
     with pytest.raises(ValueError):
         handle(

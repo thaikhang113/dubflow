@@ -69,10 +69,17 @@ INSTALL_ITEMS = (
      "khoảng 2–3 GB (GPU)", "script", "scripts/setup_ocr.py",
      "ocr_configured"),
     ("DeepSeek-OCR (tùy chọn)",
-     "Fallback cho PaddleOCR và hỗ trợ tìm logo/chữ khó. Cần GPU NVIDIA, "
-     "cài riêng và bật trong Cài đặt; không cài thì PaddleOCR vẫn hoạt động.",
+      "Fallback cho PaddleOCR và hỗ trợ tìm logo/chữ khó. Cài riêng và bật "
+      "trong Cài đặt; NVIDIA dùng CUDA, AMD dùng ROCm trên Linux hoặc DirectML "
+      "trên Windows nếu backend tương thích. Không tương thích thì PaddleOCR "
+      "vẫn hoạt động.",
      "tải riêng theo model", "script", "scripts/setup_deepseek_ocr.py",
      "deepseek_ocr_configured"),
+    ("AI xóa phụ đề VSR",
+     "Phục hồi nền video sau khi OCR tìm phụ đề cứng. Dùng STTN detection mặc định; "
+     "nếu lỗi sẽ tự quay về làm mờ để không chặn xuất video.",
+     "tải riêng theo model", "script", "scripts/setup_vsr.py",
+     "vsr_configured"),
 )
 
 EXTRA_PROBLEMS = (
@@ -119,6 +126,12 @@ class HelpPage(BasePage):
         self._install_rows: dict[str, dict[str, object]] = {}
         self._active_install: str | None = None
         self._install_worker: QThread | None = None
+        self._doctor_section: CollapsibleSection | None = None
+        self._doctor_layout: QVBoxLayout | None = None
+        self._doctor_rows: dict[str, dict[str, object]] = {}
+        self._doctor_worker: QThread | None = None
+        self._doctor_repair_worker: QThread | None = None
+        self._doctor_check_button: GhostButton | None = None
         self._build()
 
     def _build(self) -> None:
@@ -133,6 +146,7 @@ class HelpPage(BasePage):
         layout.setSpacing(tokens.SP_4)
 
         layout.addWidget(self._build_quick_start())
+        layout.addWidget(self._build_doctor())
         layout.addWidget(self._build_install())
         layout.addWidget(self._build_problems())
         layout.addWidget(self._build_shortcuts())
@@ -143,6 +157,32 @@ class HelpPage(BasePage):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.addWidget(scroll)
+
+    def _build_doctor(self) -> QWidget:
+        section = CollapsibleSection("Kiểm tra hệ thống", expanded=True)
+        section.add_widget(_body_label(
+            "Kiểm tra môi trường phát hành, thư viện và các bộ cài. "
+            "Mục lỗi có thể Tải lại riêng; dữ liệu dự án, model và cookie được giữ nguyên."
+        ))
+        controls = QHBoxLayout()
+        status = QLabel("Chưa kiểm tra")
+        status.setStyleSheet(
+            f"color: {tokens.TEXT_MUTED}; font-size: {tokens.FS_META}px; "
+            "background: transparent;")
+        button = GhostButton("Kiểm tra hệ thống")
+        button.clicked.connect(self._start_doctor_check)
+        controls.addWidget(status)
+        controls.addStretch()
+        controls.addWidget(button)
+        section.add_layout(controls)
+        layout = QVBoxLayout()
+        layout.setSpacing(tokens.SP_1)
+        section.add_layout(layout)
+        self._doctor_section = section
+        self._doctor_layout = layout
+        self._doctor_rows["__summary__"] = {"status": status}
+        self._doctor_check_button = button
+        return section
 
     def _build_quick_start(self) -> QWidget:
         section = CollapsibleSection("Bắt đầu nhanh", expanded=True)
@@ -372,6 +412,141 @@ class HelpPage(BasePage):
         worker.finished.connect(worker.deleteLater)
         self._install_worker = worker
         worker.start()
+
+    def _start_doctor_check(self) -> None:
+        if self._doctor_worker is not None or self._doctor_repair_worker is not None:
+            return
+        settings = self._safe_settings()
+        if settings is None:
+            TOASTS.error("Không đọc được cấu hình để kiểm tra hệ thống.")
+            return
+        if self._doctor_check_button is not None:
+            self._doctor_check_button.setEnabled(False)
+        summary = self._doctor_rows.get("__summary__", {}).get("status")
+        if isinstance(summary, QLabel):
+            summary.setText("Đang kiểm tra...")
+        from autodub_gui.workers_setup import DoctorWorker
+
+        worker = DoctorWorker(settings, self)
+        worker.results.connect(self._show_doctor_results)
+        worker.failed.connect(self._doctor_failed)
+        worker.finished.connect(self._doctor_worker_finished)
+        self._doctor_worker = worker
+        worker.start()
+
+    def _doctor_worker_finished(self) -> None:
+        worker = self._doctor_worker
+        self._doctor_worker = None
+        if worker is not None:
+            worker.deleteLater()
+
+    def _doctor_failed(self, message: str) -> None:
+        summary = self._doctor_rows.get("__summary__", {}).get("status")
+        if isinstance(summary, QLabel):
+            summary.setText("Kiểm tra thất bại")
+            summary.setToolTip(message)
+        if self._doctor_check_button is not None:
+            self._doctor_check_button.setEnabled(True)
+        TOASTS.error("Doctor không kiểm tra được hệ thống.")
+
+    def _show_doctor_results(self, results: object) -> None:
+        if self._doctor_layout is None:
+            return
+        while self._doctor_layout.count():
+            item = self._doctor_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self._doctor_rows = {
+            "__summary__": self._doctor_rows.get("__summary__", {})
+        }
+        checks = [item for item in results if hasattr(item, "key")]
+        failures = [item for item in checks if item.level == "fail"]
+        warnings = [item for item in checks if item.level == "warn"]
+        summary = self._doctor_rows["__summary__"].get("status")
+        if isinstance(summary, QLabel):
+            summary.setText(
+                f"{len(failures)} lỗi, {len(warnings)} cảnh báo, "
+                f"{len(checks) - len(failures) - len(warnings)} đạt"
+            )
+        for check in checks:
+            self._add_doctor_row(check)
+        if self._doctor_check_button is not None:
+            self._doctor_check_button.setEnabled(True)
+
+    def _add_doctor_row(self, check) -> None:
+        row = QHBoxLayout()
+        state = QLabel({"ok": "Đạt", "warn": "Cảnh báo", "fail": "Lỗi"}
+                       .get(check.level, check.level))
+        colors = {"ok": tokens.SUCCESS, "warn": tokens.WARNING,
+                  "fail": tokens.DANGER}
+        state.setStyleSheet(
+            f"color: {colors.get(check.level, tokens.TEXT_MUTED)}; "
+            f"font-size: {tokens.FS_META}px; background: transparent;")
+        title = QLabel(check.title)
+        title.setMinimumWidth(_LABEL_W)
+        message = ElidedLabel(check.message)
+        message.setStyleSheet(
+            f"color: {tokens.TEXT_SECONDARY}; font-size: {tokens.FS_META}px; "
+            "background: transparent;")
+        row.addWidget(title)
+        row.addWidget(state)
+        row.addWidget(message, 1)
+        if check.repairable:
+            repair = GhostButton("Tải lại")
+            repair.clicked.connect(
+                lambda _checked=False, key=check.key: self._start_doctor_repair(key))
+            row.addWidget(repair)
+        self._doctor_layout.addLayout(row)
+        self._doctor_rows[check.key] = {"check": check, "layout": row}
+
+    def _start_doctor_repair(self, check_key: str) -> None:
+        if self._doctor_repair_worker is not None or self._active_install is not None:
+            return
+        row = self._doctor_rows.get(check_key, {})
+        check = row.get("check")
+        script = getattr(check, "repair_script", "")
+        if not script:
+            return
+        from autodub_gui.workers_setup import (
+            FFmpegDownloadWorker, SetupScriptWorker,
+        )
+
+        worker = (
+            FFmpegDownloadWorker()
+            if script == "__ffmpeg__"
+            else SetupScriptWorker(script, self)
+        )
+        worker.log.connect(lambda message: self._doctor_rows[check_key].update(
+            {"last_log": message}))
+        worker.finished_ok.connect(
+            lambda key=check_key: self._finish_doctor_repair(key, True, ""))
+        worker.failed.connect(
+            lambda message, key=check_key: self._finish_doctor_repair(
+                key, False, message))
+        worker.finished.connect(worker.deleteLater)
+        self._doctor_repair_worker = worker
+        worker.start()
+
+    def _finish_doctor_repair(
+        self, check_key: str, ok: bool, message: str
+    ) -> None:
+        worker = self._doctor_repair_worker
+        self._doctor_repair_worker = None
+        if worker is not None:
+            worker.deleteLater()
+        if ok:
+            TOASTS.success("Đã tải lại thành phần. Kiểm tra lại hệ thống.")
+            self._start_doctor_check()
+        else:
+            TOASTS.error("Tải lại thành phần thất bại.")
+            row = self._doctor_rows.get(check_key, {})
+            check = row.get("check")
+            if check is not None:
+                check = type(check)(
+                    check.key, check.title, "fail", check.message, message,
+                    check.repair_script)
+                row["check"] = check
 
     def _finish_install(self, checker: str, ok: bool, message: str) -> None:
         row = self._install_rows.get(checker)

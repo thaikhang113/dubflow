@@ -103,6 +103,13 @@ def test_linux_package_uses_system_ffmpeg():
     assert "invalid Debian version" in source
     assert "check-only" in source
 
+
+def test_deb_builder_configures_utf8_console_output():
+    source = (ROOT / "scripts" / "build_deb.py").read_text(encoding="utf-8")
+    assert "def _force_utf8_stdio" in source
+    assert "_force_utf8_stdio()" in source
+
+
 def test_deb_bundle_validation_checks_executable_workers_and_setup_scripts(
     tmp_path,
 ):

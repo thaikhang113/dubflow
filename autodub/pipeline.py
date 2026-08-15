@@ -284,6 +284,7 @@ class DubPipeline:
         """Một dòng cấu hình máy đầu mỗi lượt chạy — để đọc log là biết ngay
         video chậm vì máy yếu hay vì lỗi, không phải hỏi lại người dùng."""
         from autodub.sysinfo import available_ram_gb, total_ram_gb
+        from autodub.gpu import detect_gpu
         from autodub.media.vocal_separator import gpu_venv_python
         from autodub.media.video import video_encoder_name
         from autodub.worker_plan import build_worker_plan
@@ -292,12 +293,14 @@ class DubPipeline:
         avail = available_ram_gb()
         ram_txt = (f"RAM {avail:.1f}/{total:.1f} GB trống"
                    if total is not None and avail is not None else "RAM ?")
-        gpu_txt = "có" if gpu_venv_python() else "không"
+        gpu_info = detect_gpu()
+        gpu_venv_ready = bool(gpu_venv_python())
+        gpu_ready = gpu_venv_ready or gpu_info.compute_available
         plan = build_worker_plan(
             mode=getattr(settings, "worker_mode", "auto"),
             cpu_count=os.cpu_count(),
             available_ram_gb=avail,
-            gpu_available=bool(gpu_venv_python()),
+            gpu_available=gpu_ready,
             configured={
                 "tts": settings.vieneu_max_workers,
                 "parallel": settings.parallel_workers,
@@ -305,7 +308,8 @@ class DubPipeline:
             },
         )
         logger.info(
-            f"Máy: {os.cpu_count() or '?'} nhân, {ram_txt}, GPU (venv) {gpu_txt} — "
+            f"Máy: {os.cpu_count() or '?'} nhân, {ram_txt}, "
+            f"GPU: {gpu_info.label} — "
             f"worker mode {getattr(settings, 'worker_mode', 'auto')}")
         for name in ("asr", "ocr", "translate", "tts", "demucs", "merge"):
             item = plan[name]
@@ -1020,11 +1024,42 @@ class DubPipeline:
                 merge_dir=merge_dir, settings=settings,
                 for_burn=req.subtitle_mode == "burn")
             from autodub.media.video import merge_video
+            source_for_merge = video_path
+            render_regions = list(req.blur_regions)
+            subtitle_regions = [
+                region for region in render_regions
+                if region.get("source") not in ("logo", "branding")
+            ]
+            if subtitle_regions and getattr(settings, "vsr_enabled", True):
+                from autodub.media.vsr import (
+                    copy_without_subtitle_regions,
+                    remove_subtitles,
+                    union_subtitle_region,
+                )
+                vsr_region = union_subtitle_region(subtitle_regions)
+                if vsr_region:
+                    vsr_output = os.path.join(work_dir, "video_without_subtitles.mp4")
+                    vsr_result = remove_subtitles(
+                        video_path,
+                        vsr_output,
+                        [vsr_region],
+                        settings,
+                        fallback=lambda: video_path,
+                    )
+                    if vsr_result.used_vsr:
+                        source_for_merge = vsr_result.output_path
+                        render_regions = copy_without_subtitle_regions(
+                            render_regions
+                        )
+                        logger.info("VSR đã xóa phụ đề cứng bằng AI")
+                    else:
+                        logger.warning("VSR fallback sang blur: %s",
+                                       vsr_result.error)
             merge_video(
-                video_path, merged_audio_path, dubbed_video_path,
+                source_for_merge, merged_audio_path, dubbed_video_path,
                 srt_path=burn_path,
                 subtitle_mode=req.subtitle_mode,
-                blur_regions=req.blur_regions,
+                blur_regions=render_regions,
                 subtitle_style=subtitle_style,
                 subtitle_lang=target.iso639_2,
                 speed=deferred_speed[0] if deferred_speed else None,
@@ -1634,7 +1669,7 @@ class DubPipeline:
             enroll_items.append({
                 "speaker_id": speaker,
                 "wav": wav,
-                "name": f"VoxDub {speaker} {digest[:8]}",
+                "name": f"DubFlow {speaker} {digest[:8]}",
                 "reference_hash": digest,
                 "description": f"Voice clone {speaker} từ video",
             })

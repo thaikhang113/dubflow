@@ -115,8 +115,9 @@ python3 -m venv .venv
 ./.venv/bin/python -m autodub_gui
 ```
 
-Gói Linux phát hành tự tải Python portable khi chạy lần đầu. CPU là chế độ
-nền; GPU NVIDIA chỉ tăng tốc một số model.
+Gói Linux phát hành tự tải Python portable khi chạy lần đầu. CPU luôn là
+fallback; GPU NVIDIA/AMD tăng tốc các pipeline có runtime tương thích. FFmpeg
+đã tự chọn encoder phần cứng khả dụng.
 
 ---
 

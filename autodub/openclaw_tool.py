@@ -193,7 +193,7 @@ def load_batch_status(queue_root: str, batch_id: str) -> dict:
             "error": status.get("error", ""),
             "output": status.get("output", {}),
         })
-    percent = round(sum(item["percent"] for item in jobs) / len(jobs))
+    percent = round(sum(item["percent"] for item in jobs) / len(jobs)) if jobs else 0
     return {
         "ok": True,
         "batch_id": batch_id,

@@ -1,9 +1,4 @@
-"""Optional DeepSeek-OCR subprocess worker.
-
-Runs outside the main application environment and emits one JSON detection per
-line. Model output is treated as untrusted text and only grounded boxes are
-accepted.
-"""
+"""Optional DeepSeek-OCR subprocess worker."""
 from __future__ import annotations
 
 import argparse
@@ -50,7 +45,7 @@ def _frames(video: str, times: list[float], output_dir: str) -> list[str]:
 
 def parse_grounding(text: str, width: int, height: int,
                     timestamp: float) -> list[dict]:
-    """Convert DeepSeek grounding tokens to the shared OCR detection schema."""
+    """Convert DeepSeek grounding tokens to shared OCR detection schema."""
     output = []
     for match in _GROUNDING_RE.finditer(str(text or "")):
         label = re.sub(r"\s+", " ", match.group(1)).strip()
@@ -79,32 +74,75 @@ def parse_grounding(text: str, width: int, height: int,
     return output
 
 
+def runtime_options(
+    backend: str,
+    *,
+    cuda_ready: bool,
+    bf16_ready: bool,
+) -> tuple[str, str, str]:
+    """Return device, dtype, attention policy for installed backend."""
+    backend = (backend or "").strip().lower()
+    if backend in ("cuda", "rocm"):
+        if not cuda_ready:
+            raise RuntimeError("DeepSeek-OCR GPU backend is unavailable.")
+        dtype = "bfloat16" if backend == "cuda" and bf16_ready else "float16"
+        attention = "flash" if backend == "cuda" else "eager"
+        return "cuda", dtype, attention
+    if backend == "directml":
+        return "directml", "float16", "eager"
+    raise RuntimeError(
+        "DeepSeek-OCR chưa có backend GPU hợp lệ; dùng PaddleOCR."
+    )
+
+
+def _installed_backend(model_dir: str) -> str:
+    marker = os.path.join(model_dir, "installed_ok.json")
+    try:
+        with open(marker, encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError):
+        return ""
+    return str(payload.get("device_backend", "")).strip().lower()
+
+
 def _load_model(model_dir: str):
     import torch
     from transformers import AutoModel, AutoTokenizer
 
-    if not torch.cuda.is_available():
-        raise RuntimeError("DeepSeek-OCR cần NVIDIA GPU/CUDA; dùng PaddleOCR CPU.")
+    backend = _installed_backend(model_dir) or os.environ.get(
+        "DEEPSEEK_OCR_BACKEND", "cuda"
+    )
+    cuda_ready = bool(torch.cuda.is_available())
+    bf16_ready = bool(
+        getattr(torch.cuda, "is_bf16_supported", lambda: False)()
+    )
+    device_name, dtype_name, attention = runtime_options(
+        backend, cuda_ready=cuda_ready, bf16_ready=bf16_ready
+    )
+    dtype = getattr(torch, dtype_name)
+    if device_name == "directml":
+        import torch_directml
+        device = torch_directml.device()
+    else:
+        device = torch.device(device_name)
+
     model_name = "deepseek-ai/DeepSeek-OCR"
     tokenizer = AutoTokenizer.from_pretrained(
         model_name, cache_dir=model_dir, trust_remote_code=True)
+    kwargs = {
+        "cache_dir": model_dir,
+        "trust_remote_code": True,
+        "use_safetensors": True,
+        "_attn_implementation": (
+            "flash_attention_2" if attention == "flash" else "eager"
+        ),
+    }
     try:
-        model = AutoModel.from_pretrained(
-            model_name,
-            cache_dir=model_dir,
-            trust_remote_code=True,
-            use_safetensors=True,
-            _attn_implementation="flash_attention_2",
-        )
+        model = AutoModel.from_pretrained(model_name, **kwargs)
     except Exception:
-        model = AutoModel.from_pretrained(
-            model_name,
-            cache_dir=model_dir,
-            trust_remote_code=True,
-            use_safetensors=True,
-            _attn_implementation="eager",
-        )
-    return tokenizer, model.eval().cuda().to(torch.bfloat16)
+        kwargs["_attn_implementation"] = "eager"
+        model = AutoModel.from_pretrained(model_name, **kwargs)
+    return tokenizer, model.eval().to(device=device, dtype=dtype)
 
 
 def main() -> int:
@@ -137,7 +175,7 @@ def main() -> int:
                 ):
                     print(json.dumps(item, ensure_ascii=False), flush=True)
         return 0
-    except Exception as exc:  # worker boundary
+    except Exception as exc:
         print(json.dumps({"error": f"{type(exc).__name__}: {exc}"},
                          ensure_ascii=False), flush=True)
         return 1

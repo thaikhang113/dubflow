@@ -690,7 +690,12 @@ class DownloadWorker(QThread):
                 ensure_dir(item_dir)
                 for attempt, delay in enumerate((0, 2, 5), start=1):
                     if delay:
-                        time.sleep(delay)
+                        if self._cancel_event.wait(delay):
+                            self.cancelled.emit()
+                            return
+                    if self._cancel_event.is_set():
+                        self.cancelled.emit()
+                        return
                     try:
                         entry = download_one(
                             url, item_dir, self._cookies_browser,
