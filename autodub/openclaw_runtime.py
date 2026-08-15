@@ -15,6 +15,9 @@ from autodub.remote_worker import run_worker
 from autodub.utils import data_root
 
 _MAX_BODY = 1_000_000
+_DEFAULT_BIND_HOST = "0.0.0.0"
+_DEFAULT_PORT = 38643
+_DOCKER_HOST = "host.docker.internal"
 
 
 class _Server(ThreadingHTTPServer):
@@ -125,6 +128,14 @@ class OpenClawRuntime:
         config = self._read_config()
         self._enabled = bool(config.get("enabled", False))
         self._token = str(config.get("token") or secrets.token_urlsafe(32))
+        self._bind_host = str(
+            config.get("bind_host") or _DEFAULT_BIND_HOST).strip()
+        try:
+            self._port = int(config.get("port", _DEFAULT_PORT))
+        except (TypeError, ValueError):
+            self._port = _DEFAULT_PORT
+        if not 1 <= self._port <= 65535:
+            self._port = _DEFAULT_PORT
         self._settings_provider = settings_provider or (
             lambda: Settings.load(override=True))
         self._server: _Server | None = None
@@ -151,8 +162,15 @@ class OpenClawRuntime:
     def endpoint(self) -> str:
         if self._server is None:
             return ""
-        host, port = self._server.server_address
-        return f"http://{host}:{port}"
+        _host, port = self._server.server_address
+        return f"http://127.0.0.1:{port}"
+
+    @property
+    def docker_endpoint(self) -> str:
+        if self._server is None:
+            return ""
+        _host, port = self._server.server_address
+        return f"http://{_DOCKER_HOST}:{port}"
 
     @property
     def queue_root(self) -> Path:
@@ -169,7 +187,8 @@ class OpenClawRuntime:
         self._data_dir.mkdir(parents=True, exist_ok=True)
         temp = self._config_path.with_suffix(".json.part")
         temp.write_text(json.dumps(
-            {"enabled": self._enabled, "token": self._token},
+            {"enabled": self._enabled, "token": self._token,
+             "bind_host": self._bind_host, "port": self._port},
             ensure_ascii=False, indent=2), encoding="utf-8")
         temp.replace(self._config_path)
 
@@ -179,7 +198,7 @@ class OpenClawRuntime:
                 return
             self._queue_root.mkdir(parents=True, exist_ok=True)
             self._stop_event.clear()
-            self._server = _Server(self, ("127.0.0.1", 0))
+            self._server = _Server(self, (self._bind_host, self._port))
             self._server_thread = threading.Thread(
                 target=self._server.serve_forever,
                 name="dubflow-openclaw-api",
@@ -229,10 +248,13 @@ class OpenClawRuntime:
 
     def connection_prompt(self) -> str:
         endpoint = self.endpoint or "http://127.0.0.1:PORT"
+        docker_endpoint = (
+            self.docker_endpoint or "http://host.docker.internal:PORT")
         return f"""Bạn là agent điều khiển DubFlow qua HTTP local.
 
 Kết nối:
-- URL: {endpoint}
+- URL máy này: {endpoint}
+- URL khi OpenClaw chạy trong Docker: {docker_endpoint}
 - Authorization: Bearer {self.token}
 - Chỉ gọi API khi người dùng yêu cầu xử lý video.
 

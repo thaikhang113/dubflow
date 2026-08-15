@@ -42,6 +42,19 @@ def test_runtime_starts_loopback_api_and_requires_token(tmp_path):
         runtime.stop()
 
 
+def test_runtime_exposes_stable_docker_endpoint(tmp_path):
+    runtime = OpenClawRuntime(data_dir=tmp_path)
+    runtime.start(worker=False)
+    try:
+        assert runtime._server.server_address[0] == "0.0.0.0"
+        assert runtime.endpoint == "http://127.0.0.1:38643"
+        assert runtime.docker_endpoint == (
+            "http://host.docker.internal:38643")
+        saved = json.loads((tmp_path / "openclaw.json").read_text())
+        assert saved["port"] == 38643
+    finally:
+        runtime.stop()
+
 def test_runtime_prepare_and_submit_use_existing_tool_contract(tmp_path):
     runtime = OpenClawRuntime(data_dir=tmp_path)
     runtime.start(worker=False)
@@ -99,6 +112,7 @@ def test_runtime_builds_dynamic_connection_prompt(tmp_path):
             "POST /v1/submit",
             "GET /v1/batches/{batch_id}",
             "retry-failed",
+            "host.docker.internal",
         ):
             assert text in prompt
     finally:
