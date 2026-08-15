@@ -10,7 +10,7 @@ if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
 fi
 
 echo "DubFlow - cai tat ca thanh phan"
-echo "Se cai runtime .venv, Demucs, Whisper, VieNeu, Paraformer, PaddleOCR va Chromium."
+echo "Se cai runtime .venv, Demucs, Whisper, VieNeu, Paraformer, PaddleOCR, VSR va Chromium."
 echo
 
 if [[ ! -x .venv/bin/python ]]; then
@@ -32,6 +32,7 @@ fi
 "$PYTHON_BIN" scripts/setup_vieneu.py
 "$PYTHON_BIN" scripts/setup_paraformer.py
 "$PYTHON_BIN" scripts/setup_ocr.py || echo "[CANH BAO] OCR khong cai duoc - app van chay voi blur thu cong"
+"$PYTHON_BIN" scripts/setup_vsr.py || echo "[CANH BAO] VSR khong cai duoc - app van chay voi blur thu cong"
 "$PYTHON_BIN" scripts/setup_douyin.py
 "$PYTHON_BIN" scripts/setup_demucs.py
 

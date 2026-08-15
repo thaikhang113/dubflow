@@ -11,8 +11,10 @@ import re
 from pathlib import Path
 
 _CJK_RE = re.compile(r"[\u3400-\u9fff]")
-_CACHE_VERSION = 2
+_CACHE_VERSION = 3
 _OCR_BOX_PADDING_PX = 4
+_OCR_MAX_HEIGHT_RATIO = 0.14
+_OCR_MIN_ASPECT_RATIO = 1.3
 
 
 def _box_bounds(box) -> tuple[float, float, float, float] | None:
@@ -61,6 +63,10 @@ def detections_to_regions(
         if w < min_width_px or h < min_height_px:
             continue
         if (w * h) / frame_area > max_area:
+            continue
+        if h / video_h > _OCR_MAX_HEIGHT_RATIO:
+            continue
+        if w / max(h, 1.0) < _OCR_MIN_ASPECT_RATIO:
             continue
         x = max(0.0, min(x - _OCR_BOX_PADDING_PX, video_w - 1))
         y = max(0.0, min(y - _OCR_BOX_PADDING_PX, video_h - 1))
@@ -112,6 +118,10 @@ def detections_to_logo_regions(
         if w < min_width_px or h < min_height_px:
             continue
         if (w * h) / float(video_w * video_h) > max_area:
+            continue
+        if h / video_h > _OCR_MAX_HEIGHT_RATIO:
+            continue
+        if w / max(h, 1.0) < _OCR_MIN_ASPECT_RATIO:
             continue
         x = max(0.0, min(x - _OCR_BOX_PADDING_PX, video_w - 1))
         y = max(0.0, min(y - _OCR_BOX_PADDING_PX, video_h - 1))

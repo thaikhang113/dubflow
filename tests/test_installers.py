@@ -10,7 +10,7 @@ def test_all_installers_exist_and_call_all_setup_steps():
     for content in (windows, linux):
         for script in ("setup_whisper.py", "setup_vieneu.py",
                        "setup_paraformer.py", "setup_douyin.py",
-                       "setup_demucs.py"):
+                       "setup_demucs.py", "setup_vsr.py"):
             assert script in content
         assert "requirements.txt" in content
 

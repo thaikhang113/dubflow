@@ -67,6 +67,52 @@ _POST_TARGET = _PostTarget()
 
 _MAX_API_TRANSLATION_BATCH = 40
 
+
+@dataclass(frozen=True)
+class _TTSVoiceRoute:
+    mode: str
+    groups: list[tuple[str, list[int]]]
+    workers_per_group: dict[str, int]
+
+
+def _plan_tts_voice_groups(
+    run_voice: str,
+    segments: list[dict],
+    resolve_voice,
+    *,
+    max_workers: int,
+) -> _TTSVoiceRoute:
+    """Plan TTS work without multiplying model workers per voice.
+
+    One voice can use the normal parallel pool. Multiple voices are rendered
+    one voice at a time, with one model worker per group, so clone-heavy jobs
+    never load ``N voices * N workers`` VieNeu processes.
+    """
+    groups: list[tuple[str, list[int]]] = []
+    positions: dict[str, int] = {}
+    for index, segment in enumerate(segments):
+        raw_voice = str(segment.get("voice", "")).strip()
+        name = resolve_voice(raw_voice) if raw_voice else run_voice
+        group_index = positions.get(name)
+        if group_index is None:
+            positions[name] = len(groups)
+            groups.append((name, [index]))
+        else:
+            groups[group_index][1].append(index)
+
+    if len(groups) == 1:
+        return _TTSVoiceRoute(
+            mode="parallel",
+            groups=groups,
+            workers_per_group={groups[0][0]: max(1, int(max_workers))},
+        )
+    return _TTSVoiceRoute(
+        mode="serial",
+        groups=groups,
+        workers_per_group={name: 1 for name, _ in groups},
+    )
+
+
 def _context_from_settings(settings) -> dict[str, str]:
     if settings is None:
         return {}
@@ -673,14 +719,28 @@ class DubPipeline:
         # thứ gì — lúc nào cũng khởi động sớm được. Ở đây chỉ NẠP model, còn
         # việc tạo giọng vẫn nằm nguyên trong Bước 5.
         try:
-            tts_synth = self._get_synth(target, effective_voice)
-            self._active_synth = tts_synth
-            warm = getattr(tts_synth, "warm_up_async", None)
-            if warm is not None:
-                # A3 fix: khởi động worker ngay lập tức thay vì chờ Demucs.
-                # VieNeu chạy CPU-only — không tranh VRAM với Demucs (GPU),
-                # nên có thể load song song và tiết kiệm 30-120s chờ đợi.
-                warm()
+            from autodub.speech.tts import voices as voice_catalog
+            route = _plan_tts_voice_groups(
+                voice_catalog.resolve(self.settings, effective_voice),
+                segments,
+                lambda value: voice_catalog.resolve(self.settings, value),
+                max_workers=self.settings.vieneu_max_workers,
+            )
+            if route.mode == "serial":
+                logger.info(
+                    "TTS route: multi-voice serial, 1 worker/voice "
+                    f"({len(route.groups)} voices)"
+                )
+                tts_synth = None
+            else:
+                tts_synth = self._get_synth(target, effective_voice)
+                self._active_synth = tts_synth
+                warm = getattr(tts_synth, "warm_up_async", None)
+                if warm is not None:
+                    # A3 fix: khởi động worker ngay lập tức thay vì chờ Demucs.
+                    # VieNeu chạy CPU-only — không tranh VRAM với Demucs (GPU),
+                    # nên có thể load song song và tiết kiệm 30-120s chờ đợi.
+                    warm()
         except Exception as e:
             logger.warning(f"Bỏ qua khởi động sớm bộ giọng ({e})")
             tts_synth = None
@@ -1812,6 +1872,40 @@ class DubPipeline:
         from autodub.media.audio import wav_duration_s
 
         rep = self._reporter
+        from autodub.speech.tts import voices as voice_catalog
+        run_voice = voice_catalog.resolve(self.settings, voice)
+        route = _plan_tts_voice_groups(
+            run_voice,
+            segments,
+            lambda value: voice_catalog.resolve(self.settings, value),
+            max_workers=self.settings.vieneu_max_workers,
+        )
+        if route.mode == "serial":
+            from autodub.speech.tts import get_synthesizer
+
+            results: list[dict | None] = [None] * len(segments)
+            for group_voice, indexes in route.groups:
+                group_synth = get_synthesizer(
+                    target,
+                    self.settings,
+                    group_voice,
+                    num_workers=route.workers_per_group[group_voice],
+                )
+                try:
+                    group_results = self._synthesize_segments(
+                        target,
+                        group_voice,
+                        [segments[index] for index in indexes],
+                        seg_dir,
+                        synth=group_synth,
+                    )
+                finally:
+                    if hasattr(group_synth, "close"):
+                        group_synth.close()
+                for index, result in zip(indexes, group_results):
+                    results[index] = result
+            return [result for result in results if result is not None]
+
         created_here = synth is None
         if synth is None:
             synth = self._get_synth(target, voice)
@@ -1823,8 +1917,6 @@ class DubPipeline:
         # Giọng phụ per-segment: câu nào mang khóa "voice" khác giọng chính
         # thì đọc bằng giọng đó. Mỗi giọng phụ chỉ mở MỘT tiến trình con —
         # vài câu lẻ không đáng nhân đôi RAM của cả nhóm worker.
-        from autodub.speech.tts import voices as voice_catalog
-        run_voice = voice_catalog.resolve(self.settings, voice)
         extra_synths: dict[str, object] = {}
         extra_lock = threading.Lock()
 

@@ -24,6 +24,21 @@ import os
 import sys
 
 
+def _configure_numeric_threads(intra_threads: int) -> None:
+    """Limit native math pools before importing VieNeu/NumPy/ONNX."""
+    if intra_threads <= 0:
+        return
+    value = str(intra_threads)
+    for name in (
+        "OMP_NUM_THREADS",
+        "OPENBLAS_NUM_THREADS",
+        "MKL_NUM_THREADS",
+        "NUMEXPR_NUM_THREADS",
+        "ORT_INTRA_OP_NUM_THREADS",
+    ):
+        os.environ[name] = value
+
+
 def load_custom_voices(tts, path: str) -> int:
     """Merge enrolled voices from ``path`` into the model's preset table.
 
@@ -366,9 +381,7 @@ def main() -> None:
     # Self-contained model location + no oversubscription when N workers run.
     os.environ["HF_HOME"] = args.model_dir
     os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
-    if args.intra_threads > 0:
-        os.environ["OMP_NUM_THREADS"] = str(args.intra_threads)
-        os.environ["ORT_INTRA_OP_NUM_THREADS"] = str(args.intra_threads)
+    _configure_numeric_threads(args.intra_threads)
 
     try:
         from vieneu import Vieneu

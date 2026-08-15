@@ -79,6 +79,20 @@ def test_ocr_ignores_chinese_text_outside_subtitle_band():
     assert len(regions) == 1
     assert regions[0]["y"] > 0.7
 
+
+def test_ocr_rejects_vertical_or_tall_screen_text_in_subtitle_band():
+    detections = [
+        _det(box=[[100, 700], [220, 700], [220, 1040], [100, 1040]]),
+        _det(box=[[300, 700], [1500, 700], [1500, 760], [300, 760]]),
+    ]
+
+    regions = detections_to_regions(
+        detections, video_w=1920, video_h=1080, min_confidence=0.8
+    )
+
+    assert len(regions) == 1
+    assert regions[0]["w"] > regions[0]["h"]
+
 def test_ocr_can_promote_stable_upper_text_to_source_logo_region():
     detections = [
         _det(box=[[100, 80], [420, 80], [420, 130], [100, 130]], t=1.0),
@@ -120,7 +134,7 @@ def test_ocr_artifact_round_trip(tmp_path):
     save_regions(str(path), regions)
 
     assert load_regions(str(path)) == regions
-    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 2
+    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 3
 
 def test_logo_source_region_survives_blur_compaction():
     from autodub.media.subtitle import compact_blur_regions

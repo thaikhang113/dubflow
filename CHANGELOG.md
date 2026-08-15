@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.0.9 - 2026-08-15
+
+### Fixed
+
+- OCR bỏ qua text dọc hoặc box quá cao để không làm mờ toàn màn hình.
+- VieNeu giới hạn thread OpenBLAS/ONNX, giảm lỗi thiếu bộ nhớ cuối job.
+- Tự chuyển job nhiều voice/voice clone sang xử lý tuần tự, mỗi voice một
+  worker, tránh nhân worker theo số voice.
+
+### Changed
+
+- Installer all-in-one cài thêm VSR worker.
+
 ## 3.0.7 - 2026-08-14
 
 ### Added

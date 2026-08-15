@@ -9,7 +9,7 @@ echo ============================================================
 echo   DubFlow - CAI TAT CA THANH PHAN
 echo ============================================================
 echo   Se cai runtime .venv, Demucs, Whisper, VieNeu,
-echo   Paraformer, PaddleOCR va Chromium.
+echo   Paraformer, PaddleOCR, VSR va Chromium.
 echo ============================================================
 echo.
 
@@ -44,6 +44,8 @@ py -3 scripts\setup_paraformer.py
 if errorlevel 1 goto :fail
 py -3 scripts\setup_ocr.py
 if errorlevel 1 echo [CANH BAO] OCR khong cai duoc - app van chay voi blur thu cong
+py -3 scripts\setup_vsr.py
+if errorlevel 1 echo [CANH BAO] VSR khong cai duoc - app van chay voi blur thu cong
 py -3 scripts\setup_douyin.py
 if errorlevel 1 goto :fail
 py -3 scripts\setup_demucs.py
