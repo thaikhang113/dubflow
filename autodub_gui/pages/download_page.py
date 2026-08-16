@@ -34,6 +34,7 @@ from autodub.media.douyin_cookies import (
     validate_douyin_cookies,
 )
 from autodub_gui.env_store import read_env, write_env
+from autodub.config import Settings
 from autodub.utils import app_root
 
 _PAGE_MARGIN = 28
@@ -415,9 +416,12 @@ class DownloadPage(BasePage):
         ) or None
         douyin_cookies_file = (
             read_env().get("DOUYIN_COOKIES_FILE", "").strip() or None)
+        settings = Settings.load()
         worker = DownloadWorker(urls, self.output.text() or "downloads",
                                 self.cookies.current_key(), cookies_file, self,
-                                douyin_cookies_file=douyin_cookies_file)
+                                douyin_cookies_file=douyin_cookies_file,
+                                url_workers=settings.download_url_workers,
+                                fragment_workers=settings.download_fragment_workers)
         worker.item_status.connect(self._on_item_status)
         worker.log.connect(self.log.append_log)
         worker.finished_ok.connect(self._on_finished)

@@ -2,11 +2,20 @@
 from __future__ import annotations
 
 import os
+import json
 import subprocess
 from dataclasses import dataclass
 from typing import Callable
 
 VSR_MODE = "sttn-det"
+
+def _planned_vsr_backend() -> str:
+    path = os.environ.get("DUBFLOW_BACKEND_PLAN", "")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return str(json.load(handle).get("vsr_backend", ""))
+    except (OSError, ValueError, TypeError):
+        return ""
 
 
 @dataclass(frozen=True)
@@ -86,6 +95,8 @@ def remove_subtitles(
 ) -> VSRResult:
     if not getattr(settings, "vsr_enabled", True):
         return VSRResult(fallback(), False, "VSR đã tắt trong Cài đặt.")
+    if _planned_vsr_backend() == "fallback":
+        return VSRResult(fallback(), False, "Hardware plan chọn fallback.")
     python_path = settings.vsr_venv_python_path()
     worker_script = settings.vsr_worker_path()
     if not os.path.isfile(python_path) or not os.path.isfile(worker_script):

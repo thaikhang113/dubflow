@@ -19,6 +19,7 @@ PYTHON = os.path.join(
 MODEL_DIR = os.path.join(DATA_ROOT, "models", "video-subtitle-remover")
 SOURCE_DIR = os.path.join(MODEL_DIR, "source")
 MARKER = os.path.join(MODEL_DIR, "installed_ok.json")
+SUPPORTED_PYTHON = ((3, 10), (3, 11), (3, 12))
 ARCHIVE_URL = (
     "https://github.com/YaoFANGUK/video-subtitle-remover/"
     "archive/refs/tags/1.4.0.zip"
@@ -29,7 +30,17 @@ def log(message: str) -> None:
     print(f"[setup-vsr] {message}", flush=True)
 
 
+def validate_python_version(version: tuple[int, int]) -> None:
+    if version not in SUPPORTED_PYTHON:
+        supported = ", ".join(
+            f"{major}.{minor}" for major, minor in SUPPORTED_PYTHON)
+        raise RuntimeError(
+            f"VSR cần Python {supported}; đang dùng "
+            f"{version[0]}.{version[1]}.")
+
+
 def main() -> int:
+    validate_python_version(sys.version_info[:2])
     if not os.path.isfile(PYTHON):
         log("Tạo virtualenv VSR ...")
         subprocess.run([sys.executable, "-m", "venv", VENV], check=True)

@@ -238,6 +238,12 @@ class HelpPage(BasePage):
         head.addWidget(install_button)
         column.addLayout(head)
         column.addWidget(_body_label(description))
+        error = ElidedLabel("")
+        error.setStyleSheet(
+            f"color: {tokens.DANGER}; font-size: {tokens.FS_META}px; "
+            "background: transparent;")
+        error.hide()
+        column.addWidget(error)
         progress = QProgressBar()
         progress.setRange(0, 100)
         progress.setTextVisible(False)
@@ -251,6 +257,7 @@ class HelpPage(BasePage):
             "checker": checker,
             "state": state,
             "button": install_button,
+            "error": error,
             "progress": progress,
         }
         return column
@@ -556,6 +563,8 @@ class HelpPage(BasePage):
         self._install_worker = None
         row["progress"].hide()
         if ok:
+            row["error"].clear()
+            row["error"].hide()
             self._refresh_install_row(checker)
             TOASTS.success(f"Đã cài {row['name']}.")
         else:
@@ -564,6 +573,9 @@ class HelpPage(BasePage):
                 f"color: {tokens.DANGER}; font-size: {tokens.FS_META}px; "
                 "background: transparent;")
             row["state"].setToolTip(message)
+            row["error"].setText(message.splitlines()[-1][:240])
+            row["error"].setToolTip(message)
+            row["error"].show()
             row["button"].setText("Thử lại")
             row["button"].setEnabled(True)
             TOASTS.error(f"Cài {row['name']} thất bại.")

@@ -7,10 +7,12 @@ import platform
 import sys
 from dataclasses import dataclass
 
+from autodub.hardware import BackendPlan, detect_hardware, select_backends
 from autodub.utils import data_root as runtime_data_root, ensure_dir
 
 STATE_VERSION = 1
 STATE_NAME = "bootstrap-state.json"
+PLAN_NAME = "backend-plan.json"
 
 
 def data_root() -> str:
@@ -31,6 +33,9 @@ def data_root() -> str:
 def state_path() -> str:
     return os.path.join(data_root(), STATE_NAME)
 
+def plan_path() -> str:
+    return os.path.join(data_root(), PLAN_NAME)
+
 
 @dataclass(frozen=True)
 class BootstrapStep:
@@ -40,7 +45,53 @@ class BootstrapStep:
     script: str = ""
 
 
-def steps() -> tuple[BootstrapStep, ...]:
+def load_plan() -> BackendPlan | None:
+    try:
+        with open(plan_path(), encoding="utf-8") as handle:
+            payload = json.load(handle)
+        return BackendPlan(
+            str(payload["ocr_backend"]),
+            str(payload["vsr_backend"]),
+            tuple(str(item) for item in payload.get("reasons", [])),
+        )
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+def ensure_hardware_plan() -> BackendPlan:
+    profile = detect_hardware(disk_path=data_root())
+    plan = load_plan()
+    try:
+        with open(plan_path(), encoding="utf-8") as handle:
+            stored = json.load(handle).get("hardware", {})
+        current = profile.as_dict()
+        comparable = set(current) - {"disk_free_gb"}
+        if plan is not None and all(
+            stored.get(key) == current[key] for key in comparable
+        ):
+            os.environ["DUBFLOW_BACKEND_PLAN"] = plan_path()
+            return plan
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        pass
+    plan = select_backends(profile)
+    ensure_dir(data_root())
+    with open(plan_path(), "w", encoding="utf-8") as handle:
+        json.dump({
+            "hardware": profile.as_dict(),
+            **plan.as_dict(),
+        }, handle, ensure_ascii=False, indent=2)
+    os.environ["DUBFLOW_BACKEND_PLAN"] = plan_path()
+    return plan
+
+def steps(plan: BackendPlan | None = None) -> tuple[BootstrapStep, ...]:
+    plan = plan or load_plan()
+    ocr_backend = plan.ocr_backend if plan else "paddleocr"
+    ocr = (
+        BootstrapStep("deepseek_ocr", "DeepSeek-OCR", "script",
+                      "scripts/setup_deepseek_ocr.py")
+        if ocr_backend.startswith("deepseek")
+        else BootstrapStep("ocr", "PaddleOCR", "script",
+                           "scripts/setup_ocr.py")
+    )
     common = (
         BootstrapStep("vieneu", "VieNeu voice engine", "script",
                       "scripts/setup_vieneu.py"),
@@ -48,8 +99,7 @@ def steps() -> tuple[BootstrapStep, ...]:
                       "scripts/setup_whisper.py"),
         BootstrapStep("paraformer", "Paraformer Chinese ASR", "script",
                       "scripts/setup_paraformer.py"),
-        BootstrapStep("ocr", "OCR support", "script",
-                      "scripts/setup_ocr.py"),
+        ocr,
         BootstrapStep("douyin", "Douyin downloader", "script",
                       "scripts/setup_douyin.py"),
         BootstrapStep("demucs", "Demucs vocal separation", "script",
@@ -57,9 +107,16 @@ def steps() -> tuple[BootstrapStep, ...]:
         BootstrapStep("voices", "Voice library", "voices"),
     )
     steps = [BootstrapStep("python", "Python runtime", "python")]
+    steps.insert(0, BootstrapStep("hardware", "Hardware scan", "hardware"))
     if not sys.platform.startswith("linux"):
         steps.append(BootstrapStep("ffmpeg", "FFmpeg", "ffmpeg"))
-    return tuple(steps) + common
+    result = tuple(steps) + common
+    if plan and plan.vsr_backend == "video-subtitle-remover":
+        result += (
+            BootstrapStep("vsr", "Video subtitle remover", "script",
+                          "scripts/setup_vsr.py"),
+        )
+    return result
 
 
 def load_state() -> dict:
@@ -96,6 +153,8 @@ def mark_failed(key: str, message: str) -> None:
 
 
 def is_complete() -> bool:
+    if load_plan() is None:
+        return False
     completed = load_state().get("completed", {})
     for step in steps():
         if step.key == "ffmpeg" and sys.platform.startswith("linux"):

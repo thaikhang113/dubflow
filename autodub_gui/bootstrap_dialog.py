@@ -18,6 +18,8 @@ class BootstrapDialog(QDialog):
     def __init__(self, settings, parent=None):
         super().__init__(parent)
         self.settings = settings
+        self.plan = bootstrap.ensure_hardware_plan()
+        self._steps = bootstrap.steps(self.plan)
         self.current: QThread | None = None
         self.index = 0
         self._closing = False
@@ -35,7 +37,7 @@ class BootstrapDialog(QDialog):
 
         self.list = QListWidget()
         self.items = []
-        for step in bootstrap.steps():
+        for step in self._steps:
             item = QListWidgetItem(f"{step.label}  -  waiting")
             self.items.append(item)
             self.list.addItem(item)
@@ -49,6 +51,12 @@ class BootstrapDialog(QDialog):
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         root.addWidget(self.log, 1)
+        self.log.appendPlainText(
+            "Backend OCR: " + self.plan.ocr_backend)
+        self.log.appendPlainText(
+            "Backend VSR: " + self.plan.vsr_backend)
+        for reason in self.plan.reasons:
+            self.log.appendPlainText("- " + reason)
 
         buttons = QHBoxLayout()
         buttons.addStretch()
@@ -65,8 +73,8 @@ class BootstrapDialog(QDialog):
     def _advance_to_pending(self) -> None:
         state = bootstrap.load_state()
         completed = state.get("completed", {})
-        while self.index < len(bootstrap.steps()):
-            step = bootstrap.steps()[self.index]
+        while self.index < len(self._steps):
+            step = self._steps[self.index]
             if (step.key == "ffmpeg" and __import__("sys").platform.startswith("linux")):
                 from autodub_gui.workers_setup import _system_ffmpeg_pair
 
@@ -86,10 +94,10 @@ class BootstrapDialog(QDialog):
         self.retry.setVisible(False)
 
     def _run_current(self) -> None:
-        if self.index >= len(bootstrap.steps()):
+        if self.index >= len(self._steps):
             self.accept()
             return
-        step = bootstrap.steps()[self.index]
+        step = self._steps[self.index]
         self.retry.setVisible(False)
         self.cancel.setText("Cancel")
         self.cancel.setEnabled(True)
@@ -98,6 +106,10 @@ class BootstrapDialog(QDialog):
         self.progress.setValue(0)
         self.log.appendPlainText(f"== {step.label} ==")
 
+        if step.kind == "hardware":
+            bootstrap.mark_completed(step.key)
+            self._step_ok()
+            return
         if step.kind == "voices":
             if self.settings is None:
                 self._step_error("Không đọc được cấu hình để cài voice library.")
@@ -135,7 +147,7 @@ class BootstrapDialog(QDialog):
         worker.start()
 
     def _step_ok(self) -> None:
-        step = bootstrap.steps()[self.index]
+        step = self._steps[self.index]
         bootstrap.mark_completed(step.key)
         self.items[self.index].setText(f"{step.label}  -  complete")
         self.current = None
@@ -143,7 +155,7 @@ class BootstrapDialog(QDialog):
         self._advance_to_pending()
 
     def _step_error(self, message: str) -> None:
-        step = bootstrap.steps()[self.index]
+        step = self._steps[self.index]
         bootstrap.mark_failed(step.key, message)
         self.items[self.index].setText(f"{step.label}  -  failed")
         self.status.setText(str(message))
@@ -154,7 +166,7 @@ class BootstrapDialog(QDialog):
         self.current = None
 
     def _cancel(self) -> None:
-        if self.index >= len(bootstrap.steps()):
+        if self.index >= len(self._steps):
             self.accept()
             return
         if self.current and self.current.isRunning():
@@ -162,7 +174,7 @@ class BootstrapDialog(QDialog):
         self.reject()
 
     def closeEvent(self, event) -> None:
-        if self.index < len(bootstrap.steps()) and self.current and self.current.isRunning():
+        if self.index < len(self._steps) and self.current and self.current.isRunning():
             event.ignore()
             QMessageBox.information(
                 self, "Setup running", "Wait for current step or use Cancel.")

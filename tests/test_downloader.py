@@ -149,6 +149,52 @@ def test_download_video_aborts_yt_dlp_when_cancelled(monkeypatch, tmp_path):
         )
 
 
+def test_build_ydl_opts_enables_fragment_concurrency(tmp_path):
+    opts = downloader.build_ydl_opts(
+        str(tmp_path), fragment_workers=4)
+    assert opts["concurrent_fragment_downloads"] == 4
+    assert opts["noplaylist"] is True
+
+def test_download_video_uses_single_selected_bilibili_part(
+    monkeypatch, tmp_path
+):
+    captured = {}
+    output = tmp_path / "video.mp4"
+
+    class FakeYoutubeDL:
+        def __init__(self, opts):
+            captured["opts"] = opts
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, url, download):
+            captured["url"] = url
+            output.write_bytes(b"video")
+            return {
+                "id": "BV1DbC9B5E8a_p3",
+                "ext": "mp4",
+                "title": "",
+                "requested_downloads": [{"filepath": str(output)}],
+            }
+
+    monkeypatch.setattr(downloader.yt_dlp, "YoutubeDL", FakeYoutubeDL)
+    monkeypatch.setattr(
+        "autodub.media.douyin.is_douyin_url", lambda _url: False)
+
+    downloader.download_video(
+        "https://www.bilibili.com/video/BV1DbC9B5E8a/"
+        "?p=3&spm_id_from=search",
+        str(tmp_path),
+    )
+
+    assert captured["url"] == "https://www.bilibili.com/video/BV1DbC9B5E8a?p=3"
+    assert captured["opts"]["noplaylist"] is True
+
+
 def test_download_stream_aborts_and_removes_partial_file(monkeypatch, tmp_path):
     from autodub.media import douyin
     from autodub.progress import PipelineCancelled

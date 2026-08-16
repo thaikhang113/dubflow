@@ -86,3 +86,19 @@ def test_doctor_routes_ffmpeg_failure_to_download_worker(monkeypatch):
     ))
 
     assert result.repair_script == "__ffmpeg__"
+
+def test_doctor_reports_planned_vsr_fallback_without_repair(tmp_path, monkeypatch):
+    settings = Settings.load(override=True)
+    monkeypatch.setattr("autodub.doctor.data_root", lambda: str(tmp_path))
+    (tmp_path / "backend-plan.json").write_text(
+        '{"ocr_backend": "paddleocr", "vsr_backend": "fallback"}',
+        encoding="utf-8",
+    )
+
+    result = __import__("autodub.doctor", fromlist=["_check_vsr"])._check_vsr(
+        settings
+    )
+
+    assert result.level == "ok"
+    assert "fallback" in result.message.lower()
+    assert not result.repairable

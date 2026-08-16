@@ -342,7 +342,9 @@ class FFmpegDownloadWorker(QThread):
 
     def run(self) -> None:  # noqa: C901
         try:
-            os.environ.setdefault("DUBFLOW_DATA_DIR", data_root())
+            data_dir = data_root()
+            app_dir = app_root()
+            os.environ["DUBFLOW_DATA_DIR"] = data_dir
             bin_dir = os.path.join(data_root(), "bin")
             suffix = ".exe" if sys.platform == "win32" else ""
             ffmpeg_exe = os.path.join(bin_dir, f"ffmpeg{suffix}")
@@ -472,6 +474,23 @@ _SCRIPT_LINES_ESTIMATE = {
 }
 
 
+def setup_environment(base: dict[str, str], data_dir: str,
+                      app_dir: str, plan_path: str | None = None) -> dict[str, str]:
+    env = dict(base)
+    env["DUBFLOW_DATA_DIR"] = data_dir
+    env["DUBFLOW_APP_ROOT"] = app_dir
+    env["DUBFLOW_BACKEND_PLAN"] = (
+        plan_path or os.path.join(data_dir, "backend-plan.json")
+    )
+    return env
+
+
+def format_setup_failure(script_name: str, returncode: int,
+                         tail: list[str]) -> str:
+    detail = "\n".join(tail[-20:]) if tail else "Không có output."
+    return f"{script_name} kết thúc với mã lỗi {returncode}:\n{detail}"
+
+
 class SetupScriptWorker(QThread):
     """Chạy scripts/setup_*.py và stream stdout ra GUI."""
 
@@ -486,7 +505,9 @@ class SetupScriptWorker(QThread):
 
     def run(self) -> None:
         try:
-            os.environ.setdefault("DUBFLOW_DATA_DIR", data_root())
+            data_dir = data_root()
+            app_dir = app_root()
+            os.environ["DUBFLOW_DATA_DIR"] = data_dir
             script_path = _find_script(self._script_rel)
             python_exe  = _find_python()
 
@@ -503,8 +524,11 @@ class SetupScriptWorker(QThread):
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                cwd=data_root(),
-                env=dict(os.environ, DUBFLOW_APP_ROOT=app_root()),
+                cwd=data_dir,
+                env=setup_environment(
+                    os.environ, data_dir, app_dir,
+                    os.path.join(data_dir, "backend-plan.json"),
+                ),
                 creationflags=_NO_WINDOW,
             )
 
@@ -527,9 +551,8 @@ class SetupScriptWorker(QThread):
                 self.progress.emit(100)
                 self.finished_ok.emit()
             else:
-                err = "\n".join(tail[-20:]) if tail else "Không có output."
-                self.failed.emit(
-                    f"Script kết thúc với mã lỗi {proc.returncode}:\n{err}")
+                self.failed.emit(format_setup_failure(
+                    script_name, proc.returncode, tail))
 
         except Exception as exc:  # noqa: BLE001
             self.failed.emit(str(exc))

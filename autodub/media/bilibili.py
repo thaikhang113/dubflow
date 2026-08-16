@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 import re
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 _BVID_RE = re.compile(r"/video/(BV[0-9A-Za-z]+)", re.IGNORECASE)
 _AUTH_COOKIES = {"SESSDATA", "DedeUserID", "bili_jct"}
@@ -11,10 +11,15 @@ _AUTH_COOKIES = {"SESSDATA", "DedeUserID", "bili_jct"}
 
 def canonical_url(url: str) -> str:
     value = str(url or "").strip()
-    match = _BVID_RE.search(urlparse(value).path)
+    parsed = urlparse(value)
+    match = _BVID_RE.search(parsed.path)
     if not match:
         return value
-    return f"https://www.bilibili.com/video/{match.group(1)}"
+    result = f"https://www.bilibili.com/video/{match.group(1)}"
+    part = parse_qs(parsed.query).get("p", [""])[0]
+    if part.isdigit() and int(part) > 0:
+        result += f"?p={int(part)}"
+    return result
 
 
 def has_login_cookies(path: str | None) -> bool:

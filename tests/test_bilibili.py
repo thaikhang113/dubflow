@@ -8,6 +8,12 @@ def test_canonical_url_strips_tracking_query():
         "https://www.bilibili.com/video/BV1ATDoYAENJ/?vd_source=x&spm_id_from=y"
     ) == "https://www.bilibili.com/video/BV1ATDoYAENJ"
 
+def test_canonical_url_preserves_selected_part():
+    assert canonical_url(
+        "https://www.bilibili.com/video/BV1DbC9B5E8a/"
+        "?p=3&vd_source=x&spm_id_from=y"
+    ) == "https://www.bilibili.com/video/BV1DbC9B5E8a?p=3"
+
 
 def test_cookie_validator_requires_auth_markers(tmp_path):
     path = tmp_path / "cookies.txt"

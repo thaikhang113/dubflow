@@ -58,3 +58,24 @@ def test_vsr_failure_returns_fallback_result(tmp_path):
     assert result.used_vsr is False
     assert result.output_path == str(fallback)
     assert "worker" in result.error
+
+def test_hardware_plan_can_disable_vsr(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from autodub.media.vsr import remove_subtitles
+
+    plan = tmp_path / "backend-plan.json"
+    plan.write_text('{"vsr_backend": "fallback"}', encoding="utf-8")
+    monkeypatch.setenv("DUBFLOW_BACKEND_PLAN", str(plan))
+    fallback = tmp_path / "fallback.mp4"
+    fallback.write_bytes(b"fallback")
+    settings = SimpleNamespace(vsr_enabled=True)
+
+    result = remove_subtitles(
+        "source.mp4", "output.mp4",
+        [{"x": 0.1, "y": 0.7, "w": 0.5, "h": 0.2}],
+        settings,
+        fallback=lambda: str(fallback),
+    )
+
+    assert result.output_path == str(fallback)
+    assert result.used_vsr is False

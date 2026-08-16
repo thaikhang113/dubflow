@@ -1,4 +1,5 @@
 from scripts.setup_support import is_nonempty_file, retry_call, smoke_request
+from autodub_gui.workers_setup import format_setup_failure, setup_environment
 
 
 def test_retry_call_retries_transient_failure():
@@ -37,3 +38,19 @@ def test_is_nonempty_file_rejects_missing_and_empty(tmp_path):
 
 def test_smoke_request_matches_worker_protocol():
     assert smoke_request("C:/audio.wav") == '{"audio": "C:/audio.wav"}\n'
+
+
+def test_setup_environment_overrides_stale_data_root():
+    env = setup_environment({"DUBFLOW_DATA_DIR": "old"}, "D:/data", "D:/app")
+    assert env["DUBFLOW_DATA_DIR"] == "D:/data"
+    assert env["DUBFLOW_APP_ROOT"] == "D:/app"
+    assert env["DUBFLOW_BACKEND_PLAN"].replace("\\", "/") == (
+        "D:/data/backend-plan.json"
+    )
+
+
+def test_setup_failure_keeps_script_tail():
+    message = format_setup_failure("setup_vsr.py", 2, ["pip failed"])
+    assert "setup_vsr.py" in message
+    assert "2" in message
+    assert "pip failed" in message

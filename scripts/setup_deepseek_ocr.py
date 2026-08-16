@@ -8,6 +8,9 @@ import sys
 
 from setup_support import retry_call
 
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_ROOT = os.environ.get("DUBFLOW_DATA_DIR", ROOT)
 VENV = os.path.join(DATA_ROOT, ".venv-deepseek-ocr")
@@ -19,10 +22,20 @@ MODEL_DIR = os.path.join(DATA_ROOT, "models", "deepseek-ocr")
 MARKER = os.path.join(MODEL_DIR, "installed_ok.json")
 MODEL_NAME = "deepseek-ai/DeepSeek-OCR"
 DEFAULT_ROCM_INDEX = "https://download.pytorch.org/whl/rocm6.4"
+SUPPORTED_PYTHON = ((3, 10), (3, 11), (3, 12))
 
 
 def log(message: str) -> None:
     print(f"[setup-deepseek-ocr] {message}", flush=True)
+
+
+def validate_python_version(version: tuple[int, int]) -> None:
+    if version not in SUPPORTED_PYTHON:
+        supported = ", ".join(
+            f"{major}.{minor}" for major, minor in SUPPORTED_PYTHON)
+        raise RuntimeError(
+            f"DeepSeek-OCR cần Python {supported}; đang dùng "
+            f"{version[0]}.{version[1]}.")
 
 
 def _probe(command: list[str]) -> bool:
@@ -94,6 +107,19 @@ def select_backend(
 def _rocm_index() -> str:
     return os.environ.get("DUBFLOW_TORCH_INDEX_URL", DEFAULT_ROCM_INDEX)
 
+def _planned_backend() -> str:
+    path = os.environ.get("DUBFLOW_BACKEND_PLAN", "")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            value = str(json.load(handle).get("ocr_backend", ""))
+    except (OSError, ValueError, TypeError):
+        return ""
+    return {
+        "deepseek-cuda": "cuda",
+        "deepseek-rocm": "rocm",
+        "deepseek-directml": "directml",
+    }.get(value, "")
+
 
 def _torch_ready(backend: str) -> bool:
     if backend == "directml":
@@ -129,7 +155,8 @@ def _install_torch(backend: str) -> None:
 
 
 def main() -> int:
-    backend = select_backend(
+    validate_python_version(sys.version_info[:2])
+    backend = _planned_backend() or select_backend(
         sys.platform,
         nvidia_available=_has_nvidia_gpu(),
         amd_available=_has_amd_gpu(),

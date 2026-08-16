@@ -164,6 +164,14 @@ class Settings:
     vsr_mode: str = "sttn-det"
     vsr_venv_python: str = ""
     vsr_model_dir: str = ""
+    video2x_enabled: bool = False
+    video2x_binary: str = ""
+    video2x_profile: str = "realesrgan"
+    video2x_scale: int = 2
+    video2x_model: str = "realesr-animevideov3"
+    download_url_workers: int = 3
+    download_fragment_workers: int = 2
+    download_prefetch_workers: int = 2
 
     # --- Giọng đọc tiếng Việt (VieNeu — bộ giọng DUY NHẤT) -----------------
     # Chạy trong venv riêng (.venv-vieneu) qua tiến trình con — cài một lần
@@ -403,6 +411,21 @@ class Settings:
                               "opencv"), "sttn-det"),
             vsr_venv_python=env("VSR_VENV_PYTHON"),
             vsr_model_dir=env("VSR_MODEL_DIR"),
+            video2x_enabled=env_bool("VIDEO2X_ENABLED", "false"),
+            video2x_binary=env("VIDEO2X_BINARY").strip(),
+            video2x_profile=_one_of(
+                env("VIDEO2X_PROFILE", "realesrgan"),
+                ("realesrgan", "realcugan", "anime4k", "libplacebo"),
+                "realesrgan"),
+            video2x_scale=max(2, min(4, env_int("VIDEO2X_SCALE", "2"))),
+            video2x_model=env("VIDEO2X_MODEL",
+                              "realesr-animevideov3").strip(),
+            download_url_workers=max(
+                1, min(8, env_int("DOWNLOAD_URL_WORKERS", "3"))),
+            download_fragment_workers=max(
+                1, min(16, env_int("DOWNLOAD_FRAGMENT_WORKERS", "2"))),
+            download_prefetch_workers=max(
+                1, min(4, env_int("DOWNLOAD_PREFETCH_WORKERS", "2"))),
             vieneu_venv_python=env("VIENEU_VENV_PYTHON"),
             vieneu_model_dir=env("VIENEU_MODEL_DIR"),
             vieneu_voice=env("VIENEU_VOICE", "").strip(),

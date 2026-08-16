@@ -16,14 +16,39 @@ from autodub.utils import setup_logging
 
 logger = setup_logging("autodub.ocr")
 
+def _planned_backend() -> str:
+    path = os.environ.get("DUBFLOW_BACKEND_PLAN", "")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return str(json.load(handle).get("ocr_backend", ""))
+    except (OSError, ValueError, TypeError):
+        return ""
+
+def _deepseek_ready(settings) -> bool:
+    planned = _planned_backend()
+    if not getattr(settings, "deepseek_ocr_enabled", False):
+        if not planned.startswith("deepseek"):
+            return False
+    if getattr(settings, "deepseek_ocr_configured", lambda: False)():
+        return True
+    if not planned.startswith("deepseek"):
+        return False
+    try:
+        return (
+            os.path.isfile(settings.deepseek_ocr_venv_python_path())
+            and os.path.isfile(os.path.join(
+                settings.deepseek_ocr_model_dir_path(), "installed_ok.json"))
+        )
+    except (AttributeError, OSError):
+        return False
+
 def preferred_ocr_backend(settings, gpu_info=None) -> str:
     if getattr(settings, "ocr_backend", "paddle") != "hybrid":
         return "paddle"
-    if not (
-        getattr(settings, "deepseek_ocr_enabled", False)
-        and getattr(settings, "deepseek_ocr_configured", lambda: False)()
-    ):
+    if not _deepseek_ready(settings):
         return "paddle"
+    if _planned_backend().startswith("deepseek"):
+        return "deepseek"
     gpu_info = gpu_info or detect_gpu()
     if (
         getattr(gpu_info, "vendor", "") == "amd"
@@ -57,7 +82,7 @@ def _run_engine_detections(
         worker_name = "ocr_worker.py"
         cache_env = ("PADDLE_PDX_CACHE_HOME", settings.ocr_model_dir_path())
     else:
-        if not settings.deepseek_ocr_configured():
+        if not _deepseek_ready(settings):
             raise RuntimeError(
                 "DeepSeek-OCR chưa được cài hoặc chưa bật.")
         python_path = settings.deepseek_ocr_venv_python_path()
@@ -125,8 +150,7 @@ def detect_regions_with_logo(
     """Run PaddleOCR once and return subtitle plus stable-logo regions."""
     deepseek_ready = (
         getattr(settings, "ocr_backend", "paddle") == "hybrid"
-        and getattr(settings, "deepseek_ocr_enabled", False)
-        and getattr(settings, "deepseek_ocr_configured", lambda: False)()
+        and _deepseek_ready(settings)
     )
     primary = preferred_ocr_backend(settings)
     fallback = (

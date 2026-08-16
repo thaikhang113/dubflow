@@ -107,6 +107,7 @@ def download_video(
     douyin_cookies_file: str | None = None,
     progress: ProgressCallback | None = None,
     cancel_event: threading.Event | None = None,
+    fragment_workers: int = 2,
 ) -> str:
     if not url:
         raise ValueError("URL cannot be empty")
@@ -136,12 +137,14 @@ def download_video(
         "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "outtmpl": os.path.join(output_dir, "%(id)s.%(ext)s"),
         "merge_output_format": "mp4",
+        "noplaylist": True,
         "quiet": False,
         "no_warnings": False,
         # Mạng chập chờn: tự thử lại thay vì fail cả video trong batch.
         "retries": 5,
         "fragment_retries": 5,
         "socket_timeout": 30,
+        "concurrent_fragment_downloads": max(1, min(16, int(fragment_workers))),
     }
     if cookies_from_browser:
         ydl_opts["cookiesfrombrowser"] = (cookies_from_browser,)
@@ -192,6 +195,7 @@ def build_ydl_opts(
     output_dir: str,
     cookies_from_browser: str | None = None,
     cookies_file: str | None = None,
+    fragment_workers: int = 2,
 ) -> dict:
     """yt-dlp options for the standalone `autodub download` command."""
     opts = {
@@ -199,12 +203,14 @@ def build_ydl_opts(
         "outtmpl": os.path.join(output_dir, "%(extractor_key)s_%(id)s.%(ext)s"),
         "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "merge_output_format": "mp4",
+        "noplaylist": True,
         "quiet": False,
         "no_warnings": False,
         "noprogress": False,
         "retries": 5,
         "fragment_retries": 5,
         "socket_timeout": 30,
+        "concurrent_fragment_downloads": max(1, min(16, int(fragment_workers))),
     }
     if cookies_from_browser:
         opts["cookiesfrombrowser"] = (cookies_from_browser,)
@@ -263,6 +269,7 @@ def download_one(
     cookies_from_browser: str | None = None,
     cookies_file: str | None = None,
     douyin_cookies_file: str | None = None,
+    fragment_workers: int = 2,
 ) -> dict:
     """Download a single URL and return metadata + saved filepath.
 
@@ -276,11 +283,13 @@ def download_one(
         return download_douyin(
             url, output_dir, cookies_file=douyin_cookies_file)
 
-    canonical = normalize_url(url)
+    from autodub.media.bilibili import canonical_url
+    canonical = canonical_url(normalize_url(url))
     if canonical != url:
         logger.info(f"Normalized: {url} -> {canonical}")
 
-    ydl_opts = build_ydl_opts(output_dir, cookies_from_browser, cookies_file)
+    ydl_opts = build_ydl_opts(
+        output_dir, cookies_from_browser, cookies_file, fragment_workers)
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = _extract_info_with_retry(ydl, canonical)

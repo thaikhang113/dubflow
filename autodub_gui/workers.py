@@ -13,6 +13,7 @@ import os
 import re
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from PySide6.QtCore import QObject, QRunnable, QThread, Signal
 
@@ -642,13 +643,16 @@ class DownloadWorker(QThread):
     def __init__(self, urls: list[str], output_dir: str,
                  cookies_from_browser: str | None = None,
                  cookies_file: str | None = None, parent=None,
-                 douyin_cookies_file: str | None = None):
+                 douyin_cookies_file: str | None = None,
+                 url_workers: int = 3, fragment_workers: int = 2):
         super().__init__(parent)
         self._urls = urls
         self._output_dir = output_dir
         self._cookies_browser = cookies_from_browser or None
         self._cookies_file = cookies_file or None
         self._douyin_cookies_file = douyin_cookies_file or None
+        self._url_workers = max(1, min(8, int(url_workers)))
+        self._fragment_workers = max(1, min(16, int(fragment_workers)))
         self._cancel_event = threading.Event()
 
     def cancel(self) -> None:
@@ -656,6 +660,7 @@ class DownloadWorker(QThread):
 
     def run(self) -> None:
         from autodub.media.downloader import download_one
+        from autodub.media.douyin import is_douyin_url
         from autodub.utils import ensure_dir, save_json_atomic
 
         handler = attach_gui_logging(self.log)
@@ -672,12 +677,13 @@ class DownloadWorker(QThread):
             if not isinstance(state, dict):
                 state = {}
 
+            state_lock = threading.Lock()
+
             def flush():
                 save_json_atomic(state, state_path)
+
+            pending = []
             for i, url in enumerate(self._urls):
-                if self._cancel_event.is_set():
-                    self.cancelled.emit()
-                    return
                 previous = state.get(url, {})
                 if previous.get("status") == "success" and os.path.isfile(
                         previous.get("filepath", "")):
@@ -688,40 +694,69 @@ class DownloadWorker(QThread):
                 self.item_status.emit(i, total, url, "start", "")
                 item_dir = os.path.join(self._output_dir, f"{i + 1:03d}")
                 ensure_dir(item_dir)
-                for attempt, delay in enumerate((0, 2, 5), start=1):
-                    if delay:
-                        if self._cancel_event.wait(delay):
-                            self.cancelled.emit()
-                            return
-                    if self._cancel_event.is_set():
+                pending.append((i, url, item_dir))
+
+            douyin_gate = threading.Semaphore(1)
+
+            def download_task(i, url, item_dir):
+                gate = douyin_gate if is_douyin_url(url) else None
+                if gate:
+                    gate.acquire()
+                try:
+                    for attempt, delay in enumerate((0, 2, 5), start=1):
+                        if delay and self._cancel_event.wait(delay):
+                            return i, url, None, "cancelled"
+                        if self._cancel_event.is_set():
+                            return i, url, None, "cancelled"
+                        try:
+                            entry = download_one(
+                                url, item_dir, self._cookies_browser,
+                                self._cookies_file,
+                                douyin_cookies_file=self._douyin_cookies_file,
+                                fragment_workers=self._fragment_workers)
+                            return i, url, entry, None
+                        except Exception as e:
+                            message = str(e)
+                            transient = bool(re.search(
+                                r"\b(?:408|425|429|500|502|503|504|522|524)\b|"
+                                r"timed?\s*out|connection\s+(?:reset|aborted|error)|"
+                                r"temporar(?:y|ily)", message, re.I))
+                            if not transient or attempt == 3:
+                                return i, url, None, message[:200]
+                finally:
+                    if gate:
+                        gate.release()
+
+            executor = ThreadPoolExecutor(
+                max_workers=min(self._url_workers, max(1, len(pending))),
+                thread_name_prefix="download")
+            futures = {
+                executor.submit(download_task, i, url, item_dir):
+                (i, url) for i, url, item_dir in pending
+            }
+            try:
+                for future in as_completed(futures):
+                    i, url = futures[future]
+                    _i, _url, entry, error = future.result()
+                    if error == "cancelled":
                         self.cancelled.emit()
                         return
-                    try:
-                        entry = download_one(
-                            url, item_dir, self._cookies_browser,
-                            self._cookies_file,
-                            douyin_cookies_file=self._douyin_cookies_file)
-                        state[url] = {"status": "success",
-                                      "filepath": entry["filepath"]}
-                        flush()
-                        success += 1
-                        self.item_status.emit(i, total, url, "success",
-                                              entry["filepath"])
-                        break
-                    except Exception as e:
-                        message = str(e)
-                        transient = bool(re.search(
-                            r"\b(?:408|425|429|500|502|503|504|522|524)\b|"
-                            r"timed?\s*out|connection\s+(?:reset|aborted|error)|"
-                            r"temporar(?:y|ily)", message, re.I))
-                        if not transient or attempt == 3:
+                    with state_lock:
+                        if entry:
+                            state[url] = {"status": "success",
+                                          "filepath": entry["filepath"]}
+                            success += 1
+                            detail = entry["filepath"]
+                            status = "success"
+                        else:
+                            state[url] = {"status": "failed", "error": error}
                             failed += 1
-                            state[url] = {"status": "failed",
-                                          "error": message[:200]}
-                            flush()
-                            self.item_status.emit(i, total, url, "failed",
-                                                  message[:200])
-                            break
+                            detail = error
+                            status = "failed"
+                        flush()
+                    self.item_status.emit(i, total, url, status, detail)
+            finally:
+                executor.shutdown(wait=True, cancel_futures=True)
             self.finished_ok.emit(success, failed)
         except Exception as e:  # noqa: BLE001 — e.g. thư mục lưu không tạo được
             self.failed.emit(str(e))

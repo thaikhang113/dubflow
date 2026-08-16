@@ -1,5 +1,7 @@
 import pytest
 import sys
+import os
+import subprocess
 from pathlib import Path
 
 
@@ -49,6 +51,34 @@ def test_installer_rejects_cpu_without_supported_backend():
         setup_deepseek_ocr.select_backend(
             "linux", nvidia_available=False, amd_available=False
         )
+
+
+def test_installer_rejects_unsupported_python():
+    from scripts import setup_deepseek_ocr
+
+    with pytest.raises(RuntimeError, match="3.10"):
+        setup_deepseek_ocr.validate_python_version((3, 13))
+
+
+def test_installer_log_survives_windows_cp1252_console():
+    env = dict(
+        os.environ,
+        PYTHONIOENCODING="cp1252",
+        PYTHONPATH=str(Path(__file__).resolve().parents[1] / "scripts"),
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from scripts import setup_deepseek_ocr; "
+            "setup_deepseek_ocr.log('Tạo môi trường')",
+        ],
+        capture_output=True,
+        env=env,
+    )
+
+    assert result.returncode == 0
+    assert "Tạo môi trường" in result.stdout.decode("utf-8")
 
 
 def test_worker_uses_eager_float16_for_rocm():
@@ -108,3 +138,35 @@ def test_amd_gpu_falls_back_to_paddle_when_deepseek_unavailable():
         compute_backend = "directml"
 
     assert preferred_ocr_backend(Settings(), GPU()) == "paddle"
+
+def test_hardware_plan_activates_installed_deepseek(
+    monkeypatch, tmp_path
+):
+    from autodub.media.ocr import preferred_ocr_backend
+
+    plan = tmp_path / "backend-plan.json"
+    plan.write_text('{"ocr_backend": "deepseek-rocm"}', encoding="utf-8")
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    (model_dir / "installed_ok.json").write_text("{}", encoding="utf-8")
+    python = tmp_path / "python"
+    python.touch()
+    monkeypatch.setenv("DUBFLOW_BACKEND_PLAN", str(plan))
+
+    class Settings:
+        ocr_backend = "hybrid"
+        deepseek_ocr_enabled = False
+
+        @staticmethod
+        def deepseek_ocr_configured():
+            return False
+
+        @staticmethod
+        def deepseek_ocr_venv_python_path():
+            return str(python)
+
+        @staticmethod
+        def deepseek_ocr_model_dir_path():
+            return str(model_dir)
+
+    assert preferred_ocr_backend(Settings()) == "deepseek"

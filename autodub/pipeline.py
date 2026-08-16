@@ -1141,6 +1141,16 @@ class DubPipeline:
                     outro_path=outro_path,
                 )
                 os.replace(composed_path, dubbed_video_path)
+            if getattr(settings, "video2x_enabled", False):
+                from autodub.media.video2x import upscale_video_or_fallback
+                upscaled_path = os.path.join(work_dir, "video2x_output.mp4")
+                result = upscale_video_or_fallback(
+                    dubbed_video_path, settings, output_path=upscaled_path)
+                if result.used_video2x:
+                    os.replace(result.output_path, dubbed_video_path)
+                else:
+                    logger.warning("Video2X fallback giữ bản FFmpeg: %s",
+                                   result.error)
             rep.emit("merge_video", "done", detail=dubbed_video_path)
         else:
             # Luồng wizard dừng trước khi sinh phụ đề — xuất chỉ-âm-thanh

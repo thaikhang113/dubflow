@@ -18,7 +18,7 @@ import json
 import os
 import re
 import shutil
-import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Callable, Iterable
 
@@ -96,44 +96,46 @@ class _Prefetcher:
     tá»± tÃ¬m tháº¥y nhÆ° video táº£i bÃ¬nh thÆ°á»ng).
     """
 
-    def __init__(self, root_dir: str):
+    def __init__(
+        self, root_dir: str, max_workers: int = 2, fragment_workers: int = 2
+    ):
         self._root = os.path.join(root_dir, "_prefetch")
-        self._thread: threading.Thread | None = None
-        self._result: dict = {}
+        self._executor = ThreadPoolExecutor(
+            max_workers=max(1, min(4, int(max_workers))),
+            thread_name_prefix="batch-prefetch")
+        self._futures = {}
+        self._fragment_workers = max(1, min(16, int(fragment_workers)))
 
     def start(self, index: int, item: BatchItem) -> None:
         """Báº¯t Ä‘áº§u táº£i ná»n cho ``item`` (bá» qua náº¿u lÃ  file local)."""
-        self._thread = None
-        self._result = {}
         if not item.url or item.file_path:
             return
         dest = os.path.join(self._root, str(index))
-        result = self._result
-
-        def _work():
+        result: dict = {}
+        def _download():
             try:
                 from autodub.media.downloader import download_video
-                result["path"] = download_video(item.url, dest)
-            except Exception as e:  # noqa: BLE001 â€” video nÃ y sáº½ táº£i láº¡i bÃ¬nh thÆ°á»ng
+                result["path"] = download_video(
+                    item.url, dest, fragment_workers=self._fragment_workers)
+            except Exception as e:  # noqa: BLE001
                 logger.warning(f"Táº£i trÆ°á»›c tháº¥t báº¡i ({item.label}): {e}")
                 result["error"] = str(e)
+            return result
 
-        logger.info(f"Táº£i trÆ°á»›c video káº¿ tiáº¿p: {item.label}")
-        t = threading.Thread(target=_work, daemon=True,
-                             name="batch-prefetch")
-        t.start()
-        self._thread = t
+        logger.info(f"Táº£i trÆ°á»›c video: {item.label}")
+        self._futures[index] = self._executor.submit(_download)
 
-    def take(self, timeout: float = 3600.0) -> str | None:
+    def take(self, index: int, timeout: float = 3600.0) -> str | None:
         """Chá» lÆ°á»£t táº£i ná»n xong; tráº£ vá» Ä‘Æ°á»ng dáº«n file hoáº·c None."""
-        t, self._thread = self._thread, None
-        if t is None:
+        future = self._futures.pop(index, None)
+        if future is None:
             return None
-        t.join(timeout)
-        if t.is_alive():
+        try:
+            result = future.result(timeout=timeout)
+        except TimeoutError:
             logger.warning("Táº£i trÆ°á»›c quÃ¡ lÃ¢u â€” video sáº½ tá»± táº£i láº¡i")
             return None
-        return self._result.get("path")
+        return result.get("path")
 
     @staticmethod
     def adopt(prefetched: str, work_dir: str) -> None:
@@ -166,7 +168,10 @@ class _Prefetcher:
 
     def cleanup(self) -> None:
         """XoÃ¡ cÃ¡c file táº£i trÆ°á»›c cÃ²n sÃ³t (video lá»—i giá»¯ nguyÃªn Ä‘á»ƒ resume)."""
-        self._thread = None
+        for future in self._futures.values():
+            future.cancel()
+        self._futures.clear()
+        self._executor.shutdown(wait=False, cancel_futures=True)
         try:
             if os.path.isdir(self._root) and not os.listdir(self._root):
                 os.rmdir(self._root)
@@ -233,7 +238,14 @@ def _run_items(
     from autodub.languages import get_target
     prefetch_root = (req_template.output_dir
                      or pipeline.default_output_dir(get_target(req_template.target)))
-    prefetcher = _Prefetcher(prefetch_root)
+    prefetch_workers = getattr(
+        getattr(pipeline, "settings", None),
+        "download_prefetch_workers", 2)
+    fragment_workers = getattr(
+        getattr(pipeline, "settings", None),
+        "download_fragment_workers", 2)
+    prefetcher = _Prefetcher(
+        prefetch_root, prefetch_workers, fragment_workers)
 
     for i, item in enumerate(items):
         logger.info(f"[{i + 1}/{len(items)}] Processing: {item.label}")
@@ -242,10 +254,11 @@ def _run_items(
         if observer:
             observer(i, len(items), item, "start", "")
         # Video nÃ y Ä‘Ã£ Ä‘Æ°á»£c táº£i trÆ°á»›c trong lÃºc video trÆ°á»›c xá»­ lÃ½?
-        prefetched = prefetcher.take()
+        prefetched = prefetcher.take(i)
         # Báº¯t Ä‘áº§u táº£i ná»n video Káº¾ TIáº¾P ngay khi video nÃ y khá»Ÿi Ä‘á»™ng.
-        if i + 1 < len(items):
-            prefetcher.start(i + 1, items[i + 1])
+        prefetch_count = prefetch_workers
+        for next_index in range(i + 1, min(len(items), i + 1 + prefetch_count)):
+            prefetcher.start(next_index, items[next_index])
         try:
             # má»¥c cÅ©: pháº§n Ä‘Ã£ táº£i/nghe-chÃ©p/dá»‹ch Ä‘Æ°á»£c dÃ¹ng láº¡i, khÃ´ng táº¡o
             resume_dir = None

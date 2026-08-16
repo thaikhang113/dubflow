@@ -359,6 +359,11 @@ def test_linux_bootstrap_accepts_system_ffmpeg_without_state(
         if step.key != "ffmpeg":
             state["completed"][step.key] = True
     bootstrap.save_state(state)
+    (tmp_path / bootstrap.PLAN_NAME).write_text(
+        '{"ocr_backend": "paddleocr", "vsr_backend": "fallback", '
+        '"hardware": {}}',
+        encoding="utf-8",
+    )
 
     assert bootstrap.is_complete()
 

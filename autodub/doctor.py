@@ -52,6 +52,7 @@ def run_doctor(settings: Settings | None = None) -> list[DoctorCheck]:
         _check_multimedia(),
         _check_ocr(settings),
         _check_vsr(settings),
+        _check_video2x(settings),
         _check_douyin(),
         _check_demucs(),
         _check_voices(settings),
@@ -140,12 +141,30 @@ def _check_ocr(settings: Settings) -> DoctorCheck:
 
 def _check_deepseek_ocr(settings: Settings) -> DoctorCheck:
     if not settings.deepseek_ocr_configured():
+        python_path = settings.deepseek_ocr_venv_python_path()
+        model_dir = settings.deepseek_ocr_model_dir_path()
+        if not os.path.isfile(python_path):
+            advice = (
+                "Thiếu Python trong .venv-deepseek-ocr. Bấm Tải lại; "
+                "bộ cài cần Python 3.10–3.12."
+            )
+        elif not os.path.isdir(model_dir):
+            advice = (
+                "Chưa có thư mục model DeepSeek-OCR. Bấm Tải lại và giữ "
+                "mạng ổn định trong lúc tải model."
+            )
+        else:
+            advice = (
+                "Model hoặc marker installed_ok.json chưa hợp lệ. Bấm Tải lại; "
+                "nếu tiếp tục lỗi, xem chi tiết lỗi cài đặt."
+            )
         return _check_optional_component(
             key="deepseek_ocr",
             title="DeepSeek-OCR",
             enabled=True,
             configured=False,
             script=repair_script_for("deepseek_ocr"),
+            advice=advice,
         )
     marker = os.path.join(
         settings.deepseek_ocr_model_dir_path(), "installed_ok.json"
@@ -178,24 +197,72 @@ def _check_deepseek_ocr(settings: Settings) -> DoctorCheck:
 
 
 def _check_vsr(settings: Settings) -> DoctorCheck:
+    plan_path = os.path.join(data_root(), "backend-plan.json")
+    try:
+        with open(plan_path, encoding="utf-8") as handle:
+            planned_backend = str(json.load(handle).get("vsr_backend", ""))
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        planned_backend = ""
+    if planned_backend == "fallback":
+        return DoctorCheck(
+            "vsr",
+            "AI xóa phụ đề",
+            "ok",
+            "Hardware plan chọn fallback blur/box.",
+        )
     if not settings.vsr_enabled:
         return DoctorCheck("vsr", "AI xóa phụ đề", "warn",
                            "Đã tắt trong Cài đặt.")
     if settings.vsr_configured():
         return DoctorCheck("vsr", "AI xóa phụ đề", "ok",
                            f"Đã cài, mode {settings.vsr_mode}.")
+    if not os.path.isfile(settings.vsr_venv_python_path()):
+        advice = (
+            "Thiếu Python trong .venv-vsr. Bấm Tải lại; bộ cài cần "
+            "Python 3.10–3.12."
+        )
+    elif not os.path.isdir(settings.vsr_model_dir_path()):
+        advice = (
+            "Chưa có source VSR. Bấm Tải lại và giữ mạng ổn định để tải "
+            "video-subtitle-remover."
+        )
+    elif not os.path.isfile(os.path.join(
+            settings.vsr_model_dir_path(), "installed_ok.json")):
+        advice = (
+            "VSR thiếu marker installed_ok.json. Dependency hoặc smoke test "
+            "chưa hoàn tất; bấm Tải lại."
+        )
+    else:
+        advice = "VSR worker không tồn tại trong bản cài. Cài lại ứng dụng."
     return DoctorCheck(
         "vsr",
         "AI xóa phụ đề",
         "fail",
         "VSR chưa sẵn sàng.",
-        "Bấm Tải lại để tải engine và model cần thiết.",
+        advice,
         repair_script_for("vsr"),
     )
 
 
+def _check_video2x(settings: Settings) -> DoctorCheck:
+    if not settings.video2x_enabled:
+        return DoctorCheck("video2x", "Video2X", "warn",
+                           "Đã tắt trong Cài đặt.")
+    import shutil
+    binary = settings.video2x_binary or shutil.which("video2x")
+    if binary:
+        return DoctorCheck("video2x", "Video2X", "ok",
+                           f"Đã tìm thấy binary: {binary}.")
+    return DoctorCheck(
+        "video2x", "Video2X", "warn",
+        "Không tìm thấy binary Video2X.",
+        "Cài Video2X bên ngoài rồi đặt VIDEO2X_BINARY hoặc thêm vào PATH.",
+    )
+
+
 def _check_optional_component(
-    *, key: str, title: str, enabled: bool, configured: bool, script: str
+    *, key: str, title: str, enabled: bool, configured: bool, script: str,
+    advice: str = ""
 ) -> DoctorCheck:
     if not enabled:
         return DoctorCheck(key, title, "warn", "Đã tắt trong Cài đặt.")
@@ -206,7 +273,7 @@ def _check_optional_component(
         title,
         "fail",
         f"{title} chưa sẵn sàng.",
-        f"Bấm Tải lại để chạy {os.path.basename(script)}.",
+        advice or f"Bấm Tải lại để chạy {os.path.basename(script)}.",
         script,
     )
 

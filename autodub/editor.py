@@ -847,6 +847,15 @@ def rebuild_output(
         logo_path=branding["logo_path"] or None,
         logo_region=branding["logo_region"],
         logo_opacity=branding["logo_opacity"])
+    if getattr(settings, "video2x_enabled", False):
+        from autodub.media.video2x import upscale_video_or_fallback
+        result = upscale_video_or_fallback(
+            dubbed, settings,
+            output_path=os.path.join(work_dir, "video2x_output.mp4"))
+        if result.used_video2x:
+            os.replace(result.output_path, dubbed)
+        else:
+            logger.warning("Video2X fallback giữ bản FFmpeg: %s", result.error)
     emit("merge_video", "done", detail=dubbed)
     emit("done", "done", detail=work_dir)
     logger.info(f"Đã xuất xong video: {dubbed}")
@@ -910,6 +919,15 @@ def rebuild_subtitles(
         logo_path=branding["logo_path"] or None,
         logo_region=branding["logo_region"],
         logo_opacity=branding["logo_opacity"])
+    if getattr(settings, "video2x_enabled", False):
+        from autodub.media.video2x import upscale_video_or_fallback
+        result = upscale_video_or_fallback(
+            dubbed, settings,
+            output_path=os.path.join(work_dir, "video2x_output.mp4"))
+        if result.used_video2x:
+            os.replace(result.output_path, dubbed)
+        else:
+            logger.warning("Video2X fallback giữ bản FFmpeg: %s", result.error)
     if reporter is not None:
         reporter.emit("merge_video", "done", detail=dubbed)
         reporter.emit("done", "done", detail=work_dir)
