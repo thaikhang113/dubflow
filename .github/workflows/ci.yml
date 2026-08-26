@@ -80,7 +80,7 @@ jobs:
         run: |
           set -euo pipefail
           package="dist/dubflow_${{ steps.version.outputs.value }}_amd64.deb"
-          sudo apt-get install -y "$package"
+          sudo apt-get install -y "./$package"
           data_dir="$(mktemp -d)"
           sudo env QT_QPA_PLATFORM=offscreen AUTODUB_SMOKE=1 \
             DUBFLOW_DATA_DIR="$data_dir" /opt/dubflow/DubFlow
@@ -149,9 +149,10 @@ jobs:
           }
           $env:AUTODUB_SMOKE = "1"
           $env:DUBFLOW_DATA_DIR = $dataDir
-          & (Join-Path $installDir "DubFlow.exe")
-          if ($LASTEXITCODE -ne 0) {
-            throw "Installed app smoke failed with exit code $LASTEXITCODE"
+          $appProc = Start-Process -FilePath (Join-Path $installDir "DubFlow.exe") `
+            -Wait -PassThru
+          if ($appProc.ExitCode -ne 0) {
+            throw "Installed app smoke failed with exit code $($appProc.ExitCode)"
           }
           $report = Get-Content (Join-Path $dataDir "smoke_test_result.json") |
             ConvertFrom-Json

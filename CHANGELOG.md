@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.0.15 - 2026-08-26
+
+### Fixed
+
+- Make installed-package smoke checks reliable across Linux and Windows CI.
+
 ## 3.0.14 - 2026-08-26
 
 ### Fixed
