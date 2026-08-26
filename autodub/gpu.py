@@ -41,11 +41,15 @@ def _run(command: list[str]) -> tuple[int, str]:
 
 
 def _first_name(text: str) -> str:
+    candidates = []
     for line in text.splitlines():
         line = line.strip()
         if line and "name" not in line.lower():
+            candidates.append(line)
+    for line in candidates:
+        if _vendor(line) != "unknown":
             return line
-    return ""
+    return candidates[0] if candidates else ""
 
 
 def _vendor(name: str) -> str:

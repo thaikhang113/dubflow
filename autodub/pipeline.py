@@ -1263,6 +1263,11 @@ class DubPipeline:
         nhớ đệm — chạy lại không tốn Vox cho phần đã xong.
         """
         settings, rep = self.settings, self._reporter
+        if resolve_source_lang(source_lang).casefold() == target.code.casefold():
+            return [
+                {**segment, target.text_field: segment.get("text", "")}
+                for segment in segments
+            ]
         if not settings.translate_enabled:
             return None
 
@@ -1327,13 +1332,32 @@ class DubPipeline:
                 settings.translation_api_key,
                 settings.translation_model,
             )
-            returned = batch_provider.translate(
-                payload, context,
-                _prev_context(segments, task.index * batch_size, target),
-            )
-            cached = merge_translations(batch, returned, target.text_field)
-            checkpoint.put(cached)
-            return cached
+            previous = _prev_context(
+                segments, task.index * batch_size, target)
+
+            def translate_batch(items: list[dict]) -> list[dict]:
+                request = [_payload_segment(item, cps) for item in items]
+                try:
+                    returned = batch_provider.translate(
+                        request, context, previous)
+                    merged = merge_translations(
+                        items, returned, target.text_field)
+                except Exception as exc:
+                    if len(items) <= 1:
+                        raise
+                    midpoint = max(1, len(items) // 2)
+                    logger.warning(
+                        "Translation batch failed (%s); retrying as %s + %s "
+                        "sentences",
+                        str(exc)[:200], midpoint, len(items) - midpoint,
+                    )
+                    left = translate_batch(items[:midpoint])
+                    right = translate_batch(items[midpoint:])
+                    return left + right
+                checkpoint.put(merged)
+                return merged
+
+            return translate_batch(batch)
 
         done = 0
         done_lock = threading.Lock()

@@ -3,6 +3,7 @@
 ffmpeg/ffprobe are monkeypatched — no real encoding happens.
 """
 import pytest
+from pathlib import Path
 
 from autodub.media import video as video_mod
 
@@ -199,6 +200,79 @@ def test_reencode_uses_nvenc_when_available(paths, captured, monkeypatch):
     cmd = captured[0]
     assert get_opt(cmd, "-c:v") == "h264_nvenc"
     assert get_opt(cmd, "-pix_fmt") == "yuv420p"
+
+
+def test_linux_amd_vaapi_encoder_is_selected_after_probe(monkeypatch):
+    monkeypatch.setattr(video_mod.sys, "platform", "linux")
+    monkeypatch.setattr(video_mod.os.path, "exists",
+                        lambda path: path == "/dev/dri/renderD128")
+    monkeypatch.setattr(video_mod, "_encoder_works",
+                        lambda *args: "h264_vaapi" in args)
+    video_mod._resolve_encoder.cache_clear()
+
+    name, args = video_mod._resolve_encoder()
+
+    assert name == "AMD VAAPI"
+    assert "h264_vaapi" in args
+    assert "format=nv12,hwupload" in args
+    video_mod._resolve_encoder.cache_clear()
+
+
+def test_vaapi_render_uses_nv12_upload_filter(paths, captured, monkeypatch):
+    monkeypatch.setattr(video_mod, "_resolve_encoder", lambda: (
+        "AMD VAAPI",
+        ("-vaapi_device", "/dev/dri/renderD128", "-vf",
+         "format=nv12,hwupload", "-c:v", "h264_vaapi", "-qp", "23"),
+    ))
+    video_mod.merge_video(
+        paths["video"], paths["audio"], paths["out"],
+        srt_path=paths["srt"], subtitle_mode="burn")
+    cmd = captured[0]
+    assert get_opt(cmd, "-c:v") == "h264_vaapi"
+    assert get_opt(cmd, "-vf") == "format=nv12,hwupload"
+    assert get_opt(cmd, "-pix_fmt") == "nv12"
+
+
+def test_vaapi_failure_cpu_retry_removes_vaapi_options(paths, monkeypatch):
+    calls = []
+
+    class Bad:
+        returncode = 1
+        stdout = ""
+        stderr = "vaapi failed"
+
+    class Good:
+        returncode = 0
+        stdout = (
+            '{"format":{"duration":"2.0"},'
+            '"streams":[{"codec_type":"video"},{"codec_type":"audio"}]}'
+        )
+        stderr = ""
+
+    def fake_run(cmd, **kw):
+        if cmd[0] == "ffmpeg":
+            calls.append(cmd)
+            Path(cmd[-1]).write_bytes(b"ok")
+            return Bad() if len(calls) == 1 else Good()
+        return Good()
+
+    monkeypatch.setattr(video_mod.subprocess, "run", fake_run)
+    monkeypatch.setattr(video_mod, "probe_dimensions", lambda p: (1920, 1080))
+    monkeypatch.setattr(video_mod, "_resolve_encoder", lambda: (
+        "AMD VAAPI",
+        ("-vaapi_device", "/dev/dri/renderD128", "-vf",
+         "format=nv12,hwupload", "-c:v", "h264_vaapi", "-qp", "23"),
+    ))
+
+    video_mod.merge_video(
+        paths["video"], paths["audio"], paths["out"],
+        srt_path=paths["srt"], subtitle_mode="burn")
+
+    assert len(calls) == 2
+    assert "-vaapi_device" not in calls[1]
+    assert "-vf" not in calls[1]
+    assert get_opt(calls[1], "-c:v") == "libx264"
+    assert get_opt(calls[1], "-pix_fmt") == "yuv420p"
 
 def test_mirror_adds_hflip_and_keeps_subtitles_after_flip(paths, captured):
     video_mod.merge_video(

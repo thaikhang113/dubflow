@@ -573,6 +573,10 @@ class VoiceLibraryTab(QWidget):
         if index >= 0:
             self._style.setCurrentIndex(index)
         self._reload_voices()
+        if self._voice_of(self._current) is None:
+            self._current = self._voices[0].name if self._voices else ""
+            self._apply_filters()
+            self._update_rail()
 
     def values(self) -> dict[str, str]:
         from autodub.speech.tts.voices import DEFAULT_VOICE
@@ -606,9 +610,19 @@ class VoiceLibraryTab(QWidget):
         # diện y như trước.
         has_capcut = any(source_group(v) == "capcut" for v in self._voices)
         has_clone = any(source_group(v) == "clone" for v in self._voices)
+        has_offline = any(source_group(v) == "offline" for v in self._voices)
         self._src_tabs.setVisible(has_capcut or has_clone)
-        if not has_capcut and not has_clone:
-            self._src_tab = _SRC_OFFLINE
+        available_sources = {
+            _SRC_OFFLINE: has_offline,
+            _SRC_CAPCUT: has_capcut,
+            _SRC_CLONE: has_clone,
+        }
+        if not available_sources.get(self._src_tab, False):
+            self._src_tab = next(
+                (source for source, available in available_sources.items()
+                 if available),
+                _SRC_OFFLINE,
+            )
         self._apply_filters()
         self._update_rail()
 

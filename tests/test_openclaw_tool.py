@@ -7,6 +7,7 @@ import pytest
 
 from autodub.config import Settings
 from autodub.openclaw_tool import (
+    _aggregate_status,
     handle,
     load_batch_status,
 )
@@ -175,3 +176,29 @@ def test_cli_emits_utf8_json_on_windows(tmp_path):
     assert result.returncode == 0
     payload = json.loads(result.stdout.decode("utf-8"))
     assert payload["ok"] is True
+
+def test_status_keeps_translation_pending_distinct_from_failed(tmp_path):
+    submitted = handle(
+        {
+            "action": "submit",
+            "links": ["https://example.com/a"],
+            "options": {},
+        },
+        queue_root=str(tmp_path),
+        settings=Settings(),
+    )
+    job_id = submitted["job_ids"][0]
+    status_path = tmp_path / "status" / f"{job_id}.json"
+    payload = json.loads(status_path.read_text())
+    payload.update({"status": "translate_pending", "percent": 60})
+    status_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    status = load_batch_status(str(tmp_path), submitted["batch_id"])
+
+    assert status["status"] == "translate_pending"
+    assert status["counts"] == {"translate_pending": 1}
+    assert status["percent"] == 60
+
+def test_mixed_completed_and_cancelled_batch_is_terminal():
+    jobs = [{"status": "completed"}, {"status": "cancelled"}]
+    assert _aggregate_status(jobs) == "cancelled"

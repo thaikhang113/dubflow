@@ -4,6 +4,7 @@ from autodub.media import ocr
 from autodub.media.deepseek_ocr_worker import _frames as deepseek_frames
 from autodub.media.deepseek_ocr_worker import parse_grounding
 from autodub.media.ocr_worker import _frames as paddle_frames
+from autodub.media.ocr_worker import ocr_frame_timeout_s
 
 
 def _settings(tmp_path, *, enabled=True, backend="hybrid"):
@@ -149,3 +150,6 @@ def test_ocr_frame_extractors_avoid_unsupported_vsync(monkeypatch, tmp_path):
     assert len(paddle_frames("video.mp4", [0.0, 1.0], str(tmp_path))) == 2
     assert len(deepseek_frames("video.mp4", [0.0, 1.0], str(tmp_path))) == 2
     assert all("-vsync" not in command for command in commands)
+
+def test_ocr_frame_timeout_scales_with_sample_count():
+    assert ocr_frame_timeout_s(120) == 1020

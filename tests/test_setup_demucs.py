@@ -23,3 +23,10 @@ def test_rocm_is_disabled_on_windows(monkeypatch):
     module = _module()
     monkeypatch.setattr(module.sys, "platform", "win32")
     assert module._has_rocm() is False
+
+
+def test_backend_name_distinguishes_rocm_cuda_and_cpu():
+    module = _module()
+    assert module._backend_name(True, True) == "rocm"
+    assert module._backend_name(True, False) == "cuda"
+    assert module._backend_name(False, False) == "cpu"

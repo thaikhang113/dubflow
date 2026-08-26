@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import socket
 import urllib.error
 import urllib.request
 
@@ -54,6 +55,32 @@ def test_runtime_exposes_stable_docker_endpoint(tmp_path):
         assert saved["port"] == 38643
     finally:
         runtime.stop()
+
+
+def test_runtime_uses_free_port_when_configured_port_is_busy(tmp_path):
+    occupied = socket.socket()
+    occupied.bind(("0.0.0.0", 0))
+    occupied.listen()
+    port = occupied.getsockname()[1]
+    (tmp_path / "openclaw.json").write_text(json.dumps({
+        "enabled": False,
+        "token": "test-token",
+        "bind_host": "0.0.0.0",
+        "port": port,
+    }), encoding="utf-8")
+    runtime = OpenClawRuntime(data_dir=tmp_path)
+    try:
+        runtime.start(worker=False)
+        assert runtime._server.server_address[1] != port
+        status, payload = _request(runtime.endpoint + "/health", runtime.token)
+        assert status == 200
+        assert payload["ok"] is True
+        saved = json.loads((tmp_path / "openclaw.json").read_text())
+        assert saved["port"] == runtime._server.server_address[1]
+    finally:
+        runtime.stop()
+        occupied.close()
+
 
 def test_runtime_prepare_and_submit_use_existing_tool_contract(tmp_path):
     runtime = OpenClawRuntime(data_dir=tmp_path)

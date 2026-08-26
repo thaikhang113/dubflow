@@ -131,6 +131,25 @@ def cancel_job(root: str, job_id: str) -> None:
     marker = base / "cancel" / job_id
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_text("", encoding="ascii")
+    try:
+        status = json.loads(
+            (base / "status" / f"{job_id}.json").read_text(encoding="utf-8")
+        )
+    except (OSError, json.JSONDecodeError):
+        status = {}
+    if status.get("status") == "queued":
+        try:
+            (base / "inbox" / f"{job_id}.json").unlink()
+        except FileNotFoundError:
+            pass
+        _write_status(
+            base,
+            job_id,
+            status="cancelled",
+            percent=100,
+            step="done",
+            detail="Job cancelled before worker start",
+        )
 
 
 def _write_status(root: Path, job_id: str, **changes) -> None:

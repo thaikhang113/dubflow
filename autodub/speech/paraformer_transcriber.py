@@ -17,7 +17,7 @@ import threading
 from collections import deque
 
 from autodub.config import Settings
-from autodub.utils import bundled_file, setup_logging
+from autodub.utils import asr_timeout_s, bundled_file, setup_logging
 
 logger = setup_logging("autodub.paraformer")
 
@@ -47,11 +47,13 @@ def transcribe_paraformer(audio_path: str, settings: Settings) -> list[dict]:
 
     if needs_normalize:
         normalized_path = f"{audio_path}.paraformer_16k_mono.wav"
+        from autodub.media.audio import wav_duration_s
         proc = subprocess.run(
             ["ffmpeg", "-v", "error", "-i", audio_path,
              "-ar", "16000", "-ac", "1", "-sample_fmt", "s16",
              "-y", normalized_path],
-            capture_output=True, text=True, timeout=300,
+            capture_output=True, text=True,
+            timeout=max(300, int((wav_duration_s(audio_path) or 0) * 4)),
         )
         if proc.returncode != 0 or not os.path.isfile(normalized_path):
             raise RuntimeError(
@@ -85,6 +87,14 @@ def transcribe_paraformer(audio_path: str, settings: Settings) -> list[dict]:
         raise
 
     stderr_tail: deque[str] = deque(maxlen=20)
+    from autodub.media.audio import wav_duration_s
+    timeout = asr_timeout_s(wav_duration_s(normalized_path))
+    watchdog = threading.Timer(
+        timeout,
+        lambda: proc.kill() if proc.poll() is None else None,
+    )
+    watchdog.daemon = True
+    watchdog.start()
 
     def _drain() -> None:
         try:
@@ -126,8 +136,9 @@ def transcribe_paraformer(audio_path: str, settings: Settings) -> list[dict]:
                 done = True
         # Thời lượng phụ thuộc độ dài video — chờ tiến trình kết thúc hẳn
         # (stdout đã EOF nên wait không thể treo vô hạn vì pipe đầy).
-        proc.wait(timeout=600)
+        proc.wait(timeout=timeout)
     finally:
+        watchdog.cancel()
         if proc.poll() is None:
             proc.kill()
         for s in (proc.stdout, proc.stderr):

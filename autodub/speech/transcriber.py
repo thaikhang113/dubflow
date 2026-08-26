@@ -8,11 +8,33 @@ from collections import deque
 from autodub.config import Settings
 from autodub.languages import WHISPER_LANG_MAP
 from autodub.resources import GPU_LOCK
-from autodub.utils import bundled_file, gpu_venv_dir, save_json_atomic, setup_logging
+from autodub.utils import (
+    asr_timeout_s, bundled_file, gpu_venv_dir, save_json_atomic, setup_logging,
+)
 
 logger = setup_logging("autodub.transcriber")
 
 _WHISPER_WORKER_SCRIPT = bundled_file("autodub", "speech", "asr_whisper_worker.py")
+
+
+def _rocminfo_ready() -> bool:
+    if os.name == "nt":
+        return False
+    try:
+        result = subprocess.run(
+            ["rocminfo"], capture_output=True, text=True, timeout=10,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _ctranslate2_gpu_ready() -> bool:
+    try:
+        import ctranslate2
+        return ctranslate2.get_cuda_device_count() > 0
+    except (ImportError, AttributeError, RuntimeError):
+        return False
 
 
 def _enable_cuda_dlls() -> bool:
@@ -24,7 +46,7 @@ def _enable_cuda_dlls() -> bool:
     tệp .dll dùng được (ngoài Windows thì coi như hệ thống đã có).
     """
     if os.name != "nt":
-        return True
+        return _rocminfo_ready() and _ctranslate2_gpu_ready()
     import glob
 
     venv = gpu_venv_dir()
@@ -58,6 +80,14 @@ def asr_will_use_gpu(settings: Settings, language: str) -> bool:
             and settings.paraformer_configured()):
         return False
     return _enable_cuda_dlls()
+
+def _should_retry_whisper_cpu(error: BaseException) -> bool:
+    """Nhận diện lỗi runtime CUDA để retry worker bằng CPU."""
+    text = str(error).lower()
+    return any(marker in text for marker in (
+        "cublas", "cudnn", "cuda failed", "cuda error",
+        "cuda runtime", "out of memory",
+    ))
 
 
 def _load_whisper_model(model_name: str, settings: Settings):
@@ -189,9 +219,21 @@ def transcribe(audio_path: str, language: str, settings: Settings,
                 segments = _transcribe_whisper_subprocess(
                     audio_path, language, settings)
             except Exception as e:
-                logger.warning(
-                    f"Whisper subprocess lỗi ({e}) — thử in-process")
-                segments = None
+                if _should_retry_whisper_cpu(e):
+                    logger.warning(
+                        f"Whisper GPU subprocess lỗi ({e}) — retry worker CPU")
+                    try:
+                        segments = _transcribe_whisper_subprocess(
+                            audio_path, language, settings, force_cpu=True)
+                    except Exception as cpu_error:
+                        logger.warning(
+                            f"Whisper CPU subprocess lỗi ({cpu_error}) "
+                            "— thử in-process")
+                        segments = None
+                else:
+                    logger.warning(
+                        f"Whisper subprocess lỗi ({e}) — thử in-process")
+                    segments = None
         if segments is None:
             segments = _transcribe_whisper(audio_path, language, settings,
                                            whisper_cache)
@@ -211,7 +253,8 @@ def transcribe(audio_path: str, language: str, settings: Settings,
 
 
 def _transcribe_whisper_subprocess(
-    audio_path: str, language: str, settings: Settings
+    audio_path: str, language: str, settings: Settings,
+    *, force_cpu: bool = False,
 ) -> list[dict]:
     """Chạy Whisper trong .venv-whisper (subprocess) — không cần bundle
     faster-whisper/ctranslate2 trong exe, giảm ~112 MB bản phân phối.
@@ -236,8 +279,10 @@ def _transcribe_whisper_subprocess(
         "--beam-size", str(settings.whisper_beam_size),
         "--model-dir", settings.whisper_model_dir_path(),
     ]
-    if cuda_dll_dir:
+    if cuda_dll_dir and not force_cpu:
         cmd += ["--cuda-dll-dir", cuda_dll_dir]
+    if force_cpu:
+        cmd.append("--force-cpu")
 
     logger.info("Khởi động Whisper worker (subprocess) ...")
     proc = subprocess.Popen(
@@ -250,6 +295,14 @@ def _transcribe_whisper_subprocess(
     )
 
     stderr_tail: deque[str] = deque(maxlen=30)
+    from autodub.media.audio import wav_duration_s
+    timeout = asr_timeout_s(wav_duration_s(audio_path))
+    watchdog = threading.Timer(
+        timeout,
+        lambda: proc.kill() if proc.poll() is None else None,
+    )
+    watchdog.daemon = True
+    watchdog.start()
 
     def _drain() -> None:
         try:
@@ -323,8 +376,9 @@ def _transcribe_whisper_subprocess(
                     logger.info(
                         f"Ngôn ngữ: {lang} "
                         f"({msg.get('language_prob', 0):.0%})")
-        proc.wait(timeout=7200)
+        proc.wait(timeout=timeout)
     finally:
+        watchdog.cancel()
         if proc.poll() is None:
             proc.kill()
         for s in (proc.stdout, proc.stderr):

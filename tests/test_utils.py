@@ -1,7 +1,7 @@
 import os
 import logging
 from autodub.utils import (
-    setup_logging, ensure_dir, format_timestamp, seg_wav_path,
+    asr_timeout_s, setup_logging, ensure_dir, format_timestamp, seg_wav_path,
 )
 
 
@@ -9,6 +9,17 @@ def test_data_root_honors_runtime_override(monkeypatch, tmp_path):
     monkeypatch.setenv("DUBFLOW_DATA_DIR", str(tmp_path))
     from autodub.utils import data_root
     assert data_root() == str(tmp_path)
+
+def test_gpu_venv_uses_deepseek_cuda_runtime_when_gpu_venv_missing(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("DUBFLOW_DATA_DIR", str(tmp_path))
+    deepseek = tmp_path / ".venv-deepseek-ocr"
+    deepseek.mkdir()
+
+    from autodub.utils import gpu_venv_dir
+
+    assert gpu_venv_dir() == str(deepseek)
 
 def test_setup_logging_returns_logger():
     logger = setup_logging("test_logger")
@@ -61,3 +72,7 @@ def test_seg_wav_path_prefers_new_name_when_both_exist(tmp_path):
     (tmp_path / "seg_007.wav").write_bytes(b"x")
     (tmp_path / "seg_00007.wav").write_bytes(b"x")
     assert seg_wav_path(str(tmp_path), 7) == str(tmp_path / "seg_00007.wav")
+
+def test_asr_timeout_scales_for_long_audio():
+    assert asr_timeout_s(5 * 3600) == 5 * 3600 * 12
+    assert asr_timeout_s(None) == 3600

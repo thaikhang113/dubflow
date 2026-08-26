@@ -98,3 +98,51 @@ def test_quality_report_does_not_require_missing_usage_snapshot() -> None:
         Settings(),
     )
     assert report["translate_usage"] == {}
+
+def test_same_source_and_target_skips_translation_configuration() -> None:
+    pipeline = DubPipeline(Settings())
+
+    result = pipeline._auto_translate(
+        SEGMENTS,
+        get_target("vi"),
+        "vi",
+    )
+
+    assert [item["text_vi"] for item in result] == ["hello", "world"]
+
+
+def test_auto_translation_splits_a_failed_large_batch(monkeypatch):
+    from autodub.providers import openai_compatible
+
+    calls = []
+
+    class Provider:
+        def __init__(self, *args):
+            pass
+
+        def translate(self, segments, context=None, previous=None):
+            calls.append(len(segments))
+            if len(segments) > 2:
+                raise openai_compatible.OpenAICompatibleError("request timeout")
+            return [
+                {"id": item["id"], "text_vi": f"vi {item['id']}"}
+                for item in segments
+            ]
+
+    monkeypatch.setattr(openai_compatible, "OpenAICompatibleProvider", Provider)
+    settings = Settings(
+        translation_endpoint="http://127.0.0.1:11434",
+        translation_model="test-model",
+        translate_batch_size=4,
+    )
+    segments = [
+        {"id": i, "text": f"line {i}", "duration": 1.0}
+        for i in range(4)
+    ]
+
+    result = DubPipeline(settings)._auto_translate_openai(
+        segments, get_target("vi"), "zh", None
+    )
+
+    assert [item["id"] for item in result] == [0, 1, 2, 3]
+    assert calls == [4, 2, 2]

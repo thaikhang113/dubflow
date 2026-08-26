@@ -212,6 +212,9 @@ def test_normalize_passes_a_timeout(tmp_path):
                     side_effect=fake_run):
         vocal_separator._normalize(src, dst, "16000")
 
+def test_demucs_timeout_scales_with_audio_duration():
+    assert vocal_separator.demucs_timeout_s(7200.0) == 28800
+
 
 def test_normalize_timeout_raises_runtime_error(tmp_path):
     """TimeoutExpired phải thành RuntimeError để caller rơi vào fallback."""
@@ -243,3 +246,23 @@ def test_read_line_kills_hung_worker():
     else:
         raise AssertionError("phải ném RuntimeError")
     proc.kill.assert_called_once()
+
+
+def test_demucs_worker_reports_rocm_backend_from_hip_runtime():
+    from autodub.media import demucs_worker
+
+    torch = mock.Mock()
+    torch.cuda.is_available.return_value = True
+    torch.version.hip = "6.4"
+
+    assert demucs_worker.runtime_backend(torch) == "rocm"
+
+
+def test_demucs_worker_reports_cuda_backend_without_hip():
+    from autodub.media import demucs_worker
+
+    torch = mock.Mock()
+    torch.cuda.is_available.return_value = True
+    torch.version.hip = None
+
+    assert demucs_worker.runtime_backend(torch) == "cuda"

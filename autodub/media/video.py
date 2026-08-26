@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import sys
 import time
 from functools import lru_cache
 
@@ -94,15 +95,37 @@ def _encoder_works(*args: str) -> bool:
 #: Các bộ mã hóa phần cứng theo thứ tự ưu tiên, kèm tham số chất lượng
 #: tương đương crf 23 của libx264. NVIDIA → Intel (QSV) → AMD (AMF).
 #: Máy không có GPU nào trong số này rơi về libx264 trên CPU.
-_HW_ENCODERS: tuple[tuple[str, list[str]], ...] = (
-    ("NVIDIA NVENC",
-     ["-c:v", "h264_nvenc", "-preset", "p5", "-cq", "23", "-b:v", "0"]),
-    ("Intel QuickSync",
-     ["-c:v", "h264_qsv", "-preset", "veryfast", "-global_quality", "23"]),
-    ("AMD AMF",
-     ["-c:v", "h264_amf", "-quality", "speed", "-rc", "cqp", "-qp_i", "23",
-      "-qp_p", "23"]),
-)
+def _vaapi_device() -> str:
+    if not sys.platform.startswith("linux"):
+        return ""
+    for path in ("/dev/dri/renderD128", "/dev/dri/renderD129",
+                 "/dev/dri/card0"):
+        if os.path.exists(path):
+            return path
+    return ""
+
+
+def _hardware_encoders() -> tuple[tuple[str, list[str]], ...]:
+    encoders = [
+        ("NVIDIA NVENC",
+         ["-c:v", "h264_nvenc", "-preset", "p5", "-cq", "23", "-b:v", "0"]),
+        ("Intel QuickSync",
+         ["-c:v", "h264_qsv", "-preset", "veryfast", "-global_quality", "23"]),
+    ]
+    device = _vaapi_device()
+    if device:
+        encoders.append((
+            "AMD VAAPI",
+            ["-vaapi_device", device, "-vf", "format=nv12,hwupload",
+             "-c:v", "h264_vaapi", "-qp", "23"],
+        ))
+    if not sys.platform.startswith("linux"):
+        encoders.append((
+            "AMD AMF",
+            ["-c:v", "h264_amf", "-quality", "speed", "-rc", "cqp",
+             "-qp_i", "23", "-qp_p", "23"],
+        ))
+    return tuple(encoders)
 
 _CPU_ENCODER: tuple[str, ...] = (
     "-c:v", "libx264", "-preset", "veryfast", "-crf", "20"
@@ -112,7 +135,7 @@ _CPU_ENCODER: tuple[str, ...] = (
 @lru_cache(maxsize=1)
 def _resolve_encoder() -> tuple[str, tuple[str, ...]]:
     """Bộ mã hóa nhanh nhất máy này chạy được: (tên dễ đọc, argv)."""
-    for name, args in _HW_ENCODERS:
+    for name, args in _hardware_encoders():
         if _encoder_works(*args):
             return name, tuple(args)
     return ("CPU (libx264)",
@@ -133,6 +156,10 @@ def video_codec_args() -> list[str]:
 def video_encoder_name() -> str:
     """Tên bộ mã hóa đang dùng — để ghi vào nhật ký cho người dùng thấy."""
     return _resolve_encoder()[0]
+
+
+def video_pixel_format() -> str:
+    return "nv12" if _resolve_encoder()[0] == "AMD VAAPI" else "yuv420p"
 
 
 def probe_dimensions(video_path: str) -> tuple[int, int]:
@@ -219,7 +246,7 @@ def compose_video(
     cmd = [
         "ffmpeg", *inputs, "-filter_complex", ";".join(filters),
         "-map", "[vout]", "-map", "[aout]",
-        *video_codec_args(), "-pix_fmt", "yuv420p",
+        *video_codec_args(), "-pix_fmt", video_pixel_format(),
         "-c:a", "aac", "-ar", "48000", "-b:a", "192k",
         "-movflags", "+faststart", "-y", temp_output,
     ]
@@ -422,7 +449,7 @@ def merge_video(
             "-filter_complex", filter_complex,
             "-map", "[vout]", "-map", "1:a",
             *codec,
-            "-pix_fmt", "yuv420p",
+            "-pix_fmt", video_pixel_format(),
         ]
         if apply_speed:
             cmd += ["-fps_mode", "cfr"]
@@ -473,9 +500,12 @@ def merge_video(
     def _cpu_command() -> list[str]:
         if not filter_complex:
             return cmd
-        start = cmd.index("-c:v")
+        starts = [cmd.index(flag) for flag in ("-vaapi_device", "-c:v")
+                  if flag in cmd]
+        start = min(starts)
         end = cmd.index("-pix_fmt", start)
-        return cmd[:start] + list(_CPU_ENCODER) + cmd[end:]
+        return (cmd[:start] + list(_CPU_ENCODER)
+                + ["-pix_fmt", "yuv420p"] + cmd[end + 2:])
 
     def _run(render_cmd: list[str]):
         started = time.monotonic()

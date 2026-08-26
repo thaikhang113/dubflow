@@ -262,3 +262,14 @@ def test_library_batch_item_marks_the_source(tmp_path):
 
 def test_missing_library_folder_is_not_an_error(tmp_path):
     assert voice_library.scan(str(tmp_path / "khong-co")) == []
+
+
+def test_library_scan_falls_back_to_wav_files_without_manifest(tmp_path):
+    folder = tmp_path / "preset_voices_vn"
+    folder.mkdir()
+    (folder / "vn_female_01_Linh.wav").write_bytes(b"RIFF fake wav")
+    (folder / "vn_male_01_Nam.wav").write_bytes(b"RIFF fake wav")
+
+    found = voice_library.scan(str(tmp_path))
+
+    assert [voice.name for voice in found] == ["Linh", "Nam"]

@@ -97,6 +97,15 @@ def test_worker_uses_directml_without_cuda():
     )
 
 
+def test_rocm_runtime_uses_float16_eager_and_reports_backend():
+    from autodub.media import deepseek_ocr_worker
+
+    assert deepseek_ocr_worker.runtime_backend("rocm") == "rocm"
+    assert deepseek_ocr_worker.runtime_options(
+        "rocm", cuda_ready=True, bf16_ready=True
+    ) == ("cuda", "float16", "eager")
+
+
 def test_worker_rejects_unavailable_gpu_backend():
     from autodub.media.deepseek_ocr_worker import runtime_options
 

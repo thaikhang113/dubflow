@@ -26,6 +26,7 @@ from autodub.config import Settings
 from autodub.pipeline import DubPipeline, DubRequest
 from autodub.progress import PipelineCancelled
 from autodub.utils import save_json_atomic, setup_logging
+from autodub.workdir import data_path
 
 logger = setup_logging("autodub.batch")
 
@@ -75,12 +76,40 @@ class BatchSummary:
     total: int = 0
     success: int = 0
     failed: int = 0
+    pending: int = 0
     skipped: int = 0
 
 
 # Observer signature: (index, total, item, status, detail)
-# status: "start" | "success" | "failed"
+# status: "start" | "success" | "failed" | "translate_pending"
 BatchObserver = Callable[[int, int, BatchItem, str, str], None]
+
+def validate_batch_report(report: dict, *, skip_video: bool = False) -> str:
+    """Validate published batch artifacts before recording success."""
+    if not isinstance(report, dict):
+        raise RuntimeError("Batch report không hợp lệ")
+    output_dir = str(report.get("output_dir") or "").strip()
+    if not output_dir or not os.path.isdir(output_dir):
+        raise RuntimeError(f"Batch thiếu thư mục output: {output_dir or '<trống>'}")
+    report_path = data_path(output_dir, "report.json")
+    if not os.path.isfile(report_path) or os.path.getsize(report_path) <= 0:
+        raise RuntimeError(f"Batch thiếu report.json: {report_path}")
+    try:
+        with open(report_path, encoding="utf-8") as handle:
+            persisted = json.load(handle)
+    except (OSError, ValueError) as exc:
+        raise RuntimeError(f"Batch report.json không đọc được: {exc}") from exc
+    if not isinstance(persisted, dict) or not isinstance(
+        persisted.get("files"), dict
+    ):
+        raise RuntimeError(f"Batch report.json thiếu danh sách files: {report_path}")
+    files = persisted["files"]
+    required = ["dub_audio"] if skip_video else ["dubbed_video", "dub_audio"]
+    for key in required:
+        path = str(files.get(key) or "").strip()
+        if not path or not os.path.isfile(path) or os.path.getsize(path) <= 0:
+            raise RuntimeError(f"Batch thiếu artifact {key}: {path or '<trống>'}")
+    return output_dir
 
 
 class _Prefetcher:
@@ -224,6 +253,7 @@ def _run_items(
     pipeline: DubPipeline,
     req_template: DubRequest,
     on_result: Callable[[BatchItem, dict | None, str | None], None],
+    on_pending: Callable[[BatchItem, str], None] | None = None,
     on_start: Callable[[BatchItem], None] | None = None,
     observer: BatchObserver | None = None,
 ) -> BatchSummary:
@@ -284,6 +314,17 @@ def _run_items(
                 output_dir=req_template.output_dir,
                 resume_dir=resume_dir,
             ))
+            if result.status == "translate_pending":
+                summary.pending += 1
+                detail = "Video chờ bản dịch tay — mở video này ở trang Tạo dự án để dịch rồi chạy tiếp."
+                logger.info(f"[{i + 1}/{len(items)}] TRANSLATE PENDING")
+                if isinstance(item.ref, dict) and result.work_dir:
+                    item.ref["work_dir"] = result.work_dir
+                if on_pending:
+                    on_pending(item, detail)
+                if observer:
+                    observer(i, len(items), item, "translate_pending", detail)
+                continue
             if result.status != "completed":
                 # Vietnamese-first: this string lands in the batch table and
                 # the user's log, not just the console.
@@ -296,14 +337,16 @@ def _run_items(
                     result.status,
                     f"Pipeline dá»«ng á»Ÿ tráº¡ng thÃ¡i {result.status} "
                     f"(work_dir={result.work_dir})."))
+            output_dir = validate_batch_report(
+                result.report, skip_video=req_template.skip_video)
             summary.success += 1
-            logger.info(f"[{i + 1}/{len(items)}] SUCCESS â†’ {result.report['session_id']}")
+            logger.info(f"[{i + 1}/{len(items)}] SUCCESS â†’ {output_dir}")
             if prefetched:
                 # Dá»n file táº£i trÆ°á»›c vÃ o work_dir Ä‘á»ƒ resume tá»± tÃ¬m tháº¥y.
-                _Prefetcher.adopt(prefetched, result.report.get("output_dir", ""))
+                _Prefetcher.adopt(prefetched, output_dir)
             on_result(item, result.report, None)
             if observer:
-                observer(i, len(items), item, "success", result.report["session_id"])
+                observer(i, len(items), item, "success", output_dir)
         except PipelineCancelled:
             logger.info("Batch cancelled by user")
             # Nhá»› thÆ° má»¥c dá»Ÿ dang Ä‘á»ƒ láº§n cháº¡y láº¡i Ä‘i tiáº¿p tá»« chá»— dá»«ng.
@@ -331,6 +374,8 @@ def _run_items(
     logger.info(f"  Failed:  {summary.failed}")
     if summary.skipped:
         logger.info(f"  Skipped: {summary.skipped} (already done)")
+    if summary.pending:
+        logger.info(f"  Pending: {summary.pending} (translation required)")
     logger.info("=" * 60)
     return summary
 
@@ -396,7 +441,16 @@ def run_batch(
     pending: list[BatchItem] = []
     skipped = 0
     for item in items:
-        done = previous.get(item.key, {}).get("status") == "success"
+        previous_entry = previous.get(item.key, {})
+        done = previous_entry.get("status") == "success"
+        if done:
+            try:
+                validate_batch_report(
+                    {"output_dir": previous_entry.get("output_folder")},
+                    skip_video=req_template.skip_video,
+                )
+            except RuntimeError:
+                done = False
         if done and not retry_done:
             logger.info(f"Already done, skipping: {item.label}")
             skipped += 1
@@ -441,7 +495,7 @@ def run_batch(
         entry = item.ref
         if report:
             entry["status"] = "success"
-            entry["output_folder"] = report["session_id"]
+            entry["output_folder"] = report["output_dir"]
             entry["segments"] = report["total_segments"]
             entry["duration_original"] = report["total_original_duration"]
             entry["duration_dub"] = report["total_tts_duration"]
@@ -450,6 +504,14 @@ def run_batch(
         else:
             entry["status"] = "failed"
             entry["error"] = error
+        flush()
+
+    def on_pending(item: BatchItem, detail: str) -> None:
+        entry = item.ref
+        entry["status"] = "translate_pending"
+        entry["error"] = detail
+        if getattr(pipeline, "last_work_dir", ""):
+            entry["work_dir"] = pipeline.last_work_dir
         flush()
 
     synth_cache = None
@@ -474,6 +536,7 @@ def run_batch(
                                whisper_cache=whisper_cache)
     try:
         summary = _run_items(pending, pipeline, req_template, on_result,
+                             on_pending=on_pending,
                              on_start=on_start, observer=observer)
     finally:
         # LÆ°u láº§n cuá»‘i: báº¥m Dá»«ng giá»¯a chá»«ng thÃ¬ work_dir dá»Ÿ dang vá»«a Ä‘Æ°á»£c

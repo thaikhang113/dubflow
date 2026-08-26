@@ -36,6 +36,9 @@ _WORKER_SCRIPT = bundled_file("autodub", "media", "demucs_worker.py")
 #: Trần thời gian một video trong worker bền — như đường one-shot.
 _SEPARATE_TIMEOUT = 3600
 
+def demucs_timeout_s(duration_s: float | None) -> int:
+    return max(_SEPARATE_TIMEOUT, int(ffmpeg_timeout_s(duration_s)))
+
 
 class DemucsCache:
     """Một tiến trình demucs_worker ``--serve`` sống suốt lô video.
@@ -89,7 +92,8 @@ class DemucsCache:
             self._shutdown()
             self._failed = True
             return False
-        logger.info(f"Demucs cache sẵn sàng trên {ready.get('device')} — "
+        logger.info(f"Demucs cache sẵn sàng trên {ready.get('device')} "
+                    f"({ready.get('backend', 'unknown')}) — "
                     "model dùng chung cho cả lô")
         return True
 
@@ -132,7 +136,8 @@ class DemucsCache:
             try:
                 self._proc.stdin.write(json.dumps(req) + "\n")
                 self._proc.stdin.flush()
-                resp = json.loads(self._read_line(_SEPARATE_TIMEOUT))
+                resp = json.loads(self._read_line(
+                    demucs_timeout_s(_probe_duration_s(input_wav))))
             except Exception as e:
                 logger.warning(f"Demucs cache chết giữa chừng ({e}) — "
                                "video này tách theo đường thường")
@@ -144,6 +149,7 @@ class DemucsCache:
                                "video này tách theo đường thường")
                 return False
             logger.info(f"Demucs separation done on {resp.get('device')} "
+                        f"({resp.get('backend', 'unknown')}) "
                         "(model dùng lại từ cache)")
             return True
 
@@ -301,7 +307,8 @@ def _run_demucs_gpu_worker(
             from autodub.cancel import run_registered
             result = run_registered(
                 cmd, capture_output=True, encoding="utf-8", env=env,
-                errors="replace", text=True, timeout=3600)
+                errors="replace", text=True,
+                timeout=demucs_timeout_s(_probe_duration_s(input_wav)))
     except subprocess.TimeoutExpired:
         logger.warning("Demucs GPU worker quá 60 phút — chuyển sang CPU")
         return False
@@ -313,7 +320,8 @@ def _run_demucs_gpu_worker(
         logger.warning(
             f"Demucs GPU worker failed ({resp.get('error')}) — dùng CPU")
         return False
-    logger.info(f"Demucs separation done on {resp.get('device')}")
+    logger.info(f"Demucs separation done on {resp.get('device')} "
+                f"({resp.get('backend', 'unknown')})")
     return True
 
 
@@ -344,7 +352,8 @@ def _run_demucs(input_wav: str, vocals_out: str, no_vocals_out: str,
     try:
         result = subprocess.run(
             cmd, env=env, capture_output=True, encoding="utf-8",
-            errors="replace", text=True, timeout=_SEPARATE_TIMEOUT,
+            errors="replace", text=True,
+            timeout=demucs_timeout_s(_probe_duration_s(input_wav)),
         )
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError("Demucs CPU worker timed out") from exc

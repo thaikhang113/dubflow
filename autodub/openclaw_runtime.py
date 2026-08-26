@@ -21,7 +21,9 @@ _DOCKER_HOST = "host.docker.internal"
 
 
 class _Server(ThreadingHTTPServer):
-    allow_reuse_address = True
+    # Prevent Windows from accepting a second listener on same port and
+    # routing requests to whichever process owns it.
+    allow_reuse_address = False
 
     def __init__(self, runtime, address):
         super().__init__(address, _Handler)
@@ -198,7 +200,15 @@ class OpenClawRuntime:
                 return
             self._queue_root.mkdir(parents=True, exist_ok=True)
             self._stop_event.clear()
-            self._server = _Server(self, (self._bind_host, self._port))
+            try:
+                self._server = _Server(self, (self._bind_host, self._port))
+            except OSError:
+                # Another DubFlow instance may already own configured port.
+                # Bind an ephemeral port instead of serving requests through
+                # a different instance when Windows reuses the socket.
+                self._server = _Server(self, (self._bind_host, 0))
+                self._port = int(self._server.server_address[1])
+                self._write_config()
             self._server_thread = threading.Thread(
                 target=self._server.serve_forever,
                 name="dubflow-openclaw-api",

@@ -38,6 +38,7 @@ from autodub_gui.ui.progress import SaveIndicator
 from autodub_gui.ui.style import clear_background, panel_background
 from autodub_gui.ui.toast import TOASTS
 from autodub_gui.video.player import VideoPlayer
+from autodub_gui.video.layer_panel import LayerPanel
 from autodub_gui.video.timeline import Timeline
 from autodub_gui.voice_preview import VoicePreview
 from autodub_gui.widgets import LogPanel
@@ -98,6 +99,7 @@ class EditorPage(VoiceAndExportMixin, BasePage):
         self._thumb_worker = None
         self._export_subs_file_worker = None
         self._export_audio_worker = None
+        self._layer_timeline = None
         self._selection_end: float | None = None  # mốc dừng khi phát vùng chọn
         self._build()
         self._save_timer = debounce_timer(self, self._flush_edits)
@@ -199,6 +201,11 @@ class EditorPage(VoiceAndExportMixin, BasePage):
         self.timeline.split_requested.connect(self._on_split_at)
         self.timeline.selection_play_requested.connect(self._play_selection)
         layout.addWidget(self.timeline)
+
+        self.layer_panel = LayerPanel()
+        self.layer_panel.setMaximumHeight(150)
+        self.layer_panel.state_changed.connect(self._on_layer_state_changed)
+        layout.addWidget(self.layer_panel)
 
         self.log = LogPanel()
         self.log.setMaximumHeight(90)
@@ -351,6 +358,7 @@ class EditorPage(VoiceAndExportMixin, BasePage):
                                   self._read_quality())
         self.overview.set_context(self._read_context())
         self._load_render_opts()
+        self._load_timeline_state()
         self.banner.set_count(0, 0)
         self._refresh_qc()
         self.export_panel.refresh_history(self._work_dir)
@@ -369,6 +377,58 @@ class EditorPage(VoiceAndExportMixin, BasePage):
                 return json.load(f)
         except (OSError, ValueError):
             return {}
+
+    def _load_timeline_state(self) -> None:
+        """Nạp layer state của CapCap-style; project cũ tự dựng từ dữ liệu hiện có."""
+        from autodub_gui.video.timeline_state import load_timeline
+
+        duration = float(self._project.duration_s or 0.0)
+        self._layer_timeline = load_timeline(
+            self._work_dir,
+            self._segments,
+            getattr(self, "_blur_regions", []),
+            duration,
+            video_path=self._state.video_path or "",
+            audio_paths=waveform.track_sources(self._work_dir),
+            branding=getattr(self, "_branding_options", {}),
+        )
+        self.layer_panel.set_timeline(self._layer_timeline)
+
+    def _save_timeline_state(self) -> None:
+        if not self._work_dir:
+            return
+        from autodub_gui.video.layer_bridge import (
+            build_timeline,
+            preserve_layer_state,
+            timeline_to_blur_regions,
+            timeline_to_render_options,
+        )
+        from autodub_gui.video.timeline_state import save_timeline
+
+        duration = float(
+            self._project.duration_s if self._project else 0.0)
+        blur_regions = getattr(self, "_blur_regions", [])
+        branding = getattr(self, "_branding_options", {})
+        if self._layer_timeline is not None:
+            blur_regions = timeline_to_blur_regions(
+                self._layer_timeline, include_hidden=True)
+            timeline_branding = timeline_to_render_options(
+                self._layer_timeline, include_hidden=True)
+            if timeline_branding:
+                branding = {**branding, **timeline_branding}
+        current = build_timeline(
+            self._segments,
+            blur_regions,
+            duration,
+            video_path=getattr(self._state, "video_path", "") or "",
+            audio_paths=waveform.track_sources(self._work_dir),
+            branding=branding,
+        )
+        self._layer_timeline = preserve_layer_state(
+            self._layer_timeline,
+            current,
+        )
+        save_timeline(self._work_dir, self._layer_timeline)
 
     def _read_context(self) -> dict:
         from autodub.workdir import data_path
@@ -599,8 +659,32 @@ class EditorPage(VoiceAndExportMixin, BasePage):
             opts["subtitle_style"] = self._subtitle_style
         try:
             save_render_opts(self._work_dir, opts)
+            self._save_timeline_state()
         except OSError as e:
             TOASTS.warn(f"Không lưu được tùy chọn của dự án: {e}")
+
+    def _on_layer_state_changed(self) -> None:
+        if not self._work_dir or self._layer_timeline is None:
+            return
+        from autodub.editor import load_render_opts, save_render_opts
+        from autodub_gui.video.layer_bridge import (
+            timeline_to_blur_regions,
+            timeline_to_render_options,
+        )
+        from autodub_gui.video.timeline_state import save_timeline
+
+        self._blur_regions = timeline_to_blur_regions(self._layer_timeline)
+        branding = timeline_to_render_options(self._layer_timeline)
+        if branding:
+            self._branding_options.update(branding)
+        opts = load_render_opts(self._work_dir)
+        opts["blur_regions"] = list(self._blur_regions)
+        opts.update(self._branding_options)
+        try:
+            save_render_opts(self._work_dir, opts)
+            save_timeline(self._work_dir, self._layer_timeline)
+        except OSError as e:
+            TOASTS.warn(f"Không lưu được layer state: {e}")
 
     def _on_export_options_changed(self) -> None:
         """Đổi bộ kiểu chữ ở ô chọn thì áp luôn vào kiểu đang dùng."""
@@ -686,6 +770,11 @@ class EditorPage(VoiceAndExportMixin, BasePage):
 
         self._dirty_ids.update(changed)
         self._sub_dirty_ids.update(sub_changed)
+        if sub_changed or changed:
+            try:
+                self._save_timeline_state()
+            except OSError as e:
+                TOASTS.warn(f"Không lưu được timeline của dự án: {e}")
         self._refresh_banner()
         if sub_changed or changed:
             # Chữ trên khung xem trước phải đổi ngay dù sửa phụ đề riêng
@@ -901,6 +990,11 @@ class EditorPage(VoiceAndExportMixin, BasePage):
         self.subtitles.set_segments(self._segments,
                                     self._state.target.text_field)
         self.timeline.set_segments(self._segments)
+        try:
+            self._save_timeline_state()
+            self.layer_panel.set_timeline(self._layer_timeline)
+        except OSError as e:
+            TOASTS.warn(f"Không lưu được timeline của dự án: {e}")
         self.player.set_segments(self._segments,
                                  self._state.target.text_field)
         # Thêm, xóa, tách hay gộp câu đều làm một vài câu mất giọng đọc, nhưng

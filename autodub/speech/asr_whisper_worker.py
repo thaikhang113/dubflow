@@ -23,6 +23,7 @@ reads ONE JSON request from stdin and transcribes. Single-shot like Paraformer
 import argparse
 import json
 import os
+import subprocess
 import sys
 
 
@@ -36,6 +37,35 @@ def _resolve_model(model_arg: str, cuda_ok: bool) -> str:
     if model_arg.strip().lower() != "auto":
         return model_arg.strip()
     return "large-v3" if cuda_ok else "medium"
+
+
+def _rocminfo_ready() -> bool:
+    if os.name == "nt":
+        return False
+    try:
+        result = subprocess.run(
+            ["rocminfo"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _ctranslate2_gpu_ready() -> bool:
+    try:
+        import ctranslate2
+        return ctranslate2.get_cuda_device_count() > 0
+    except (ImportError, AttributeError, RuntimeError):
+        return False
+
+
+def _detect_backend(*, force_cpu: bool) -> str:
+    if force_cpu:
+        return "cpu"
+    if _rocminfo_ready() and _ctranslate2_gpu_ready():
+        return "rocm"
+    return "cpu"
 
 
 def _try_load_cuda_dlls(dll_dir: str) -> bool:
@@ -72,12 +102,19 @@ def main() -> None:
                         help="Thư mục cache model; rỗng = HuggingFace default")
     parser.add_argument("--cuda-dll-dir", default="",
                         help="Thư mục torch/lib chứa cublas64_*.dll (Windows)")
+    parser.add_argument("--force-cpu", action="store_true",
+                        help="Bỏ qua CUDA và chạy worker bằng CPU")
     args = parser.parse_args()
 
     # --- Thử GPU ---
     cuda_ok = False
-    if os.name == "nt" and args.cuda_dll_dir:
+    backend = "cpu"
+    if not args.force_cpu and os.name == "nt" and args.cuda_dll_dir:
         cuda_ok = _try_load_cuda_dlls(args.cuda_dll_dir)
+        backend = "cuda" if cuda_ok else "cpu"
+    elif not args.force_cpu:
+        backend = _detect_backend(force_cpu=False)
+        cuda_ok = backend != "cpu"
 
     try:
         from faster_whisper import WhisperModel
@@ -98,13 +135,14 @@ def main() -> None:
                                          compute_type=compute,
                                          download_root=download_root)
                     print(f"Whisper '{model_name}' trên GPU "
-                          f"(CUDA, {compute})", flush=True)
+                          f"({backend}, {compute})", flush=True)
                     break
                 except Exception as e:
                     print(f"GPU {compute} thất bại ({e})", flush=True)
             if model is None:
                 print("GPU không dùng được, chuyển sang CPU", flush=True)
                 cuda_ok = False
+                backend = "cpu"
                 model_name = _resolve_model("auto", False)
                 model = WhisperModel(model_name, device="cpu",
                                      compute_type="int8",
@@ -118,7 +156,8 @@ def main() -> None:
         _die(proto_out, f"Không nạp được model Whisper '{model_name}': {e}")
 
     # Model sẵn sàng
-    print(json.dumps({"ready": True}), file=proto_out, flush=True)
+    print(json.dumps({"ready": True, "backend": backend}),
+          file=proto_out, flush=True)
 
     # Đọc request từ stdin
     try:

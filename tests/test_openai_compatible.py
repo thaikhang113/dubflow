@@ -5,6 +5,7 @@ import pytest
 from autodub.providers.openai_compatible import (
     OpenAICompatibleError,
     OpenAICompatibleProvider,
+    build_translation_prompt,
     normalize_endpoint,
 )
 from autodub.pipeline import _api_translation_batches
@@ -169,3 +170,28 @@ def test_translate_retries_rate_limit_with_retry_after(monkeypatch):
     ).translate([{"id": 1, "text": "你好"}])
     assert result[0]["text_vi"] == "Xin chao"
     assert waits == [7.0]
+
+def test_translate_timeout_scales_with_prompt_size():
+    seen = {}
+
+    class Response:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"message": {
+                "content": '{"segments":[{"id":1,"text_vi":"Xin chao"}]}'}}]}
+
+    class Session:
+        def post(self, url, headers, json, timeout):
+            seen["timeout"] = timeout
+            return Response()
+
+    segments = [{"id": 1, "text": "x" * 4000}]
+    provider = OpenAICompatibleProvider(
+        "https://example.test/v1", "", model="m", session=Session())
+    provider.translate(segments)
+
+    prompt_size = len(build_translation_prompt(segments))
+    expected = max(180, min(1800, 120 + prompt_size // 16))
+    assert seen["timeout"] == expected

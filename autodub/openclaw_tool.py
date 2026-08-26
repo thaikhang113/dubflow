@@ -209,10 +209,12 @@ def _aggregate_status(jobs: list[dict]) -> str:
     if states == {"completed"}:
         return "completed"
     if states and states <= _TERMINAL:
-        if states == {"cancelled"}:
-            return "cancelled"
-        if "failed" in states or "translate_pending" in states:
+        if "failed" in states:
             return "failed"
+        if "translate_pending" in states:
+            return "translate_pending"
+        if "cancelled" in states:
+            return "cancelled"
     return "running"
 
 

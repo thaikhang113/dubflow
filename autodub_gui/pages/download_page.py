@@ -33,6 +33,15 @@ from autodub.media.douyin_cookies import (
     save_douyin_cookies,
     validate_douyin_cookies,
 )
+
+def download_finish_ok(success: int, failed: int) -> bool:
+    return int(failed) == 0
+
+def download_finish_detail(success: int, failed: int) -> str:
+    detail = f"{int(success)} video tải xong"
+    if failed:
+        detail += f", {int(failed)} liên kết lỗi"
+    return detail
 from autodub_gui.env_store import read_env, write_env
 from autodub.config import Settings
 from autodub.utils import app_root
@@ -455,12 +464,16 @@ class DownloadPage(BasePage):
         self._update_row(url)
 
     def _on_finished(self, success: int, failed: int) -> None:
-        REGISTRY.finish_job(True, f"{success} video tải xong")
+        detail = download_finish_detail(success, failed)
+        REGISTRY.finish_job(download_finish_ok(success, failed), detail)
         self.summary.setText(
             f"Đã tải xong {success} video" +
             (f", {failed} liên kết lỗi" if failed else ""))
-        TOASTS.success(f"Tải xong {success} video.",
-                       action_label="Mở thư mục", on_action=self._open_output)
+        if download_finish_ok(success, failed):
+            TOASTS.success(f"Tải xong {success} video.",
+                           action_label="Mở thư mục", on_action=self._open_output)
+        else:
+            TOASTS.warn(f"Lượt tải chưa hoàn tất: {detail}.")
         self.finished_all.emit(success, failed)
 
     def _on_failed(self, message: str) -> None:

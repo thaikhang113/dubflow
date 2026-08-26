@@ -173,6 +173,8 @@ class OpenAICompatibleProvider:
     ) -> list[dict]:
         if not self.endpoint or not self.model:
             raise OpenAICompatibleError("Thiếu endpoint hoặc model dịch.")
+        prompt = build_translation_prompt(segments, context, previous)
+        timeout = max(180, min(1800, 120 + len(prompt) // 16))
         payload = {
             "model": self.model,
             "temperature": 0.2,
@@ -183,7 +185,7 @@ class OpenAICompatibleProvider:
                 },
                 {
                     "role": "user",
-                    "content": build_translation_prompt(segments, context, previous),
+                    "content": prompt,
                 },
             ],
         }
@@ -194,7 +196,7 @@ class OpenAICompatibleProvider:
                     f"{self.endpoint}/chat/completions",
                     headers={**self._headers(), "Content-Type": "application/json"},
                     json=payload,
-                    timeout=self.timeout,
+                    timeout=timeout,
                 )
                 response.raise_for_status()
                 body = response.json()

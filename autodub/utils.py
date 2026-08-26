@@ -42,7 +42,7 @@ def data_root() -> str:
 DEMUCS_VENVS = (".venv-demucs", ".venv-gpu")
 
 #: Venv có torch CUDA tùy chọn cho Whisper. Không dùng venv Demucs CPU ở đây.
-GPU_VENVS = (".venv-gpu",)
+GPU_VENVS = (".venv-gpu", ".venv-deepseek-ocr")
 
 
 def gpu_venv_dir() -> str:
@@ -223,6 +223,12 @@ def ffmpeg_timeout_s(duration_s: float | None, floor: int = 300) -> int:
     if not duration_s or duration_s <= 0:
         return 3600
     return max(floor, int(duration_s * 4))
+
+def asr_timeout_s(duration_s: float | None) -> int:
+    """Timeout for one full ASR worker, including slow CPU inference."""
+    if not duration_s or duration_s <= 0:
+        return 3600
+    return max(3600, int(duration_s * 12))
 
 
 def format_timestamp(seconds: float) -> str:

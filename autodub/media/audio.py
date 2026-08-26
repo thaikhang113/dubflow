@@ -9,6 +9,7 @@ from pydub import AudioSegment
 
 from autodub.resources import FFMPEG_SLOTS
 from autodub.utils import setup_logging, ensure_dir, ffmpeg_timeout_s, seg_wav_path
+from autodub.media.video import probe_duration_s
 
 logger = setup_logging("autodub.audio")
 
@@ -127,7 +128,8 @@ def extract_audio(video_path: str, output_path: str, sample_rate: int = 16000,
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True,
-                                timeout=ffmpeg_timeout_s(None))
+                                timeout=ffmpeg_timeout_s(
+                                    probe_duration_s(video_path)))
     except subprocess.TimeoutExpired:
         raise RuntimeError(f"FFmpeg treo khi tách audio từ {video_path}")
     if result.returncode != 0:
@@ -160,7 +162,8 @@ def extract_audio_dual(video_path: str, asr_path: str, hq_path: str,
     logger.info(f"Extracting audio (1 pass, 2 outputs): {video_path}")
     try:
         result = subprocess.run(cmd, capture_output=True, text=True,
-                                timeout=ffmpeg_timeout_s(None))
+                                timeout=ffmpeg_timeout_s(
+                                    probe_duration_s(video_path)))
     except subprocess.TimeoutExpired:
         result = None
     ok = (result is not None and result.returncode == 0

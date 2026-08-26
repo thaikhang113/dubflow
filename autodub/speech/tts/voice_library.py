@@ -96,18 +96,23 @@ def scan(root: str | None = None) -> list[LibraryVoice]:
     voices: list[LibraryVoice] = []
     taken: set[str] = set()
     for folder, _dirs, files in os.walk(root):
-        if MANIFEST_NAME not in files:
-            continue
-        path = os.path.join(folder, MANIFEST_NAME)
-        try:
-            with open(path, encoding="utf-8") as f:
-                entries = json.load(f)
-        except (OSError, ValueError) as e:
-            logger.warning(f"Bỏ qua danh sách giọng hỏng {path}: {e}")
-            continue
-        if not isinstance(entries, list):
-            logger.warning(f"Bỏ qua {path}: nội dung phải là một mảng JSON")
-            continue
+        if MANIFEST_NAME in files:
+            path = os.path.join(folder, MANIFEST_NAME)
+            try:
+                with open(path, encoding="utf-8") as f:
+                    entries = json.load(f)
+            except (OSError, ValueError) as e:
+                logger.warning(f"Bỏ qua danh sách giọng hỏng {path}: {e}")
+                continue
+            if not isinstance(entries, list):
+                logger.warning(f"Bỏ qua {path}: nội dung phải là một mảng JSON")
+                continue
+        else:
+            entries = [
+                {"file_name": name}
+                for name in sorted(files)
+                if name.lower().endswith(".wav")
+            ]
         for entry in entries:
             if not isinstance(entry, dict):
                 continue

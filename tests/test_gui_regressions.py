@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import inspect
+import json
 import os
 import sys
 import threading
@@ -18,9 +19,40 @@ from autodub.cancel import (
 from autodub.progress import PipelineCancelled
 from autodub_gui import tokens
 from autodub_gui.ui.modal import ConfirmDialog
+from autodub_gui.pages.batch_page import batch_finish_detail, batch_finish_ok
+from autodub_gui.pages.batch_page import parse_batch_list_text
+from autodub_gui.pages.download_page import (
+    download_finish_detail, download_finish_ok,
+)
 
 
 ROOT = Path(__file__).parents[1]
+
+def test_batch_summary_is_not_success_when_failed_or_pending() -> None:
+    summary = type("Summary", (), {
+        "success": 2, "total": 3, "failed": 1, "pending": 0, "skipped": 0,
+    })()
+    assert batch_finish_ok(summary) is False
+    assert "1 lỗi" in batch_finish_detail(summary)
+
+    summary.pending = 1
+    summary.failed = 0
+    assert batch_finish_ok(summary) is False
+    assert "1 chờ dịch" in batch_finish_detail(summary)
+
+def test_download_summary_is_not_success_when_any_link_failed() -> None:
+    assert download_finish_ok(2, 0) is True
+    assert download_finish_ok(1, 1) is False
+    assert "1 liên kết lỗi" in download_finish_detail(1, 1)
+
+def test_batch_file_import_preserves_voice_overrides() -> None:
+    items = parse_batch_list_text(
+        "https://example.com/a | Trúc Ly\n# ghi chú\nhttps://example.com/b"
+    )
+    assert [(item.url, item.voice) for item in items] == [
+        ("https://example.com/a", "Trúc Ly"),
+        ("https://example.com/b", None),
+    ]
 
 
 def _source(path: str) -> str:
@@ -686,6 +718,120 @@ def test_logo_region_parser_accepts_empty_values() -> None:
     assert NewProjectPage._parse_logo_region(None) is None
     assert NewProjectPage._parse_logo_region("") is None
     assert NewProjectPage._parse_logo_region({"x": 0.1}) == {"x": 0.1}
+
+
+def test_batch_queue_preserves_voice_and_completed_state(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from autodub.batch import BatchItem
+    from autodub.config import Settings
+    import autodub_gui.pages.batch_page as page_module
+    import autodub_gui.pages.new_project_page as new_project_module
+
+    app = QApplication.instance() or QApplication([])
+    new_project_module.cache_dir = lambda: str(tmp_path / "cache")
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    key = "https://example.test/video"
+    done_dir = tmp_path / "done"
+    (done_dir / "data").mkdir(parents=True)
+    video_path = done_dir / "dubbed_video.mp4"
+    audio_path = done_dir / "dub_audio.wav"
+    video_path.write_bytes(b"video")
+    audio_path.write_bytes(b"audio")
+    (done_dir / "data" / "report.json").write_text(
+        json.dumps({"output_dir": str(done_dir), "files": {
+            "dubbed_video": str(video_path),
+            "dub_audio": str(audio_path),
+        }}),
+        encoding="utf-8",
+    )
+    (output_dir / "batch_state.json").write_text(
+        json.dumps({"videos": [{
+            "video_url": key,
+            "status": "success",
+            "output_folder": str(done_dir),
+        }]}),
+        encoding="utf-8",
+    )
+    queue_path = tmp_path / "cache" / page_module.QUEUE_FILE
+    queue_path.parent.mkdir()
+    queue_path.write_text(json.dumps({"items": [{
+        "url": key,
+        "file_path": None,
+        "voice": "Trúc Ly",
+        "state": "running",
+        "detail": "",
+    }]}), encoding="utf-8")
+
+    page = page_module.BatchPage(lambda: Settings(output_dir=str(output_dir)))
+
+    assert page._items[0].voice == "Trúc Ly"
+    assert page._state[key] == page_module.DONE
+    page.deleteLater()
+    app.processEvents()
+
+
+def test_batch_does_not_chain_new_items_after_failed_run(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from autodub.config import Settings
+    import autodub_gui.pages.batch_page as page_module
+    import autodub_gui.pages.new_project_page as new_project_module
+
+    app = QApplication.instance() or QApplication([])
+    new_project_module.cache_dir = lambda: str(tmp_path / "cache")
+    page = page_module.BatchPage(lambda: Settings(output_dir=str(tmp_path)))
+    page._pending_adds = {"new-video"}
+
+    summary = type("Summary", (), {
+        "total": 2, "success": 1, "failed": 1, "pending": 0, "skipped": 0,
+    })()
+    page._on_finished(summary)
+
+    assert page._chain_next is False
+    page.deleteLater()
+    app.processEvents()
+
+
+def test_batch_chain_keeps_completed_items_in_next_state_run(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from autodub.batch import BatchItem
+    from autodub.config import Settings
+    import autodub_gui.pages.batch_page as page_module
+    import autodub_gui.pages.new_project_page as new_project_module
+
+    app = QApplication.instance() or QApplication([])
+    new_project_module.cache_dir = lambda: str(tmp_path / "cache")
+    page = page_module.BatchPage(lambda: Settings(output_dir=str(tmp_path)))
+    old = BatchItem(file_path=str(tmp_path / "old.mp4"))
+    new = BatchItem(file_path=str(tmp_path / "new.mp4"))
+    page._items = [old, new]
+    page._pending_adds = {new.key}
+    page._state = {old.key: page_module.DONE, new.key: page_module.WAITING}
+
+    launched = []
+    page._set_running = lambda _running: None
+    page._launch = lambda items: launched.append(items)
+    page._on_finished(type("Summary", (), {
+        "total": 2, "success": 2, "failed": 0, "pending": 0, "skipped": 0,
+    })())
+    page._on_worker_done()
+    app.processEvents()
+
+    assert [[item.key for item in items] for items in launched] == [
+        [old.key, new.key],
+    ]
+    page.deleteLater()
+    app.processEvents()
+
 
 def test_new_project_has_separate_persistent_pipeline_defaults() -> None:
     source = _source("autodub_gui/pages/new_project_page.py")

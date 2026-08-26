@@ -46,6 +46,15 @@ def log(msg: str) -> None:
     print(f"[setup-whisper] {msg}", flush=True)
 
 
+def _detected_backend(stdout: str, stderr: str) -> str:
+    text = f"{stdout}\n{stderr}".lower()
+    if "rocm" in text:
+        return "rocm"
+    if "trên gpu" in text or "on gpu" in text:
+        return "cuda"
+    return "cpu"
+
+
 def step_venv() -> None:
     if os.path.isfile(VENV_PY):
         log("venv .venv-whisper đã có — bỏ qua")
@@ -121,7 +130,9 @@ def step_smoke() -> None:
 
     with open(MARKER, "w", encoding="utf-8") as f:
         json.dump({"ok": True, "model": "medium",
-                   "backend": "faster-whisper"}, f,
+                   "backend": "faster-whisper",
+                   "device_backend": _detected_backend(
+                       proc.stdout or "", proc.stderr or "")}, f,
                   ensure_ascii=False, indent=2)
     log("smoke test PASS")
 

@@ -27,6 +27,12 @@ import sys
 #: Ngưỡng thời lượng bật chế độ theo khúc (giây). Dưới ngưỡng này đường một
 #: phát giữ nguyên hành vi cũ — không đổi gì cho video ngắn thường gặp.
 CHUNK_THRESHOLD_S = 480.0
+
+
+def runtime_backend(torch) -> str:
+    if not torch.cuda.is_available():
+        return "cpu"
+    return "rocm" if getattr(torch.version, "hip", None) else "cuda"
 CHUNK_S = 180.0        # độ dài lõi mỗi khúc
 OVERLAP_S = 6.0        # phần chồng lấn giữa hai khúc kề nhau
 
@@ -115,7 +121,7 @@ def load_model(model_name: str = "htdemucs", device: str | None = None):
     from demucs.pretrained import get_model
 
     if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        device = "cuda" if runtime_backend(torch) != "cpu" else "cpu"
     model = get_model(model_name)
     model.eval()
     return model, device
@@ -257,7 +263,8 @@ def serve() -> int:
         print(json.dumps({"ready": False,
                           "error": f"{type(e).__name__}: {e}"}), flush=True)
         return 1
-    print(json.dumps({"ready": True, "device": device}), flush=True)
+    print(json.dumps({"ready": True, "device": device,
+                      "backend": runtime_backend(torch)}), flush=True)
 
     for line in sys.stdin:
         line = line.strip()
@@ -269,7 +276,8 @@ def serve() -> int:
                                  req["no_vocals"], device=device,
                                  force_chunked=bool(req.get("chunked")),
                                  model=model)
-            resp = {"ok": True, "device": used}
+            resp = {"ok": True, "device": used,
+                    "backend": runtime_backend(torch)}
         except Exception as e:  # noqa: BLE001
             resp = {"ok": False, "error": f"{type(e).__name__}: {e}"}
         finally:
@@ -302,7 +310,8 @@ def main() -> int:
         device = separate_file(args.input, args.vocals, args.no_vocals,
                                model_name=args.model,
                                force_chunked=args.chunked)
-        print(json.dumps({"ok": True, "device": device}), flush=True)
+        print(json.dumps({"ok": True, "device": device,
+                          "backend": runtime_backend(torch)}), flush=True)
         return 0
     except Exception as e:  # noqa: BLE001 — report everything to the parent
         print(json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"}),

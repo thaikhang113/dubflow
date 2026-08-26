@@ -97,6 +97,9 @@ def _parse_result(result) -> list[dict]:
     return output
 
 
+def ocr_frame_timeout_s(frame_count: int) -> int:
+    return max(60, min(1800, 60 + max(0, int(frame_count)) * 8))
+
 def _frames(video: str, times: list[float], output_dir: str) -> list[str]:
     """Extract all sampled frames with one FFmpeg process."""
     if not times:
@@ -107,7 +110,8 @@ def _frames(video: str, times: list[float], output_dir: str) -> list[str]:
         ["ffmpeg", "-v", "error", "-i", video,
          "-vf", f"fps=1/{interval:.3f}",
          "-frames:v", str(len(times)), "-y", pattern],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True, text=True,
+        timeout=ocr_frame_timeout_s(len(times)),
     )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr[-500:] or "OCR frame extraction failed")

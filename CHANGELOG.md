@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.0.13 - 2026-08-26
+
+### Added
+
+- Linux AMD ROCm detection for Whisper, Demucs, and DeepSeek-OCR.
+- Linux AMD VAAPI video encoding with automatic CPU fallback.
+
+### Fixed
+
+- Batch processing now preserves completed items during automatic continuation.
+- Long-video audio processing uses duration-scaled timeouts.
+- GPU workers report their actual CUDA, ROCm, or CPU backend.
+
 ## 3.0.12 - 2026-08-15
 
 ### Fixed

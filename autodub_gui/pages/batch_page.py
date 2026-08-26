@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QVBoxLayout, QWidget,
 )
 
-from autodub.batch import BatchItem
+from autodub.batch import BatchItem, parse_lines, validate_batch_report
 from autodub.pipeline import DubRequest
 from autodub.utils import save_json_atomic
 from autodub_gui import dub_constants as consts
@@ -43,6 +43,23 @@ from autodub_gui.ui.style import clear_background
 from autodub_gui.log_text import Narrator, error_line
 
 _PAGE_MARGIN = 28
+
+def parse_batch_list_text(text: str) -> list[BatchItem]:
+    return parse_lines(text)
+
+def batch_finish_ok(summary) -> bool:
+    """Chỉ coi lượt batch là thành công khi không còn lỗi hoặc chờ dịch."""
+    return not getattr(summary, "failed", 0) and not getattr(summary, "pending", 0)
+
+def batch_finish_detail(summary) -> str:
+    parts = [f"{summary.success}/{summary.total} video xong"]
+    if getattr(summary, "failed", 0):
+        parts.append(f"{summary.failed} lỗi")
+    if getattr(summary, "pending", 0):
+        parts.append(f"{summary.pending} chờ dịch")
+    if getattr(summary, "skipped", 0):
+        parts.append(f"bỏ qua {summary.skipped}")
+    return ", ".join(parts)
 _THUMB_W, _THUMB_H = 56, 32
 _ACTION_ICON = 28
 _STATUS_COL_W = 150
@@ -52,8 +69,8 @@ _TABLE_MIN_H = 220      # bảng luôn đủ chỗ cho vài dòng, kể cả khi
 _OPTION_COLS = 2        # tùy chọn xếp hai cột cho đỡ dài
 
 # Trạng thái nội bộ của một dòng trong bảng
-WAITING, RUNNING, DONE, FAILED, PAUSED = ("waiting", "running", "done",
-                                          "failed", "paused")
+WAITING, RUNNING, DONE, FAILED, PENDING, PAUSED = (
+    "waiting", "running", "done", "failed", "pending", "paused")
 
 _STATUS_VIEW: dict[str, tuple[str, str, str]] = {
     # trạng thái -> (nhãn, kiểu huy hiệu, màu thanh tiến trình)
@@ -61,6 +78,7 @@ _STATUS_VIEW: dict[str, tuple[str, str, str]] = {
     RUNNING: ("Đang xử lý", "processing", tokens.PROCESSING),
     DONE: ("Hoàn thành", "success", tokens.SUCCESS),
     FAILED: ("Lỗi", "error", tokens.DANGER),
+    PENDING: ("Đang chờ bản dịch", "warning", tokens.WARNING),
     PAUSED: ("Đã dừng", "warning", tokens.WARNING),
 }
 
@@ -124,6 +142,27 @@ class BatchPage(BasePage):
             return
         if not isinstance(data, dict) or not isinstance(data.get("items"), list):
             return
+        completed: set[str] = set()
+        try:
+            output_dir = str(getattr(self._settings_provider(), "output_dir", "") or "")
+            with open(os.path.join(output_dir, "batch_state.json"),
+                      encoding="utf-8") as f:
+                batch_state = json.load(f)
+            for item in batch_state.get("videos", []):
+                if not isinstance(item, dict) or item.get("status") != "success":
+                    continue
+                output_dir = item.get("output_folder")
+                try:
+                    validate_batch_report({"output_dir": output_dir})
+                except RuntimeError:
+                    try:
+                        validate_batch_report(
+                            {"output_dir": output_dir}, skip_video=True)
+                    except RuntimeError:
+                        continue
+                completed.add(str(item.get("video_url")))
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
         for entry in data["items"]:
             if not isinstance(entry, dict):
                 continue
@@ -133,7 +172,8 @@ class BatchPage(BasePage):
                 continue           # tệp đã bị xóa/di chuyển thì bỏ dòng đó
             if not url and not file_path:
                 continue
-            item = BatchItem(url=url, file_path=file_path)
+            item = BatchItem(url=url, file_path=file_path,
+                             voice=entry.get("voice") or None)
             if item.key in self._state:
                 continue
             self._items.append(item)
@@ -142,8 +182,11 @@ class BatchPage(BasePage):
             # tiếp tục từ chỗ dừng nhờ thư mục dự án còn nguyên.
             if state == RUNNING:
                 state = PAUSED
-            self._state[item.key] = (state if state in (WAITING, DONE, FAILED,
-                                                        PAUSED) else WAITING)
+            if item.key in completed:
+                state = DONE
+            self._state[item.key] = (
+                state if state in (WAITING, DONE, FAILED, PENDING, PAUSED)
+                else WAITING)
             if self._state[item.key] == DONE:
                 self._percent[item.key] = 100
             detail = entry.get("detail")
@@ -152,7 +195,7 @@ class BatchPage(BasePage):
 
     def _save_queue(self) -> None:
         """Ghi danh sách chờ xuống đĩa (nguyên tử) mỗi khi nó thay đổi."""
-        items = [{"url": it.url, "file_path": it.file_path,
+        items = [{"url": it.url, "file_path": it.file_path, "voice": it.voice,
                   "state": self._state.get(it.key, WAITING),
                   "detail": self._detail.get(it.key, "")}
                  for it in self._items]
@@ -393,15 +436,13 @@ class BatchPage(BasePage):
         except OSError as e:
             TOASTS.error("Không đọc được tệp danh sách.", detail=str(e))
             return
-        urls = [line.strip() for line in lines
-                if line.strip() and not line.strip().startswith("#")]
-        urls = [u for u in urls if u.lower().startswith(("http://", "https://"))]
-        if not urls:
+        items = parse_batch_list_text("\n".join(lines))
+        if not items:
             TOASTS.warn("Tệp này không có liên kết nào hợp lệ. Mỗi dòng cần "
                         "một liên kết bắt đầu bằng http:// hoặc https://")
             return
-        self._append([BatchItem(url=u) for u in urls])
-        TOASTS.success(f"Đã thêm {len(urls)} liên kết từ tệp danh sách.")
+        self._append(items)
+        TOASTS.success(f"Đã thêm {len(items)} liên kết từ tệp danh sách.")
 
     def _add_files(self, paths: list[str]) -> None:
         valid = [p for p in paths if p and os.path.isfile(p) and is_video_file(p)]
@@ -536,7 +577,7 @@ class BatchPage(BasePage):
             first = IconButton(icons.folder(tokens.TEXT_SECONDARY),
                                "Mở thư mục kết quả", size=_ACTION_ICON)
             first.clicked.connect(lambda _c=False, k=key: self._open_result(k))
-        elif state == FAILED:
+        elif state in (FAILED, PENDING):
             first = IconButton(icons.reload(tokens.WARNING),
                                "Chạy lại video này", size=_ACTION_ICON)
             first.clicked.connect(lambda _c=False, k=key: self._run_single(k))
@@ -562,9 +603,10 @@ class BatchPage(BasePage):
         done = sum(1 for s in self._state.values() if s == DONE)
         running = sum(1 for s in self._state.values() if s == RUNNING)
         failed = sum(1 for s in self._state.values() if s == FAILED)
+        pending = sum(1 for s in self._state.values() if s == PENDING)
         self.summary.setText(
             f"Tổng: {total} video    Hoàn thành: {done}    "
-            f"Đang xử lý: {running}    Lỗi: {failed}")
+            f"Đang xử lý: {running}    Chờ dịch: {pending}    Lỗi: {failed}")
         self.btn_start.setEnabled(bool(total) and not self.is_running())
 
     # -- Kiểu phụ đề chung ---------------------------------------------
@@ -698,7 +740,9 @@ class BatchPage(BasePage):
         if not pending:
             return
         TOASTS.info(f"Chạy tiếp {len(pending)} video vừa thêm vào hàng chờ.")
-        QTimer.singleShot(0, lambda: self._launch(pending))
+        # Giữ toàn bộ danh sách trong batch_state.json; run_batch dựng state
+        # theo input hiện tại và sẽ tự bỏ qua item đã hoàn thành.
+        QTimer.singleShot(0, lambda: self._launch(list(self._items)))
 
     def _on_progress(self, event) -> None:
         """Đưa tiến độ của video đang chạy vào đúng dòng của nó."""
@@ -728,7 +772,12 @@ class BatchPage(BasePage):
 
     def _on_item_status(self, _index: int, _total: int, key: str,
                         status: str, detail: str) -> None:
-        mapping = {"start": RUNNING, "success": DONE, "failed": FAILED}
+        mapping = {
+            "start": RUNNING,
+            "success": DONE,
+            "failed": FAILED,
+            "translate_pending": PENDING,
+        }
         state = mapping.get(status, WAITING)
         self._state[key] = state
         self._detail[key] = detail
@@ -744,17 +793,16 @@ class BatchPage(BasePage):
         self._save_queue()
 
     def _on_finished(self, summary) -> None:
-        REGISTRY.finish_job(True,
-                            f"{summary.success}/{summary.total} video xong")
-        skipped = (f", bỏ qua {summary.skipped} video đã xong"
-                   if summary.skipped else "")
-        TOASTS.success(
-            f"Xong hàng loạt: {summary.success} thành công, "
-            f"{summary.failed} lỗi{skipped}.")
+        detail = batch_finish_detail(summary)
+        REGISTRY.finish_job(batch_finish_ok(summary), detail)
+        if batch_finish_ok(summary):
+            TOASTS.success(f"Xong hàng loạt: {detail}.")
+        else:
+            TOASTS.warn(f"Lượt hàng loạt chưa hoàn tất: {detail}.")
         self._refresh_table()
         # Chỉ lượt kết thúc bình thường mới nối tiếp hàng chờ; lượt bị dừng
         # hay lỗi thì để người dùng tự quyết chạy tiếp hay không.
-        self._chain_next = bool(self._pending_adds)
+        self._chain_next = batch_finish_ok(summary) and bool(self._pending_adds)
 
     def _on_failed(self, message: str) -> None:
         import logging as _log

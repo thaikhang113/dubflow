@@ -77,6 +77,12 @@ def _torch_probe() -> tuple[bool, bool]:
     )
 
 
+def _backend_name(cuda_ready: bool, rocm_ready: bool) -> str:
+    if not cuda_ready:
+        return "cpu"
+    return "rocm" if rocm_ready else "cuda"
+
+
 def step_venv() -> None:
     if os.path.isfile(VENV_PY):
         log("venv .venv-demucs đã có — bỏ qua")
@@ -187,9 +193,11 @@ def step_smoke() -> None:
             f"{(result.stdout or '')[-800:]}\n{(result.stderr or '')[-800:]}"
         )
 
+    cuda_ready, rocm_ready = _torch_probe()
     with open(MARKER, "w", encoding="utf-8") as marker:
         json.dump(
-            {"ok": True, "model": "htdemucs", "backend": "demucs"},
+            {"ok": True, "model": "htdemucs",
+             "backend": _backend_name(cuda_ready, rocm_ready)},
             marker,
             ensure_ascii=False,
             indent=2,

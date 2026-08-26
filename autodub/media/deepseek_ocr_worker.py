@@ -6,6 +6,9 @@ import json
 import os
 import re
 import subprocess
+
+def ocr_frame_timeout_s(frame_count: int) -> int:
+    return max(60, min(1800, 60 + max(0, int(frame_count)) * 8))
 import sys
 import tempfile
 
@@ -32,7 +35,8 @@ def _frames(video: str, times: list[float], output_dir: str) -> list[str]:
         ["ffmpeg", "-v", "error", "-i", video,
          "-vf", f"fps=1/{interval:.3f}",
          "-frames:v", str(len(times)), "-y", pattern],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True, text=True,
+        timeout=ocr_frame_timeout_s(len(times)),
     )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr[-500:] or "OCR frame extraction failed")
@@ -95,6 +99,11 @@ def runtime_options(
     )
 
 
+def runtime_backend(backend: str) -> str:
+    backend = (backend or "").strip().lower()
+    return backend if backend in ("cuda", "rocm", "directml") else "cpu"
+
+
 def _installed_backend(model_dir: str) -> str:
     marker = os.path.join(model_dir, "installed_ok.json")
     try:
@@ -109,8 +118,9 @@ def _load_model(model_dir: str):
     import torch
     from transformers import AutoModel, AutoTokenizer
 
-    backend = _installed_backend(model_dir) or os.environ.get(
-        "DEEPSEEK_OCR_BACKEND", "cuda"
+    backend = runtime_backend(
+        _installed_backend(model_dir)
+        or os.environ.get("DEEPSEEK_OCR_BACKEND", "cuda")
     )
     cuda_ready = bool(torch.cuda.is_available())
     bf16_ready = bool(

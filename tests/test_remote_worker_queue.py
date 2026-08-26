@@ -42,6 +42,19 @@ def test_cancel_job_writes_marker(tmp_path):
     assert (tmp_path / "cancel" / "job-1").is_file()
 
 
+def test_cancel_queued_job_is_terminal_before_worker_starts(tmp_path):
+    submit_job(str(tmp_path), {"job_id": "job-1", "request": {}})
+
+    cancel_job(str(tmp_path), "job-1")
+
+    status = json.loads(
+        (tmp_path / "status" / "job-1.json").read_text(encoding="utf-8")
+    )
+    assert status["status"] == "cancelled"
+    assert status["percent"] == 100
+    assert not (tmp_path / "inbox" / "job-1.json").exists()
+
+
 def test_load_job_rejects_malformed_json(tmp_path):
     path = tmp_path / "status"
     path.mkdir()

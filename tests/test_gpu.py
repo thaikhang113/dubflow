@@ -58,3 +58,21 @@ def test_unknown_machine_is_cpu():
 
     assert info.compute_available is False
     assert info.compute_backend == "cpu"
+
+def test_windows_skips_virtual_display_adapter_when_real_gpu_is_present():
+    info = detect_gpu(
+        platform_name="win32",
+        command_runner=_runner({
+            "powershell": (
+                0,
+                "DeskIn Virtual Display Adapter\n"
+                "NVIDIA GeForce RTX 3050 Ti Laptop GPU",
+            ),
+            "nvidia-smi": (0, "GPU 0: NVIDIA GeForce RTX 3050 Ti Laptop GPU"),
+        }),
+    )
+
+    assert info.vendor == "nvidia"
+    assert info.name == "NVIDIA GeForce RTX 3050 Ti Laptop GPU"
+    assert info.compute_backend == "cuda"
+    assert info.compute_available is True

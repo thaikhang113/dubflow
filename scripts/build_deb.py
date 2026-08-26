@@ -55,6 +55,7 @@ def _validate_bundle(bundle: Path, version: str) -> None:
         "setup_support.py", "setup_vieneu.py", "setup_whisper.py",
         "setup_paraformer.py", "setup_ocr.py", "setup_douyin.py",
         "setup_demucs.py", "setup_voices.py", "setup_deepseek_ocr.py",
+        "setup_vsr.py",
     ):
         if not (bundle / "scripts" / name).is_file():
             raise SystemExit(f"bundle thiếu script: {bundle / 'scripts' / name}")
@@ -66,6 +67,7 @@ def _validate_bundle(bundle: Path, version: str) -> None:
         Path("autodub") / "media" / "demucs_worker.py",
         Path("autodub") / "media" / "ocr_worker.py",
         Path("autodub") / "media" / "deepseek_ocr_worker.py",
+        Path("autodub") / "media" / "vsr_worker.py",
     ):
         if not (data_dir / relative).is_file():
             raise SystemExit(f"bundle thiếu worker: {data_dir / relative}")

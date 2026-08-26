@@ -123,3 +123,23 @@ def test_snapshot_is_a_copy():
     snap = audio.FALLBACKS.snapshot()
     snap["atempo_failed"].append(999)
     assert audio.FALLBACKS.snapshot()["atempo_failed"] == [5]
+
+def test_long_source_audio_extract_uses_source_duration_for_timeout(
+    tmp_path, monkeypatch
+):
+    video = tmp_path / "five-hours.mp4"
+    output = tmp_path / "audio.wav"
+    video.write_bytes(b"video")
+
+    monkeypatch.setattr(audio, "probe_duration_s", lambda path: 5 * 3600)
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["timeout"] = kwargs["timeout"]
+        output.write_bytes(b"audio")
+        return type("Result", (), {"returncode": 0, "stderr": ""})()
+
+    monkeypatch.setattr(audio.subprocess, "run", fake_run)
+    audio.extract_audio(str(video), str(output))
+
+    assert captured["timeout"] == 5 * 3600 * 4

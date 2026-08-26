@@ -42,6 +42,15 @@ def test_release_specs_bundle_qt_runtime_plugins():
         assert '"platforms"' in source
         assert '"multimedia"' in source
 
+def test_ci_and_release_gate_installed_artifact_smoke():
+    for name in (".github/workflows/ci.yml",
+                 ".github/workflows/release.yml"):
+        source = (ROOT / name).read_text(encoding="utf-8")
+        assert "needs: test" in source
+        assert "Smoke installed Debian package" in source
+        assert "Smoke installed Windows app" in source
+        assert "AUTODUB_SMOKE" in source
+
 def test_icons_have_runtime_logo_fallback(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
@@ -124,6 +133,7 @@ def test_deb_bundle_validation_checks_executable_workers_and_setup_scripts(
             "autodub/media/demucs_worker.py",
             "autodub/media/ocr_worker.py",
             "autodub/media/deepseek_ocr_worker.py",
+        "autodub/media/vsr_worker.py",
     ):
         path = bundle / "data" / relative
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -136,6 +146,7 @@ def test_deb_bundle_validation_checks_executable_workers_and_setup_scripts(
         "setup_support.py", "setup_vieneu.py", "setup_whisper.py",
             "setup_paraformer.py", "setup_ocr.py", "setup_douyin.py",
             "setup_demucs.py", "setup_voices.py", "setup_deepseek_ocr.py",
+        "setup_vsr.py",
     ):
         (bundle / "scripts" / name).write_text("# setup\n", encoding="utf-8")
 
@@ -154,6 +165,7 @@ def test_deb_bundle_validation_prefers_data_dir_with_workers(tmp_path):
             "autodub/media/demucs_worker.py",
             "autodub/media/ocr_worker.py",
             "autodub/media/deepseek_ocr_worker.py",
+        "autodub/media/vsr_worker.py",
     ):
         path = internal / relative
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -166,6 +178,7 @@ def test_deb_bundle_validation_prefers_data_dir_with_workers(tmp_path):
         "setup_support.py", "setup_vieneu.py", "setup_whisper.py",
             "setup_paraformer.py", "setup_ocr.py", "setup_douyin.py",
             "setup_demucs.py", "setup_voices.py", "setup_deepseek_ocr.py",
+        "setup_vsr.py",
     ):
         (bundle / "scripts" / name).write_text("# setup\n", encoding="utf-8")
 
@@ -372,3 +385,16 @@ def test_bootstrap_dialog_skips_linux_system_ffmpeg():
         encoding="utf-8")
     assert "_system_ffmpeg_pair" in source
     assert "bootstrap.mark_completed(step.key)" in source
+
+
+def test_whisper_installer_records_detected_backend():
+    import importlib.util
+
+    path = ROOT / "scripts" / "setup_whisper.py"
+    spec = importlib.util.spec_from_file_location("setup_whisper", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module._detected_backend("", "Whisper 'medium' trên GPU (rocm, float16)") == "rocm"
+    assert module._detected_backend("", "Whisper 'medium' trên GPU (CUDA, float16)") == "cuda"
+    assert module._detected_backend("Whisper 'medium' trên CPU", "") == "cpu"

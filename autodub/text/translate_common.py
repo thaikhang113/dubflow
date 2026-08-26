@@ -11,7 +11,7 @@ import os
 import re
 import threading
 
-from autodub.utils import setup_logging
+from autodub.utils import save_json_atomic, setup_logging
 
 logger = setup_logging("autodub.translate")
 
@@ -96,13 +96,10 @@ class TranslateCheckpoint:
                     "text": seg.get(self.text_field, ""),
                 }
             try:
-                with open(self.path, "w", encoding="utf-8") as f:
-                    json.dump(
-                        {"text_field": self.text_field, "items": self._items},
-                        f,
-                        ensure_ascii=False,
-                        indent=2,
-                    )
+                save_json_atomic(
+                    {"text_field": self.text_field, "items": self._items},
+                    self.path,
+                )
             except OSError as e:
                 # Không lưu được sổ tạm thì lượt dịch vẫn phải chạy tiếp —
                 # nhưng ở mức error, vì đây chính là lý do "chạy lại vẫn phải

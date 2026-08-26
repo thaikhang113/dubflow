@@ -7,6 +7,7 @@ import os
 
 import pytest
 
+import autodub.batch as batch_module
 from autodub.batch import STATE_FILENAME, parse_lines, run_batch
 from autodub.config import Settings
 from autodub.pipeline import DubRequest
@@ -106,16 +107,32 @@ class FakePipeline:
         if outcome == "stalled":
             return type("R", (), {"status": "translation_pending",
                                   "work_dir": "wd", "report": None})()
+        output_dir = req.output_dir or os.getcwd()
+        os.makedirs(output_dir, exist_ok=True)
+        video_path = os.path.join(output_dir, "dubbed_video.mp4")
+        audio_path = os.path.join(output_dir, "dub_audio.wav")
+        report_path = os.path.join(output_dir, "report.json")
+        for path in (video_path, audio_path):
+            with open(path, "wb") as handle:
+                handle.write(b"fake artifact")
+        report = {
+            "output_dir": output_dir,
+            "files": {"dubbed_video": video_path, "dub_audio": audio_path},
+            "session_id": f"sess_{len(self.seen)}",
+            "total_segments": 2,
+            "total_original_duration": 4.0,
+            "total_tts_duration": 4.1,
+            "processing_time_seconds": 1.0,
+        }
+        data_dir = os.path.join(output_dir, "data")
+        os.makedirs(data_dir, exist_ok=True)
+        with open(os.path.join(data_dir, "report.json"), "w",
+                  encoding="utf-8") as handle:
+            json.dump(report, handle)
         return type("R", (), {
             "status": "completed",
             "work_dir": "wd",
-            "report": {
-                "session_id": f"sess_{len(self.seen)}",
-                "total_segments": 2,
-                "total_original_duration": 4.0,
-                "total_tts_duration": 4.1,
-                "processing_time_seconds": 1.0,
-            },
+            "report": report,
         })()
 
 
@@ -179,6 +196,88 @@ def test_stalled_pipeline_counts_as_failure(env):
     assert read_state(state_path)["videos"][0]["status"] == "failed"
 
 
+def test_translate_pending_is_not_recorded_as_failure(env):
+    settings, template, state_path = env
+
+    class PendingPipeline(FakePipeline):
+        def run(self, req):
+            self.seen.append(req)
+            self.last_work_dir = self.work_dirs.get(req.url, "wd")
+            return type("R", (), {
+                "status": "translate_pending",
+                "work_dir": self.last_work_dir,
+                "report": {},
+            })()
+
+    summary = run_batch(
+        "https://a.com/1", settings, template,
+        pipeline=PendingPipeline(work_dirs={"https://a.com/1": "wd"}),
+    )
+
+    assert summary.pending == 1
+    assert summary.failed == 0
+    entry = read_state(state_path)["videos"][0]
+    assert entry["status"] == "translate_pending"
+    assert entry["work_dir"] == "wd"
+
+
+def test_completed_report_requires_real_artifacts(tmp_path):
+    report = {
+        "output_dir": str(tmp_path),
+        "files": {
+            "dubbed_video": str(tmp_path / "dubbed_video.mp4"),
+            "dub_audio": str(tmp_path / "dub_audio.wav"),
+        },
+    }
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "report.json").write_text(
+        json.dumps(report), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="dubbed_video"):
+        batch_module.validate_batch_report(report)
+
+def test_completed_report_accepts_audio_only_artifact(tmp_path):
+    audio_path = tmp_path / "dub_audio.wav"
+    audio_path.write_bytes(b"audio")
+    report = {
+        "output_dir": str(tmp_path),
+        "files": {"dub_audio": str(audio_path), "dubbed_video": None},
+    }
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "report.json").write_text(
+        json.dumps(report), encoding="utf-8")
+
+    assert batch_module.validate_batch_report(report, skip_video=True) == str(tmp_path)
+
+
+def test_completed_report_uses_persisted_artifact_paths(tmp_path):
+    persisted_video = tmp_path / "persisted.mp4"
+    persisted_audio = tmp_path / "persisted.wav"
+    persisted_video.write_bytes(b"video")
+    persisted_audio.write_bytes(b"audio")
+    transient = {
+        "output_dir": str(tmp_path),
+        "files": {
+            "dubbed_video": str(tmp_path / "missing.mp4"),
+            "dub_audio": str(tmp_path / "missing.wav"),
+        },
+    }
+    persisted = {
+        "output_dir": str(tmp_path),
+        "files": {
+            "dubbed_video": str(persisted_video),
+            "dub_audio": str(persisted_audio),
+        },
+    }
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "report.json").write_text(
+        json.dumps(persisted), encoding="utf-8")
+
+    assert batch_module.validate_batch_report(transient) == str(tmp_path)
+
 def test_resume_skips_completed_urls(env):
     settings, template, state_path = env
     run_batch("https://a.com/1", settings, template, pipeline=FakePipeline())
@@ -189,6 +288,22 @@ def test_resume_skips_completed_urls(env):
 
     assert [r.url for r in pipe2.seen] == ["https://a.com/2"]
     assert (summary.skipped, summary.success) == (1, 1)
+
+
+def test_success_without_artifact_is_retried(env, tmp_path):
+    settings, template, state_path = env
+    with open(state_path, "w", encoding="utf-8") as handle:
+        json.dump({"videos": [{
+            "video_url": "https://a.com/1",
+            "status": "success",
+            "output_folder": str(tmp_path / "deleted"),
+        }]}, handle)
+
+    pipe = FakePipeline()
+    summary = run_batch("https://a.com/1", settings, template, pipeline=pipe)
+
+    assert [request.url for request in pipe.seen] == ["https://a.com/1"]
+    assert (summary.skipped, summary.success) == (0, 1)
 
 
 def test_retry_done_reprocesses_everything(env):
