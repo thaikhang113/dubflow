@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.0.14 - 2026-08-26
+
+### Fixed
+
+- Make OpenClaw endpoint test independent of whether the default port is
+  available on the CI runner.
+
 ## 3.0.13 - 2026-08-26
 
 ### Added

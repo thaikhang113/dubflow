@@ -2,4 +2,4 @@
 
 Run with:  python -m autodub_gui
 """
-__version__ = "3.0.13"
+__version__ = "3.0.14"
