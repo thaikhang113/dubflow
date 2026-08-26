@@ -48,11 +48,12 @@ def test_runtime_exposes_stable_docker_endpoint(tmp_path):
     runtime.start(worker=False)
     try:
         assert runtime._server.server_address[0] == "0.0.0.0"
-        assert runtime.endpoint == "http://127.0.0.1:38643"
+        port = runtime._server.server_address[1]
+        assert runtime.endpoint == f"http://127.0.0.1:{port}"
         assert runtime.docker_endpoint == (
-            "http://host.docker.internal:38643")
+            f"http://host.docker.internal:{port}")
         saved = json.loads((tmp_path / "openclaw.json").read_text())
-        assert saved["port"] == 38643
+        assert saved["port"] == port
     finally:
         runtime.stop()
 
