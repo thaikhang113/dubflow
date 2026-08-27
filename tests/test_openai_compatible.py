@@ -19,6 +19,11 @@ def test_normalize_endpoint_removes_duplicate_api_suffix():
     assert normalize_endpoint("https://example.test/v1/") == "https://example.test/v1"
     assert normalize_endpoint("https://example.test") == "https://example.test/v1"
 
+def test_normalize_endpoint_accepts_full_openai_route():
+    assert normalize_endpoint(
+        "https://example.test/v1/chat/completions"
+    ) == "https://example.test/v1"
+
 def test_public_http_endpoint_is_allowed_for_legacy_servers():
     assert normalize_endpoint("http://example.test") == "http://example.test/v1"
 

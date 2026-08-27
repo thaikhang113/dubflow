@@ -164,7 +164,7 @@ def test_hardware_plan_activates_installed_deepseek(
 
     class Settings:
         ocr_backend = "hybrid"
-        deepseek_ocr_enabled = False
+        deepseek_ocr_enabled = True
 
         @staticmethod
         def deepseek_ocr_configured():
@@ -179,3 +179,22 @@ def test_hardware_plan_activates_installed_deepseek(
             return str(model_dir)
 
     assert preferred_ocr_backend(Settings()) == "deepseek"
+
+def test_disabled_deepseek_plan_never_activates_installed_engine(
+    monkeypatch, tmp_path
+):
+    from autodub.media.ocr import preferred_ocr_backend
+
+    plan = tmp_path / "backend-plan.json"
+    plan.write_text('{"ocr_backend": "deepseek-rocm"}', encoding="utf-8")
+    monkeypatch.setenv("DUBFLOW_BACKEND_PLAN", str(plan))
+
+    class Settings:
+        ocr_backend = "hybrid"
+        deepseek_ocr_enabled = False
+
+        @staticmethod
+        def deepseek_ocr_configured():
+            return True
+
+    assert preferred_ocr_backend(Settings()) == "paddle"

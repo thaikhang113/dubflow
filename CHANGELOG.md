@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.16 - 2026-08-27
+
+### Fixed
+
+- DeepSeek-OCR is now opt-in and no longer blocks first-run setup.
+- Linux package updates use APT so dependencies are resolved during install.
+- OpenAI-compatible translation accepts full `/chat/completions` endpoints.
+
 ## 3.0.15 - 2026-08-26
 
 ### Fixed

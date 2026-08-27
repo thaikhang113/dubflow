@@ -25,10 +25,9 @@ def _planned_backend() -> str:
         return ""
 
 def _deepseek_ready(settings) -> bool:
-    planned = _planned_backend()
     if not getattr(settings, "deepseek_ocr_enabled", False):
-        if not planned.startswith("deepseek"):
-            return False
+        return False
+    planned = _planned_backend()
     if getattr(settings, "deepseek_ocr_configured", lambda: False)():
         return True
     if not planned.startswith("deepseek"):

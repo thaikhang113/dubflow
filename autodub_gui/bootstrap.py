@@ -60,6 +60,9 @@ def load_plan() -> BackendPlan | None:
 def ensure_hardware_plan() -> BackendPlan:
     profile = detect_hardware(disk_path=data_root())
     plan = load_plan()
+    deepseek_enabled = os.environ.get(
+        "DEEPSEEK_OCR_ENABLED", "false").strip().lower() in (
+            "1", "true", "yes", "on")
     try:
         with open(plan_path(), encoding="utf-8") as handle:
             stored = json.load(handle).get("hardware", {})
@@ -67,12 +70,12 @@ def ensure_hardware_plan() -> BackendPlan:
         comparable = set(current) - {"disk_free_gb"}
         if plan is not None and all(
             stored.get(key) == current[key] for key in comparable
-        ):
+        ) and (deepseek_enabled or not plan.ocr_backend.startswith("deepseek")):
             os.environ["DUBFLOW_BACKEND_PLAN"] = plan_path()
             return plan
     except (OSError, TypeError, ValueError, json.JSONDecodeError):
         pass
-    plan = select_backends(profile)
+    plan = select_backends(profile, deepseek_enabled)
     ensure_dir(data_root())
     with open(plan_path(), "w", encoding="utf-8") as handle:
         json.dump({
@@ -85,6 +88,11 @@ def ensure_hardware_plan() -> BackendPlan:
 def steps(plan: BackendPlan | None = None) -> tuple[BootstrapStep, ...]:
     plan = plan or load_plan()
     ocr_backend = plan.ocr_backend if plan else "paddleocr"
+    deepseek_enabled = os.environ.get(
+        "DEEPSEEK_OCR_ENABLED", "false").strip().lower() in (
+            "1", "true", "yes", "on")
+    if not deepseek_enabled and ocr_backend.startswith("deepseek"):
+        ocr_backend = "paddleocr"
     ocr = (
         BootstrapStep("deepseek_ocr", "DeepSeek-OCR", "script",
                       "scripts/setup_deepseek_ocr.py")

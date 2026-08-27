@@ -146,6 +146,23 @@ def test_linux_update_rejects_tar_without_deb():
     with pytest.raises(LookupError):
         platform_assets(info, "Linux")
 
+def test_linux_installer_uses_apt_for_local_deb(monkeypatch, tmp_path):
+    from autodub.updates import launch_installer
+
+    package = tmp_path / "dubflow_2.2_amd64.deb"
+    package.write_bytes(b"deb")
+    calls = []
+
+    monkeypatch.setattr("autodub.updates.platform.system", lambda: "Linux")
+    monkeypatch.setattr("autodub.updates.os.geteuid", lambda: 1000,
+                        raising=False)
+    monkeypatch.setattr(
+        "subprocess.Popen", lambda command: calls.append(command))
+
+    launch_installer(str(package))
+
+    assert calls == [["pkexec", "apt-get", "install", "-y", str(package)]]
+
 
 def test_checksum_requires_matching_filename():
     assert _checksum("abc  other.zip\n" + "a" * 64 + "  app.deb", "app.deb") == "a" * 64

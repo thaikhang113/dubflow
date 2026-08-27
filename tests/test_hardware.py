@@ -3,7 +3,24 @@ from types import SimpleNamespace
 from autodub.hardware import HardwareProfile, detect_hardware, select_backends
 
 
-def test_select_backends_prefers_amd_rocm_and_vsr():
+def test_select_backends_prefers_amd_rocm_when_deepseek_is_enabled():
+    plan = select_backends(HardwareProfile(
+        platform="linux",
+        machine="x86_64",
+        python="3.12",
+        ram_gb=16,
+        disk_free_gb=20,
+        gpu_vendor="amd",
+        gpu_name="AMD Radeon RX 6600",
+        amd=True,
+        rocm=True,
+        vulkan=True,
+    ), deepseek_ocr_enabled=True)
+
+    assert plan.ocr_backend == "deepseek-rocm"
+    assert plan.vsr_backend == "video-subtitle-remover"
+
+def test_select_backends_defaults_to_paddle_even_with_supported_gpu():
     plan = select_backends(HardwareProfile(
         platform="linux",
         machine="x86_64",
@@ -17,8 +34,7 @@ def test_select_backends_prefers_amd_rocm_and_vsr():
         vulkan=True,
     ))
 
-    assert plan.ocr_backend == "deepseek-rocm"
-    assert plan.vsr_backend == "video-subtitle-remover"
+    assert plan.ocr_backend == "paddleocr"
 
 
 def test_select_backends_falls_back_on_small_machine():

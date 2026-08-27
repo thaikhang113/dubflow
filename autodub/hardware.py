@@ -151,16 +151,23 @@ def detect_hardware(
     )
 
 
-def select_backends(profile: HardwareProfile) -> BackendPlan:
+def select_backends(
+    profile: HardwareProfile, deepseek_ocr_enabled: bool | None = None
+) -> BackendPlan:
     reasons: list[str] = []
+    if deepseek_ocr_enabled is None:
+        deepseek_ocr_enabled = os.environ.get(
+            "DEEPSEEK_OCR_ENABLED", "false").strip().lower() in (
+                "1", "true", "yes", "on")
     enough_ram = profile.ram_gb == 0 or profile.ram_gb >= 8
-    if profile.nvidia and enough_ram:
+    if deepseek_ocr_enabled and profile.nvidia and enough_ram:
         ocr = "deepseek-cuda"
         reasons.append("NVIDIA CUDA và RAM phù hợp cho DeepSeek-OCR.")
-    elif profile.amd and profile.rocm and enough_ram:
+    elif deepseek_ocr_enabled and profile.amd and profile.rocm and enough_ram:
         ocr = "deepseek-rocm"
         reasons.append("AMD ROCm và RAM phù hợp cho DeepSeek-OCR.")
-    elif profile.platform == "win32" and profile.directml and enough_ram:
+    elif (deepseek_ocr_enabled and profile.platform == "win32"
+          and profile.directml and enough_ram):
         ocr = "deepseek-directml"
         reasons.append("DirectML khả dụng trên Windows.")
     else:

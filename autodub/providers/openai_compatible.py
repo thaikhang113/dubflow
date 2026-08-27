@@ -35,6 +35,10 @@ def normalize_endpoint(endpoint: str) -> str:
         raise OpenAICompatibleError("Endpoint phải dùng URL HTTP(S) hợp lệ.")
     # Legacy deployments may expose an HTTP endpoint on a trusted network.
     # Keep URL validation, but do not reject public HTTP for compatibility.
+    for suffix in ("/chat/completions", "/models"):
+        if value.casefold().endswith(suffix):
+            value = value[:-len(suffix)].rstrip("/")
+            break
     if value.endswith("/v1"):
         return value
     return f"{value}/v1"

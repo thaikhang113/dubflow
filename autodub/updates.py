@@ -159,7 +159,7 @@ def launch_installer(package_path: str, pid: int | None = None) -> None:
     package = Path(package_path).resolve()
     if platform.system() == "Linux" and package.suffix == ".deb":
         import subprocess
-        command = ["dpkg", "-i", str(package)]
+        command = ["apt-get", "install", "-y", str(package)]
         if getattr(os, "geteuid", lambda: 1)() != 0:
             command.insert(0, "pkexec")
         subprocess.Popen(command)
