@@ -23,6 +23,14 @@ MARKER = os.path.join(MODEL_DIR, "installed_ok.json")
 MODEL_NAME = "deepseek-ai/DeepSeek-OCR"
 DEFAULT_ROCM_INDEX = "https://download.pytorch.org/whl/rocm6.4"
 SUPPORTED_PYTHON = ((3, 10), (3, 11), (3, 12))
+DEEPSEEK_PYTHON_PACKAGES = (
+    "transformers>=4.51.1",
+    "Pillow>=10.0",
+    "safetensors>=0.5",
+    "addict",
+    "matplotlib",
+    "requests",
+)
 
 
 def log(message: str) -> None:
@@ -174,11 +182,14 @@ def main() -> int:
             f"Đã cài backend {backend} nhưng không nhận được GPU. "
             "Kiểm tra driver rồi bấm Tải lại; PaddleOCR vẫn dùng được."
         )
-    if not _probe([PYTHON, "-c", "import transformers, PIL, safetensors"]):
+    if not _probe([
+        PYTHON, "-c",
+        "import transformers, PIL, safetensors, addict, matplotlib, requests",
+    ]):
         log("Cài Transformers + Pillow ...")
         retry_call(lambda: subprocess.run(
             [PYTHON, "-m", "pip", "install", "--no-cache-dir",
-             "transformers>=4.51.1", "Pillow>=10.0", "safetensors>=0.5"],
+             *DEEPSEEK_PYTHON_PACKAGES],
             check=True,
         ), attempts=2)
 

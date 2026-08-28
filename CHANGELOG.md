@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.17 - 2026-08-28
+
+### Fixed
+
+- DeepSeek-OCR is never part of mandatory first-run setup.
+- DeepSeek-OCR installer includes dynamic model dependencies and detects
+  partial installations before downloading the model.
+
 ## 3.0.16 - 2026-08-27
 
 ### Fixed

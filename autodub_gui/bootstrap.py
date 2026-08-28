@@ -87,19 +87,6 @@ def ensure_hardware_plan() -> BackendPlan:
 
 def steps(plan: BackendPlan | None = None) -> tuple[BootstrapStep, ...]:
     plan = plan or load_plan()
-    ocr_backend = plan.ocr_backend if plan else "paddleocr"
-    deepseek_enabled = os.environ.get(
-        "DEEPSEEK_OCR_ENABLED", "false").strip().lower() in (
-            "1", "true", "yes", "on")
-    if not deepseek_enabled and ocr_backend.startswith("deepseek"):
-        ocr_backend = "paddleocr"
-    ocr = (
-        BootstrapStep("deepseek_ocr", "DeepSeek-OCR", "script",
-                      "scripts/setup_deepseek_ocr.py")
-        if ocr_backend.startswith("deepseek")
-        else BootstrapStep("ocr", "PaddleOCR", "script",
-                           "scripts/setup_ocr.py")
-    )
     common = (
         BootstrapStep("vieneu", "VieNeu voice engine", "script",
                       "scripts/setup_vieneu.py"),
@@ -107,7 +94,8 @@ def steps(plan: BackendPlan | None = None) -> tuple[BootstrapStep, ...]:
                       "scripts/setup_whisper.py"),
         BootstrapStep("paraformer", "Paraformer Chinese ASR", "script",
                       "scripts/setup_paraformer.py"),
-        ocr,
+        BootstrapStep("ocr", "PaddleOCR", "script",
+                      "scripts/setup_ocr.py"),
         BootstrapStep("douyin", "Douyin downloader", "script",
                       "scripts/setup_douyin.py"),
         BootstrapStep("demucs", "Demucs vocal separation", "script",

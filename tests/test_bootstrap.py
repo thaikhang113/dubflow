@@ -50,24 +50,14 @@ def test_bootstrap_steps_include_all_engines(monkeypatch, tmp_path):
         assert bootstrap.steps()[2].kind == "ffmpeg"
     assert bootstrap.steps()[-2].script == "scripts/setup_demucs.py"
 
-def test_bootstrap_steps_follow_backend_plan(monkeypatch):
+def test_bootstrap_steps_never_install_deepseek(monkeypatch):
     monkeypatch.setenv("DEEPSEEK_OCR_ENABLED", "true")
     plan = bootstrap.BackendPlan(
         "deepseek-rocm", "video-subtitle-remover", ("test",))
     keys = [step.key for step in bootstrap.steps(plan)]
-    assert "deepseek_ocr" in keys
-    assert "ocr" not in keys
-    assert keys[-1] == "vsr"
-
-def test_bootstrap_steps_skip_deepseek_when_disabled(monkeypatch):
-    monkeypatch.setenv("DEEPSEEK_OCR_ENABLED", "false")
-    plan = bootstrap.BackendPlan(
-        "deepseek-rocm", "fallback", ("legacy plan",))
-
-    keys = [step.key for step in bootstrap.steps(plan)]
-
     assert "deepseek_ocr" not in keys
     assert "ocr" in keys
+    assert keys[-1] == "vsr"
 
 def test_ensure_hardware_plan_replaces_disabled_deepseek_plan(
     monkeypatch, tmp_path

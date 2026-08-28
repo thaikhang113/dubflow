@@ -59,6 +59,13 @@ def test_installer_rejects_unsupported_python():
     with pytest.raises(RuntimeError, match="3.10"):
         setup_deepseek_ocr.validate_python_version((3, 13))
 
+def test_installer_declares_dynamic_model_dependencies():
+    from scripts import setup_deepseek_ocr
+
+    packages = set(setup_deepseek_ocr.DEEPSEEK_PYTHON_PACKAGES)
+
+    assert {"addict", "matplotlib", "requests"} <= packages
+
 
 def test_installer_log_survives_windows_cp1252_console():
     env = dict(
