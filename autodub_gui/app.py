@@ -12,9 +12,9 @@ from autodub_gui import _frozen
 
 _frozen.init()  # phải chạy trước mọi thứ khác: PATH, PLAYWRIGHT_BROWSERS_PATH, chdir
 
-from PySide6.QtCore import QEvent, QObject, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QFont, QIcon, QKeyEvent
-from PySide6.QtWidgets import (
+from PySide6.QtCore import QEvent, QObject, Qt, QThread, QTimer, Signal  # noqa: E402
+from PySide6.QtGui import QFont, QIcon, QKeyEvent  # noqa: E402
+from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
     QHBoxLayout,
     QMainWindow,
@@ -24,17 +24,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from autodub.config import Settings
-from autodub_gui import icons, theme, tokens
-from autodub_gui.run_state import REGISTRY
-from autodub_gui.shell import AppHeader, NotificationPopup, Sidebar
-from autodub_gui.ui.modal import ConfirmDialog
-from autodub_gui.ui.style import panel_background
-from autodub_gui.ui.toast import TOASTS
+from autodub.config import Settings  # noqa: E402
+from autodub_gui import icons, theme, tokens  # noqa: E402
+from autodub_gui.run_state import REGISTRY  # noqa: E402
+from autodub_gui.shell import AppHeader, NotificationPopup, Sidebar  # noqa: E402
+from autodub_gui.ui.modal import ConfirmDialog  # noqa: E402
+from autodub_gui.ui.style import panel_background  # noqa: E402
+from autodub_gui.ui.toast import TOASTS  # noqa: E402
 
 APP_NAME = "DubFlow"
 APP_TAGLINE = "Lồng tiếng video bằng AI"
-APP_VERSION = "3.0.19"
+APP_VERSION = "3.0.20"
 
 def _runtime_version() -> str:
     """Read release version written into frozen bundles."""

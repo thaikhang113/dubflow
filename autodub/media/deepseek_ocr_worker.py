@@ -6,12 +6,12 @@ import json
 import os
 import re
 import subprocess
+import sys
+import tempfile
 
 
 def ocr_frame_timeout_s(frame_count: int) -> int:
     return max(60, min(1800, 60 + max(0, int(frame_count)) * 8))
-import sys
-import tempfile
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.stderr.reconfigure(encoding="utf-8", errors="replace")
@@ -155,10 +155,16 @@ def _load_model(model_dir: str):
         ),
     }
     try:
-        model = AutoModel.from_pretrained(MODEL_NAME, **kwargs)
+        model = AutoModel.from_pretrained(  # noqa: B615
+            MODEL_NAME,
+            **kwargs,
+        )
     except Exception:
         kwargs["_attn_implementation"] = "eager"
-        model = AutoModel.from_pretrained(MODEL_NAME, **kwargs)
+        model = AutoModel.from_pretrained(  # noqa: B615
+            MODEL_NAME,
+            **kwargs,
+        )
     return tokenizer, model.eval().to(device=device, dtype=dtype)
 
 

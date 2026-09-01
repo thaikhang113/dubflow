@@ -21,7 +21,10 @@ from autodub.media.douyin_cookies import (
     save_douyin_cookies,
     validate_douyin_cookies,
 )
+from autodub.config import Settings
+from autodub.utils import app_root
 from autodub_gui import icons, tokens
+from autodub_gui.env_store import read_env, write_env
 from autodub_gui.log_text import error_line
 from autodub_gui.pages import BasePage
 from autodub_gui.run_state import REGISTRY, ActiveJob
@@ -52,9 +55,6 @@ def download_finish_detail(success: int, failed: int) -> str:
     if failed:
         detail += f", {int(failed)} liên kết lỗi"
     return detail
-from autodub.config import Settings
-from autodub.utils import app_root
-from autodub_gui.env_store import read_env, write_env
 
 _PAGE_MARGIN = 28
 _INPUT_MIN_H = 72

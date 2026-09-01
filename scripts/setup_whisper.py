@@ -121,8 +121,8 @@ def step_smoke() -> None:
         except OSError:
             pass
 
-    lines = [l.strip() for l in (proc.stdout or "").splitlines() if l.strip()]
-    ok = any('"done"' in l for l in lines)
+    lines = [line.strip() for line in (proc.stdout or "").splitlines() if line.strip()]
+    ok = any('"done"' in line for line in lines)
     if not ok:
         raise SystemExit(
             f"!! smoke test thất bại (exit {proc.returncode}):\n"

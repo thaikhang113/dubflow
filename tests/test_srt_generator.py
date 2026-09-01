@@ -1,6 +1,11 @@
 import os
 
-from autodub.text.srt import generate_srt
+from autodub.text.srt import (
+    MAX_LINE_CHARS,
+    MAX_LINES_PER_CUE,
+    generate_srt,
+    split_for_display,
+)
 
 
 def test_generate_srt_original_text(tmp_path):
@@ -43,8 +48,6 @@ def test_generate_srt_empty_segments(tmp_path):
 
 
 # ----------------------- display splitting (merged segments) --------------- #
-
-from autodub.text.srt import MAX_LINE_CHARS, MAX_LINES_PER_CUE, split_for_display
 
 
 def test_short_segment_single_cue():

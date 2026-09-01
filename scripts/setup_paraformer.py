@@ -154,8 +154,8 @@ def step_smoke() -> None:
         [VENV_PY, WORKER, "--audio", smoke_wav, "--model-dir", MODEL_DIR],
         capture_output=True, encoding="utf-8", errors="replace", timeout=600)
     os.remove(smoke_wav)
-    lines = [l for l in (result.stdout or "").splitlines() if l.strip()]
-    ok = any('"done"' in l for l in lines)
+    lines = [line for line in (result.stdout or "").splitlines() if line.strip()]
+    ok = any('"done"' in line for line in lines)
     if not ok:
         raise SystemExit(f"!! smoke test thất bại:\n{result.stdout}\n"
                          f"{(result.stderr or '')[-500:]}")

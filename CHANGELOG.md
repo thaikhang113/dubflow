@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.0.20 - 2026-09-01
+
+### Fixed
+
+- Resolve all default Ruff checks without changing startup or setup behavior.
+
 ## 3.0.19 - 2026-09-01
 
 ### Fixed

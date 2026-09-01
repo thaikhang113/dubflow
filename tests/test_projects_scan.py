@@ -9,18 +9,6 @@ import json
 import os
 
 from autodub_gui import projects
-
-
-def test_project_path_must_stay_inside_output_directory(tmp_path):
-    output = tmp_path / "output"
-    project = output / "video_vi"
-    project.mkdir(parents=True)
-    outside = tmp_path / "outside"
-    outside.mkdir()
-
-    assert projects.is_within_directory(str(project), str(output))
-    assert not projects.is_within_directory(str(outside), str(output))
-    assert not projects.is_within_directory(str(tmp_path / "output-old"), str(output))
 from autodub_gui.projects import (
     STATUS_COMPLETED,
     STATUS_FAILED,
@@ -34,6 +22,18 @@ from autodub_gui.projects import (
     scan,
     summarize,
 )
+
+
+def test_project_path_must_stay_inside_output_directory(tmp_path):
+    output = tmp_path / "output"
+    project = output / "video_vi"
+    project.mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+
+    assert projects.is_within_directory(str(project), str(output))
+    assert not projects.is_within_directory(str(outside), str(output))
+    assert not projects.is_within_directory(str(tmp_path / "output-old"), str(output))
 
 _REPORT = {
     "session_id": "20260804112214",

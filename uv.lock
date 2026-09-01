@@ -101,7 +101,7 @@ wheels = [
 
 [[package]]
 name = "autodub"
-version = "3.0.19"
+version = "3.0.20"
 source = { editable = "." }
 dependencies = [
     { name = "audioop-lts", marker = "python_full_version >= '3.13'" },

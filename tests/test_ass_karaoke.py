@@ -113,7 +113,7 @@ def test_build_karaoke_ass_end_to_end(tmp_path):
     text = open(out, encoding="utf-8-sig").read()
     assert "[Script Info]" in text
     assert "Style: Kara,Arial,22," in text
-    dialogues = [l for l in text.splitlines() if l.startswith("Dialogue:")]
+    dialogues = [line for line in text.splitlines() if line.startswith("Dialogue:")]
     # câu 1: 5 chữ → cụm 3+2 (dấu chấm cuối không tách cụm mới); câu 2: 3 chữ
     assert len(dialogues) >= 3
     # hiệu ứng pop có mặt trên từng event
