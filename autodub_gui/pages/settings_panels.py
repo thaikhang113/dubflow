@@ -11,7 +11,11 @@ import subprocess
 
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (
-    QFileDialog, QHBoxLayout, QInputDialog, QLabel, QWidget,
+    QFileDialog,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QWidget,
 )
 
 from autodub_gui import tokens

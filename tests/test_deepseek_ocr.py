@@ -1,9 +1,9 @@
-import pytest
-import sys
 import os
 import subprocess
+import sys
 from pathlib import Path
 
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
@@ -65,6 +65,13 @@ def test_installer_declares_dynamic_model_dependencies():
     packages = set(setup_deepseek_ocr.DEEPSEEK_PYTHON_PACKAGES)
 
     assert {"addict", "matplotlib", "requests"} <= packages
+
+def test_deepseek_model_revision_is_pinned():
+    from scripts import setup_deepseek_ocr
+
+    assert setup_deepseek_ocr.MODEL_REVISION == (
+        "9f30c71f441d010e5429c532364a86705536c53a"
+    )
 
 
 def test_installer_log_survives_windows_cp1252_console():

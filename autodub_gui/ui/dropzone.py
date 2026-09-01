@@ -12,8 +12,13 @@ import os
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
-    QFileDialog, QHBoxLayout, QLabel, QSizePolicy, QStackedLayout,
-    QVBoxLayout, QWidget,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QStackedLayout,
+    QVBoxLayout,
+    QWidget,
 )
 
 from autodub_gui import icons, tokens
@@ -230,17 +235,17 @@ class DragDropZone(QWidget):
         if path:
             self.file_selected.emit(path)
 
-    def dragEnterEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def dragEnterEvent(self, event) -> None:
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
             self.set_state("dragover")
 
-    def dragLeaveEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def dragLeaveEvent(self, event) -> None:
         if self._state == "dragover":
             self.set_state("idle")
         super().dragLeaveEvent(event)
 
-    def dropEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def dropEvent(self, event) -> None:
         paths = [u.toLocalFile() for u in event.mimeData().urls()]
         paths = [p for p in paths if p and os.path.isfile(p)]
         self.set_state("idle")
@@ -252,14 +257,14 @@ class DragDropZone(QWidget):
             self.files_rejected.emit(paths)
         self.file_selected.emit(paths[0])
 
-    def mousePressEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def mousePressEvent(self, event) -> None:
         if (event.button() == Qt.MouseButton.LeftButton
                 and self._state in ("idle", "dragover")):
             self.browse()
         super().mousePressEvent(event)
 
     # -- Vẽ nền --------------------------------------------------------
-    def paintEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.rect().adjusted(1, 1, -2, -2)

@@ -7,10 +7,15 @@ thời gian hiện ra trên màn hình.
 from __future__ import annotations
 
 from PySide6.QtCore import QLineF, QPointF, QRectF, Qt, Signal
-from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QSizePolicy, QSlider, QVBoxLayout, QWidget,
-)
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPixmap, QPolygonF
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QSlider,
+    QVBoxLayout,
+    QWidget,
+)
 
 from autodub_gui import icons, tokens
 from autodub_gui.formatting import format_duration
@@ -241,7 +246,7 @@ class TimelineCanvas(QWidget):
                 + max(0.0, x - LABEL_W) / self._content_w() * span)
 
     # -- Vẽ ------------------------------------------------------------
-    def paintEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor(tokens.BG_MAIN))
         if self._duration <= 0:
@@ -332,8 +337,7 @@ class TimelineCanvas(QWidget):
             if left < last_right + _THUMB_MIN_GAP_PX:
                 continue
             # Clip vào vùng nhìn thấy
-            if left < LABEL_W:
-                left = LABEL_W
+            left = max(left, LABEL_W)
             if left + px.width() > self.width():
                 break
             painter.drawPixmap(int(left), top, px)
@@ -524,7 +528,7 @@ class TimelineCanvas(QWidget):
                 return segment
         return None
 
-    def mousePressEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def mousePressEvent(self, event) -> None:
         if event.button() != Qt.MouseButton.LeftButton:
             return
         x, y = event.position().x(), event.position().y()
@@ -600,7 +604,7 @@ class TimelineCanvas(QWidget):
                       "start": start, "end": end,
                       "grab": self._to_time(x)}
 
-    def mouseMoveEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def mouseMoveEvent(self, event) -> None:
         x, y = event.position().x(), event.position().y()
         if self._drag is None:
             self._update_hover_cursor(x, y)
@@ -671,7 +675,7 @@ class TimelineCanvas(QWidget):
                 break
         self.update()
 
-    def mouseReleaseEvent(self, event) -> None:  # noqa: N802 — quy ước Qt
+    def mouseReleaseEvent(self, event) -> None:
         drag = self._drag
         self._drag = None
         if drag is None:
@@ -693,7 +697,7 @@ class TimelineCanvas(QWidget):
                     self.segment_moved.emit(drag["id"], new_start, new_end)
                 break
 
-    def wheelEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def wheelEvent(self, event) -> None:
         """Giữ Ctrl để phóng to thu nhỏ, còn lại là cuộn ngang."""
         delta = event.angleDelta().y()
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:

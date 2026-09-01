@@ -15,34 +15,51 @@ import os
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QUndoStack
 from PySide6.QtWidgets import (
-    QFileDialog, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-    QSplitter, QStackedWidget, QVBoxLayout, QWidget,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QSplitter,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
 from autodub_gui import icons, tokens, waveform
+from autodub_gui.log_text import Narrator
 from autodub_gui.pages import BasePage
-from autodub_gui.pages.editor_export import VoiceAndExportMixin
 from autodub_gui.pages.editor_commands import (
-    AddSegmentCommand, DeleteSegmentCommand, EditTextCommand,
-    MergeSegmentCommand, MoveSegmentCommand, SplitSegmentCommand,
+    AddSegmentCommand,
+    DeleteSegmentCommand,
+    MergeSegmentCommand,
+    MoveSegmentCommand,
+    SplitSegmentCommand,
 )
+from autodub_gui.pages.editor_export import VoiceAndExportMixin
 from autodub_gui.pages.editor_panels import (
-    AudioPanel, BackgroundPanel, DirtyBanner, ExportPanel, OverviewPanel,
-    QCPanel, SubtitleListPanel, VoicePanel, debounce_timer,
+    AudioPanel,
+    BackgroundPanel,
+    DirtyBanner,
+    ExportPanel,
+    OverviewPanel,
+    QCPanel,
+    SubtitleListPanel,
+    VoicePanel,
+    debounce_timer,
 )
-from autodub_gui.run_state import REGISTRY, ActiveJob
 from autodub_gui.system_open import open_file, open_folder
 from autodub_gui.ui.buttons import PrimaryButton
 from autodub_gui.ui.modal import ConfirmDialog, confirm_discard
 from autodub_gui.ui.progress import SaveIndicator
 from autodub_gui.ui.style import clear_background, panel_background
 from autodub_gui.ui.toast import TOASTS
-from autodub_gui.video.player import VideoPlayer
 from autodub_gui.video.layer_panel import LayerPanel
+from autodub_gui.video.player import VideoPlayer
 from autodub_gui.video.timeline import Timeline
 from autodub_gui.voice_preview import VoicePreview
 from autodub_gui.widgets import LogPanel
-from autodub_gui.log_text import Narrator
 
 TOP_BAR_H = 56
 # Đủ rộng cho nhãn dài nhất («Xuất video») cộng biểu tượng, lề và đệm của
@@ -368,8 +385,9 @@ class EditorPage(VoiceAndExportMixin, BasePage):
         self._load_waveform()
 
     def _read_quality(self) -> dict:
-        from autodub.workdir import data_path
         import json
+
+        from autodub.workdir import data_path
 
         try:
             with open(data_path(self._work_dir, "quality_report.json"),
@@ -431,8 +449,9 @@ class EditorPage(VoiceAndExportMixin, BasePage):
         save_timeline(self._work_dir, self._layer_timeline)
 
     def _read_context(self) -> dict:
-        from autodub.workdir import data_path
         import json
+
+        from autodub.workdir import data_path
 
         try:
             with open(data_path(self._work_dir, "video_context.json"),
@@ -734,8 +753,7 @@ class EditorPage(VoiceAndExportMixin, BasePage):
         if not self._work_dir or not (self._pending_edits
                                       or self._pending_subs):
             return
-        from autodub.editor import (EditorError, save_segment_texts,
-                                    save_subtitle_texts)
+        from autodub.editor import EditorError, save_segment_texts, save_subtitle_texts
         from autodub.text.srt import SUBTITLE_FIELD
 
         edits = dict(self._pending_edits)

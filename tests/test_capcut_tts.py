@@ -13,8 +13,7 @@ import pytest
 
 from autodub.config import ConfigError, Settings
 from autodub.languages import get_target
-from autodub.speech.tts import capcut_catalog, capcut_vi, get_synthesizer
-from autodub.speech.tts import voices
+from autodub.speech.tts import capcut_catalog, capcut_vi, get_synthesizer, voices
 
 
 @pytest.fixture(autouse=True)
@@ -102,7 +101,7 @@ def test_rotate_gives_a_brand_new_id_and_keeps_it(device_home):
 
 
 def test_device_id_follows_the_fingerprint(device_home, monkeypatch):
-    import autodub.device_id as device_id
+    from autodub import device_id
 
     monkeypatch.setattr(device_id, "get_fingerprint", lambda: "a" * 64)
     first = capcut_catalog.device_profile()

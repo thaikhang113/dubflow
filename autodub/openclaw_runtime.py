@@ -2,20 +2,21 @@
 from __future__ import annotations
 
 import json
+import logging
 import secrets
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 from urllib.parse import urlsplit
+from urllib.request import Request, urlopen
 
 from autodub.config import Settings
 from autodub.remote_worker import run_worker
 from autodub.utils import data_root
 
 _MAX_BODY = 1_000_000
-_DEFAULT_BIND_HOST = "0.0.0.0"
+_DEFAULT_BIND_HOST = "127.0.0.1"
 _DEFAULT_PORT = 38643
 _DOCKER_HOST = "host.docker.internal"
 
@@ -113,10 +114,10 @@ class _Handler(BaseHTTPRequestHandler):
         except Exception as exc:  # noqa: BLE001
             self._reply(500, {"ok": False, "error": f"{type(exc).__name__}: {exc}"})
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         self._dispatch("GET")
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         self._dispatch("POST")
 
 
@@ -132,6 +133,12 @@ class OpenClawRuntime:
         self._token = str(config.get("token") or secrets.token_urlsafe(32))
         self._bind_host = str(
             config.get("bind_host") or _DEFAULT_BIND_HOST).strip()
+        if self._bind_host not in {"127.0.0.1", "localhost", "::1"}:
+            logging.getLogger(__name__).warning(
+                "OpenClaw API bind_host=%s exposes HTTP to network peers; "
+                "HTTP has no TLS. Use loopback or a trusted private network.",
+                self._bind_host,
+            )
         try:
             self._port = int(config.get("port", _DEFAULT_PORT))
         except (TypeError, ValueError):

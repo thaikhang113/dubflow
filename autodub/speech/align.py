@@ -187,6 +187,7 @@ def align_segments(
                 f"({len(todo)} câu"
                 + (f", {n_cached} câu dùng lại của lần trước" if n_cached else "")
                 + ") — chờ chút...")
+    model = None
     try:
         model, _device, n_workers = _load_align_model()
     except Exception as e:
@@ -194,7 +195,7 @@ def align_segments(
                        "chữ sẽ chia đều theo thời lượng câu")
         return out
 
-    def _one(item):
+    def _one(item, model=model):
         seg, wav, dur, key = item
         sid = seg.get("id")
         text_words = str(seg.get(text_field, "")).split()

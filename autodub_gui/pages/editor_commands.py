@@ -43,7 +43,7 @@ class _SegmentCommand(QUndoCommand):
         self._before: list[dict] | None = None
         self._failed = False
 
-    def redo(self) -> None:      # noqa: D102 — Qt gọi cả lần đầu lẫn khi làm lại
+    def redo(self) -> None:
         if self._before is None:
             self._before = copy.deepcopy(self._read())
         position = (self._page.release_video()
@@ -58,7 +58,7 @@ class _SegmentCommand(QUndoCommand):
         self._page.reload_segments()
         self._page.restore_video(position)
 
-    def undo(self) -> None:      # noqa: D102 — Qt gọi khi người dùng hoàn tác
+    def undo(self) -> None:
         if self._failed or self._before is None:
             return
         position = (self._page.release_video()

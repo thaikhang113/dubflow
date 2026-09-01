@@ -124,6 +124,6 @@ class ProjectGrid(QWidget):
         for column in range(max(columns, self._grid.columnCount())):
             self._grid.setColumnStretch(column, 1 if column < columns else 0)
 
-    def resizeEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._relayout()

@@ -20,8 +20,10 @@ from autodub.config import Settings
 from autodub.utils import (
     app_root,
     bundled_file,
-    data_root as runtime_data_root,
     setup_logging,
+)
+from autodub.utils import (
+    data_root as runtime_data_root,
 )
 
 logger = setup_logging("autodub.voice_downloader")
@@ -109,7 +111,7 @@ def extract_voices(zip_path: str) -> str:
     """
     target = os.path.join(data_root(), VOICES_TARGET_DIR)
 
-    logger.info(f"Đang giải nén voices.zip...")
+    logger.info("Đang giải nén voices.zip...")
 
     with tempfile.TemporaryDirectory() as tmp:
         # Extract từng member sau khi kiểm tra path; ZIP có thể đến từ mạng.
@@ -169,7 +171,6 @@ def enroll_voices(settings: Settings, progress_callback=None) -> dict:
         {"ok": bool, "added": list, "failed": list}
     """
     from autodub.speech.tts import voice_library
-    from autodub.speech.tts.vieneu_vi import _WORKER_SCRIPT
 
     pending = voice_library.pending(settings)
     if not pending:

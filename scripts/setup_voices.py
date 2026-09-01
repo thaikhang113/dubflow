@@ -20,9 +20,9 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from autodub.config import Settings                             # noqa: E402
-from autodub.speech.tts import voice_library                    # noqa: E402
-from autodub.speech.tts.vieneu_vi import _WORKER_SCRIPT         # noqa: E402
+from autodub.config import Settings
+from autodub.speech.tts import voice_library
+from autodub.speech.tts.vieneu_vi import _WORKER_SCRIPT
 
 TIMEOUT_S = 3600
 

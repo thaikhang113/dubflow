@@ -10,13 +10,22 @@ from collections.abc import Callable
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QDialog, QHBoxLayout, QLabel, QPlainTextEdit,
-    QVBoxLayout, QWidget,
+    QApplication,
+    QCheckBox,
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QPlainTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
 
 from autodub_gui import icons, tokens
 from autodub_gui.ui.buttons import (
-    DangerButton, GhostButton, PrimaryButton, SecondaryButton,
+    DangerButton,
+    GhostButton,
+    PrimaryButton,
+    SecondaryButton,
 )
 
 _MIN_W = 480

@@ -67,14 +67,14 @@ class StatusBadge(QWidget):
         f.setWeight(QFont.Weight.DemiBold)
         return f
 
-    def sizeHint(self) -> QSize:  # noqa: N802 — theo quy ước của Qt
+    def sizeHint(self) -> QSize:
         width = QFontMetrics(self._font()).horizontalAdvance(self._text)
         return QSize(max(_MIN_W, width + _PAD_X * 2), _HEIGHT)
 
-    def minimumSizeHint(self) -> QSize:  # noqa: N802 — theo quy ước của Qt
+    def minimumSizeHint(self) -> QSize:
         return self.sizeHint()
 
-    def paintEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         fg, bg = KINDS[self._kind]

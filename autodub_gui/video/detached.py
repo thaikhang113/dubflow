@@ -8,7 +8,11 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import (
-    QDialog, QGraphicsScene, QGraphicsView, QVBoxLayout, QWidget,
+    QDialog,
+    QGraphicsScene,
+    QGraphicsView,
+    QVBoxLayout,
+    QWidget,
 )
 
 from autodub_gui import tokens
@@ -76,19 +80,19 @@ class DetachedVideoWindow(QDialog):
         self.view.fitInView(self.scene.sceneRect(),
                             Qt.AspectRatioMode.KeepAspectRatio)
 
-    def resizeEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._fit()
 
-    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802 — quy ước Qt
+    def mouseDoubleClickEvent(self, event) -> None:
         self.close()
 
-    def keyPressEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key.Key_Escape:
             self.close()
             return
         super().keyPressEvent(event)
 
-    def closeEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def closeEvent(self, event) -> None:
         self.closed.emit()
         super().closeEvent(event)

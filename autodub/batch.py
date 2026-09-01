@@ -18,9 +18,9 @@ import json
 import os
 import re
 import shutil
+from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Callable, Iterable
 
 from autodub.config import Settings
 from autodub.pipeline import DubPipeline, DubRequest

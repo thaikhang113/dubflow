@@ -2,11 +2,11 @@
 Data models and dataclasses for CapCut TTS API client.
 """
 
-from dataclasses import dataclass, field, asdict
-from typing import Any, Dict, List, Optional, Union
 import json
-from pathlib import Path
 from copy import deepcopy
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Any
 
 from autodub.speech.tts.capcut_api.config import DEFAULT_DEVICE
 
@@ -36,20 +36,20 @@ class DeviceConfig:
     tdid: str = DEFAULT_DEVICE["tdid"]
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "DeviceConfig":
+    def from_dict(cls, data: dict[str, Any]) -> "DeviceConfig":
         """Create a DeviceConfig instance from a dictionary, using default values for missing keys."""
         merged = deepcopy(DEFAULT_DEVICE)
         merged.update(data)
         return cls(**{k: v for k, v in merged.items() if k in cls.__dataclass_fields__})
 
     @classmethod
-    def from_json_file(cls, path: Union[str, Path]) -> "DeviceConfig":
+    def from_json_file(cls, path: str | Path) -> "DeviceConfig":
         """Load device config from a JSON file."""
         with open(path, "r", encoding="utf-8") as fp:
             data = json.load(fp)
         return cls.from_dict(data)
 
-    def to_dict(self) -> Dict[str, str]:
+    def to_dict(self) -> dict[str, str]:
         """Convert device config to dictionary representation."""
         return asdict(self)
 
@@ -64,12 +64,12 @@ class UploadResult:
     md5: str
     local_md5: str
     duration_ms: int
-    format: Optional[str] = None
+    format: str | None = None
     size: int = 0
-    file_type: Optional[str] = None
-    store_uri: Optional[str] = None
+    file_type: str | None = None
+    store_uri: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -90,18 +90,18 @@ class Utterance:
     text: str
     start_time: int
     end_time: int
-    words: List[Word] = field(default_factory=list)
+    words: list[Word] = field(default_factory=list)
 
 
 @dataclass
 class SubtitleResult:
     """Parsed STT transcription result containing utterances."""
 
-    utterances: List[Utterance] = field(default_factory=list)
+    utterances: list[Utterance] = field(default_factory=list)
     full_text: str = ""
 
     @classmethod
-    def from_payload(cls, payload: Dict[str, Any]) -> "SubtitleResult":
+    def from_payload(cls, payload: dict[str, Any]) -> "SubtitleResult":
         """Parse subtitle payload dictionary into SubtitleResult object."""
         raw_utterances = payload.get("utterances") or []
         utterance_list = []
@@ -140,10 +140,10 @@ class VoiceInfo:
     resource_id: str
     lang: str
     lan: str
-    captured_at: Optional[str] = None
+    captured_at: str | None = None
 
     @classmethod
-    def load_catalog(cls, file_path: Union[str, Path]) -> List["VoiceInfo"]:
+    def load_catalog(cls, file_path: str | Path) -> list["VoiceInfo"]:
         """Load list of voices from Voice.json catalog file."""
         path = Path(file_path)
         if not path.exists():

@@ -130,7 +130,7 @@ def test_resynth_invalidates_stale_artifacts(work_dir, monkeypatch):
     monkeypatch.setattr(editor, "get_synthesizer", lambda *a, **k: FakeSynth(),
                         raising=False)
     # get_synthesizer is imported inside the function; patch the source too.
-    import autodub.speech.tts as tts
+    from autodub.speech import tts
     monkeypatch.setattr(tts, "get_synthesizer", lambda *a, **k: FakeSynth())
 
     update_segment_text(work_dir, 1, "câu mới cho segment một")
@@ -162,7 +162,7 @@ def test_resynth_is_one_to_one(work_dir, monkeypatch):
                 f.write(b"new-audio")
             return FakeResult()
 
-    import autodub.speech.tts as tts
+    from autodub.speech import tts
     monkeypatch.setattr(tts, "get_synthesizer", lambda *a, **k: FakeSynth())
 
     resynth_segment(work_dir, 2, Settings())
@@ -456,7 +456,7 @@ def stub_tts(monkeypatch, log=None):
                 f.write(b"new-audio")
             return FakeResult()
 
-    import autodub.speech.tts as tts
+    from autodub.speech import tts
     monkeypatch.setattr(tts, "get_synthesizer", lambda *a, **k: FakeSynth())
 
 

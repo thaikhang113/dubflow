@@ -5,8 +5,6 @@ import socket
 import urllib.error
 import urllib.request
 
-import pytest
-
 from autodub.openclaw_runtime import OpenClawRuntime
 
 
@@ -47,7 +45,7 @@ def test_runtime_exposes_stable_docker_endpoint(tmp_path):
     runtime = OpenClawRuntime(data_dir=tmp_path)
     runtime.start(worker=False)
     try:
-        assert runtime._server.server_address[0] == "0.0.0.0"
+        assert runtime._server.server_address[0] == "127.0.0.1"
         port = runtime._server.server_address[1]
         assert runtime.endpoint == f"http://127.0.0.1:{port}"
         assert runtime.docker_endpoint == (

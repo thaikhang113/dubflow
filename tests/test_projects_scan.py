@@ -8,9 +8,8 @@ from __future__ import annotations
 import json
 import os
 
-import pytest
-
 from autodub_gui import projects
+
 
 def test_project_path_must_stay_inside_output_directory(tmp_path):
     output = tmp_path / "output"
@@ -23,8 +22,16 @@ def test_project_path_must_stay_inside_output_directory(tmp_path):
     assert not projects.is_within_directory(str(outside), str(output))
     assert not projects.is_within_directory(str(tmp_path / "output-old"), str(output))
 from autodub_gui.projects import (
-    STATUS_COMPLETED, STATUS_FAILED, STATUS_PENDING, STATUS_PROCESSING,
-    STATUS_QUEUED, Project, filter_projects, load_project, read_report, scan,
+    STATUS_COMPLETED,
+    STATUS_FAILED,
+    STATUS_PENDING,
+    STATUS_PROCESSING,
+    STATUS_QUEUED,
+    Project,
+    filter_projects,
+    load_project,
+    read_report,
+    scan,
     summarize,
 )
 

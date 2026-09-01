@@ -13,7 +13,11 @@ from dataclasses import dataclass
 
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QApplication, QLineEdit, QPlainTextEdit, QTextEdit, QWidget,
+    QApplication,
+    QLineEdit,
+    QPlainTextEdit,
+    QTextEdit,
+    QWidget,
 )
 
 
@@ -92,7 +96,12 @@ def bind(parent: QWidget, keys: str, callback, *,
 def install_global_shortcuts(window) -> list[QShortcut]:
     """Đăng ký các phím tắt dùng chung cho cửa sổ chính."""
     from autodub_gui.app import (
-        ROW_BATCH, ROW_DOWNLOAD, ROW_HELP, ROW_HOME, ROW_NEW, ROW_PROJECTS,
+        ROW_BATCH,
+        ROW_DOWNLOAD,
+        ROW_HELP,
+        ROW_HOME,
+        ROW_NEW,
+        ROW_PROJECTS,
         ROW_SETTINGS,
     )
 

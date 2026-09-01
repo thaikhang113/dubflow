@@ -6,13 +6,13 @@ implement ``/models`` and ``/chat/completions``.
 from __future__ import annotations
 
 import json
-from urllib.parse import urlparse
 import time
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
 
-from autodub.text.translate_common import TranslateError, parse_response_segments
+from autodub.text.translate_common import parse_response_segments
 
 
 class OpenAICompatibleError(RuntimeError):

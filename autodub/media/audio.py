@@ -7,9 +7,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 from pydub import AudioSegment
 
-from autodub.resources import FFMPEG_SLOTS
-from autodub.utils import setup_logging, ensure_dir, ffmpeg_timeout_s, seg_wav_path
 from autodub.media.video import probe_duration_s
+from autodub.resources import FFMPEG_SLOTS
+from autodub.utils import ensure_dir, ffmpeg_timeout_s, seg_wav_path, setup_logging
 
 logger = setup_logging("autodub.audio")
 
@@ -476,7 +476,6 @@ def merge_segments(
 
     import numpy as np
 
-    total_ms = int(total_duration * 1000)
     rate = _MIN_MERGE_RATE
 
     # Normalise the background on disk: target rate, gain, padded/cut to the

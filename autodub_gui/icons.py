@@ -262,7 +262,7 @@ def _draw_check(p: QPainter, r: QRectF, c: QColor) -> None:
 
 def _draw_warning(p: QPainter, r: QRectF, c: QColor) -> None:
     """Tam giác cảnh báo."""
-    w, h = r.width(), r.height()
+    h = r.height()
     p.setPen(QPen(c, 1.2))
     p.setBrush(Qt.BrushStyle.NoBrush)
     path = QPainterPath()
@@ -569,7 +569,7 @@ def _draw_pip(p: QPainter, r: QRectF, c: QColor) -> None:
 
 def _draw_scissors(p: QPainter, r: QRectF, c: QColor) -> None:
     """Kéo cắt — tách câu thoại."""
-    w, h = r.width(), r.height()
+    w = r.width()
     _outline(p, c)
     rad = w * 0.13
     p.drawEllipse(QPointF(r.left() + w * 0.20, r.bottom() - rad - 1), rad, rad)

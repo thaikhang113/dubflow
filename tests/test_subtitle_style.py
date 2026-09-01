@@ -9,10 +9,13 @@ from __future__ import annotations
 import pytest
 
 from autodub.media.subtitle import (
-    DEFAULT_STYLE, PRESETS, build_force_style, hex_to_ass_color,
-    normalize_style, preset_style,
+    DEFAULT_STYLE,
+    PRESETS,
+    build_force_style,
+    hex_to_ass_color,
+    normalize_style,
+    preset_style,
 )
-
 
 # ------------------------------------------------------------ chuẩn hóa --- #
 

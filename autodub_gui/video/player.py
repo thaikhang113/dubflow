@@ -12,11 +12,19 @@ from __future__ import annotations
 import bisect
 import os
 
-from PySide6.QtCore import QPointF, QTimer, QUrl, Qt, Signal
+from PySide6.QtCore import QPointF, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import (
-    QGraphicsScene, QGraphicsTextItem, QGraphicsView, QHBoxLayout, QLabel,
-    QSizePolicy, QSlider, QStackedWidget, QVBoxLayout, QWidget,
+    QGraphicsScene,
+    QGraphicsTextItem,
+    QGraphicsView,
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QSlider,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
 from autodub_gui import icons, tokens
@@ -470,7 +478,7 @@ class VideoPlayer(QWidget):
             self._layout_subtitle()
 
     # -- Bố trí khung hình ---------------------------------------------
-    def resizeEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._layout_scene()
 

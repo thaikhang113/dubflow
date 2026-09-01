@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tarfile
 import urllib.request
+
 from setup_support import find_bundled_worker
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")

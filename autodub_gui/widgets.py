@@ -8,14 +8,21 @@ from __future__ import annotations
 import logging
 import time
 
-from PySide6.QtCore import Qt, QSize, QTimer
+from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QPainter, QTextCursor
 from PySide6.QtWidgets import (
-    QFrame, QGridLayout, QHBoxLayout, QLabel, QPlainTextEdit, QProgressBar,
-    QSizePolicy, QVBoxLayout, QWidget,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QPlainTextEdit,
+    QProgressBar,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
 
-from autodub.progress import ProgressEvent, STEPS
+from autodub.progress import STEPS, ProgressEvent
 from autodub_gui import theme, tokens
 
 STEP_LABELS = {
@@ -64,7 +71,7 @@ class StatusDot(QWidget):
         self._filled = state in ("start", "progress", "done", "error")
         self.update()
 
-    def paintEvent(self, event) -> None:  # noqa: N802 — Qt API
+    def paintEvent(self, event) -> None:
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         rect = self.rect().adjusted(3, 3, -3, -3)
@@ -319,7 +326,7 @@ class RunStatsPanel(QFrame):
     def _poll(self) -> None:
         self._vox.clear()
 
-    def hideEvent(self, event) -> None:  # noqa: N802 — Qt API
+    def hideEvent(self, event) -> None:
         self._timer.stop()
         super().hideEvent(event)
 

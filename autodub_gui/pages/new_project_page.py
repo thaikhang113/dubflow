@@ -7,23 +7,32 @@ không phải học thêm cách đọc nào khác.
 from __future__ import annotations
 
 import json
-import logging
 import os
 from dataclasses import fields, replace
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
-    QHBoxLayout, QScrollArea, QStackedWidget, QVBoxLayout, QWidget,
+    QHBoxLayout,
+    QScrollArea,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
 from autodub.media.subtitle import PRESET_CHOICES
 from autodub.pipeline import DubRequest, DubResult
 from autodub_gui import dub_constants as consts
 from autodub_gui import icons, tokens
+from autodub_gui.log_text import Narrator, error_line
 from autodub_gui.pages import BasePage
 from autodub_gui.pages.new_project_steps import (
-    STEP_NAMES, ExportSummaryStep, RecognizeStep, RunStep, TranslateStep,
-    VideoStep, VoiceStep,
+    STEP_NAMES,
+    ExportSummaryStep,
+    RecognizeStep,
+    RunStep,
+    TranslateStep,
+    VideoStep,
+    VoiceStep,
 )
 from autodub_gui.run_state import LEVEL_INFO, REGISTRY, ActiveJob
 from autodub_gui.system_open import open_file, open_folder
@@ -34,7 +43,6 @@ from autodub_gui.ui.modal import ConfirmDialog
 from autodub_gui.ui.stepper import Stepper
 from autodub_gui.ui.style import clear_background
 from autodub_gui.ui.toast import TOASTS
-from autodub_gui.log_text import Narrator, error_line
 from autodub_gui.voice_preview import VoicePreview
 from autodub_gui.widgets import Banner, LogPanel, RunStatsPanel, StepTracker
 from autodub_gui.workers import DubWorker, PrefetchWorker
@@ -944,7 +952,6 @@ class NewProjectPage(BasePage):
             "subtitle_mode": data["subtitle_mode"],
             "subtitle_preset": data["subtitle_preset"],
             "output_dir": data["output_dir"],
-            "auto_clean_intermediates": bool(data["auto_clean_intermediates"]),
         }
         if merged != settings.translate_style_notes:
             changes["translate_style_notes"] = merged
@@ -1183,7 +1190,6 @@ class NewProjectPage(BasePage):
         self.pending_banner.setVisible(True)
 
     def _on_failed(self, message: str) -> None:
-        import logging as _log
         text, level = error_line(message)
         self.log.append_log(text, level)
         REGISTRY.finish_job(False, message[:120])
@@ -1251,7 +1257,7 @@ class NewProjectPage(BasePage):
         if self._result is None:
             return
         files = (self._result.report or {}).get("files") or {}
-        ok, message = open_file(files.get("dubbed_video", ""))
+        ok, _message = open_file(files.get("dubbed_video", ""))
         if not ok:
             self._open_result_folder()
 

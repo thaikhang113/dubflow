@@ -14,17 +14,17 @@ from autodub.pipeline import DubPipeline, DubRequest, DubResult
 from autodub.progress import PipelineCancelled, ProgressEvent, ProgressFn
 
 __all__ = [
-    "ConfigError",
-    "Settings",
     "TARGETS",
-    "TargetLang",
-    "get_target",
+    "ConfigError",
     "DubPipeline",
     "DubRequest",
     "DubResult",
     "PipelineCancelled",
     "ProgressEvent",
     "ProgressFn",
+    "Settings",
+    "TargetLang",
+    "get_target",
 ]
 
 __version__ = "1.0.0"

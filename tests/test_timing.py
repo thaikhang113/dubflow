@@ -4,7 +4,6 @@ Ràng buộc thiết kế số 1: KHÔNG câu nhanh câu chậm — dồn trễ 
 trước, nén atempo chỉ khi bất khả kháng và có trần thấp.
 """
 import math
-import os
 import struct
 import wave
 

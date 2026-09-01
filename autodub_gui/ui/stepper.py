@@ -118,7 +118,7 @@ class Stepper(QWidget):
         index = int(x // slot) if slot else -1
         return index if 0 <= index < len(self._labels) else -1
 
-    def mouseMoveEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def mouseMoveEvent(self, event) -> None:
         index = self._index_at(event.position().x())
         if index != self._hover:
             self._hover = index
@@ -127,12 +127,12 @@ class Stepper(QWidget):
             self.update()
         super().mouseMoveEvent(event)
 
-    def leaveEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def leaveEvent(self, event) -> None:
         self._hover = -1
         self.update()
         super().leaveEvent(event)
 
-    def mousePressEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             index = self._index_at(event.position().x())
             if index >= 0 and self.can_jump_to(index):
@@ -140,7 +140,7 @@ class Stepper(QWidget):
         super().mousePressEvent(event)
 
     # -- Vẽ ------------------------------------------------------------
-    def paintEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def paintEvent(self, event) -> None:
         if not self._labels:
             return
         painter = QPainter(self)

@@ -9,14 +9,24 @@ import os
 
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QScrollArea,
-    QSizePolicy, QVBoxLayout, QWidget,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QScrollArea,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
 
 from autodub_gui import icons, tokens
 from autodub_gui.formatting import format_relative
 from autodub_gui.run_state import (
-    LEVEL_ERROR, LEVEL_SUCCESS, LEVEL_WARNING, REGISTRY,
+    LEVEL_ERROR,
+    LEVEL_SUCCESS,
+    LEVEL_WARNING,
+    REGISTRY,
 )
 from autodub_gui.ui.avatar import InitialAvatar
 from autodub_gui.ui.buttons import GhostButton, IconButton
@@ -204,7 +214,7 @@ class Sidebar(QFrame):
         col.addWidget(self._user_name)
         col.addWidget(caption)
         row.addLayout(col, 1)
-        card.mousePressEvent = (         # noqa: SLF001 — vùng bấm đơn giản
+        card.mousePressEvent = (
             lambda _e: self.account_requested.emit())
         return card
 
@@ -253,7 +263,7 @@ class Sidebar(QFrame):
             widget.blockSignals(False)
 
     # -- Thu gọn khi cửa sổ hẹp ----------------------------------------
-    def resizeEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._sync_footer()
 
@@ -457,7 +467,7 @@ class NotificationPopup(QFrame):
         if activity.work_dir:
             row.setCursor(Qt.CursorShape.PointingHandCursor)
             row.setToolTip("Bấm để mở dự án này trong Trình chỉnh sửa")
-            row.mousePressEvent = (          # noqa: SLF001 — gắn nhanh cho một dòng
+            row.mousePressEvent = (
                 lambda _e, wd=activity.work_dir: self._open(wd))
         return row
 
@@ -522,7 +532,7 @@ class NotificationButton(QWidget):
             else "Hoạt động gần đây")
         self.update()
 
-    def paintEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def paintEvent(self, event) -> None:
         super().paintEvent(event)
         if not self._unread:
             return

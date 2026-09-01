@@ -8,15 +8,21 @@ Hiển thị:
 from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QScrollArea,
-                                QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
+)
 
 from autodub_gui import tokens
 from autodub_gui.pages import BasePage
 from autodub_gui.ui.buttons import GhostButton, PrimaryButton
 from autodub_gui.ui.cards import Card
-from autodub_gui.ui.style import clear_background
 from autodub_gui.ui.empty import EmptyState, LoadingState
+from autodub_gui.ui.style import clear_background
 
 
 class EditorLauncherPage(BasePage):
@@ -244,9 +250,12 @@ class _ProjectRow(QWidget):
         frame.body.addLayout(row)
 
         # Trạng thái màu
-        from autodub_gui.projects import (STATUS_COMPLETED, STATUS_FAILED,
-                                           STATUS_PROCESSING)
         from autodub_gui import tokens as t
+        from autodub_gui.projects import (
+            STATUS_COMPLETED,
+            STATUS_FAILED,
+            STATUS_PROCESSING,
+        )
         color = {
             STATUS_COMPLETED: t.SUCCESS,
             STATUS_FAILED: t.DANGER,
@@ -276,5 +285,5 @@ class _ProjectRow(QWidget):
         btn.clicked.connect(lambda: self.open_requested.emit(self._work_dir))
         row.addWidget(btn)
 
-    def mousePressEvent(self, event) -> None:  # noqa: N802
+    def mousePressEvent(self, event) -> None:
         self.open_requested.emit(self._work_dir)

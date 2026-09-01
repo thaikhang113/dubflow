@@ -5,8 +5,14 @@ import pytest
 
 from autodub.config import Settings
 from autodub.preflight import (
-    CheckResult, blocking_failures, run_preflight, warnings_of,
-    _check_asr, _check_disk, _check_vieneu, _total_ram_gb,
+    CheckResult,
+    _check_asr,
+    _check_disk,
+    _check_vieneu,
+    _total_ram_gb,
+    blocking_failures,
+    run_preflight,
+    warnings_of,
 )
 
 
@@ -82,7 +88,7 @@ def test_total_ram_readable():
 
 
 def test_logs_dir_and_file_logging(tmp_path, monkeypatch):
-    import autodub.utils as utils
+    from autodub import utils
 
     monkeypatch.setattr(utils, "app_root", lambda: str(tmp_path))
     monkeypatch.setattr(utils, "_FILE_HANDLER", None)

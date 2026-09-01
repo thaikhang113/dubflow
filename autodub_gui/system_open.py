@@ -63,7 +63,7 @@ def _launch(target: str) -> tuple[bool, str]:
     """Gọi lệnh mở của từng hệ điều hành."""
     try:
         if os.name == "nt":
-            os.startfile(target)  # noqa: S606 — đường dẫn do chính ứng dụng tạo
+            os.startfile(target)
         elif sys.platform == "darwin":
             subprocess.Popen(["open", target])
         else:

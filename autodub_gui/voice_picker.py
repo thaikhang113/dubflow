@@ -7,10 +7,17 @@ thị với thư viện giọng trong Cài đặt, nên chọn giọng ở đâu
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea,
-    QSizePolicy, QVBoxLayout, QWidget,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
 
 from autodub_gui import icons, tokens
@@ -82,15 +89,15 @@ class _VoiceRow(QFrame):
             f"QFrame {{ background: {color}; border: none; "
             f"border-radius: {tokens.RADIUS_MD}px; }}")
 
-    def enterEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def enterEvent(self, event) -> None:
         self._paint(self._hover)
         super().enterEvent(event)
 
-    def leaveEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def leaveEvent(self, event) -> None:
         self._paint(self._base)
         super().leaveEvent(event)
 
-    def mousePressEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def mousePressEvent(self, event) -> None:
         self.picked.emit(self._name)
 
 

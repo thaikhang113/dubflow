@@ -9,7 +9,12 @@ import os
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QFileDialog, QHBoxLayout, QLabel, QVBoxLayout, QWidget,
+    QCheckBox,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QVBoxLayout,
+    QWidget,
 )
 
 from autodub_gui import dub_constants as consts
@@ -17,7 +22,10 @@ from autodub_gui import tokens
 from autodub_gui.formatting import format_size
 from autodub_gui.ui.buttons import GhostButton, SegmentedControl
 from autodub_gui.ui.inputs import (
-    LabeledCombo, LabeledLineEdit, LabeledSlider, LabeledWidget,
+    LabeledCombo,
+    LabeledLineEdit,
+    LabeledSlider,
+    LabeledWidget,
 )
 from autodub_gui.ui.labels import ElidedLabel
 from autodub_gui.ui.progress import ThinProgressBar
@@ -642,7 +650,6 @@ class VoiceStep(_StepPanel):
                          "Cài đặt. Chọn thêm cách hiện phụ đề — sau khi chạy "
                          "xong vẫn sửa được trong Trình chỉnh sửa.",
                          parent)
-        from autodub.media.subtitle import PRESET_CHOICES
         from autodub_gui.ui.collapsible import CollapsibleSection
         from autodub_gui.voice_picker import VoicePicker
 
@@ -809,7 +816,7 @@ class VoiceStep(_StepPanel):
         self._default_label.setToolTip(
             "Đổi giọng mặc định trong Cài đặt, thẻ Giọng đọc.")
 
-    def showEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def showEvent(self, event) -> None:
         # Người dùng có thể vừa đổi giọng mặc định trong Cài đặt.
         self._refresh_default_label()
         super().showEvent(event)

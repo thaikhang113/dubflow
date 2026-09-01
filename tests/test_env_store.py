@@ -6,8 +6,6 @@ trị cũ sau khi bấm Lưu. Kiểm thử dưới đây khóa các hành vi the
 """
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from autodub_gui.env_store import (

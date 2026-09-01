@@ -7,7 +7,9 @@ a self-contained set of instructions: the user picks Path A (Claude Code) or
 Path B (web AI), produces the translated JSON, and runs ``--resume`` to
 continue.
 """
+import json
 import os
+from dataclasses import replace
 
 from autodub.languages import TargetLang
 from autodub.utils import setup_logging
@@ -336,7 +338,28 @@ def write_hint(work_dir: str, target: TargetLang, source_lang: str,
         try:
             with open(ctx_cache, encoding="utf-8") as f:
                 analysis = json.load(f)
-            settings = settings
+            if not isinstance(analysis, dict):
+                raise ValueError("video_context.json phải là object")
+            glossary = analysis.get("glossary", "")
+            if isinstance(glossary, list):
+                glossary = "\n".join(
+                    str(item).strip() for item in glossary if str(item).strip()
+                )
+            overrides = {
+                "translate_context": analysis.get("summary", ""),
+                "translate_domain": analysis.get("domain", ""),
+                "translate_pronouns": analysis.get("pronouns", ""),
+                "translate_glossary": glossary,
+                "translate_style_notes": analysis.get("style_notes", ""),
+            }
+            settings = replace(
+                settings,
+                **{
+                    key: str(value or "").strip()
+                    for key, value in overrides.items()
+                    if value
+                },
+            )
         except Exception as e:  # noqa: BLE001 — thiếu ngữ cảnh không được chặn hướng dẫn
             logger.warning(f"Không đọc được ngữ cảnh video cho dịch tay: {e}")
 

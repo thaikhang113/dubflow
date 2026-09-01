@@ -1,8 +1,8 @@
 """Small retry and artifact helpers shared by model installers."""
 from __future__ import annotations
 
-import os
 import json
+import os
 import sys
 import time
 from collections.abc import Callable

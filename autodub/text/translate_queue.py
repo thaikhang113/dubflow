@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import queue
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 from autodub.progress import PipelineCancelled
 
@@ -72,7 +72,7 @@ class TranslationQueue:
                     self._state(task, "running")
                     result = self.handler(
                         task,
-                        lambda status, detail="": self._state(
+                        lambda status, detail="", task=task: self._state(
                             task, status, detail),
                     )
                     if self.cancel_event.is_set():

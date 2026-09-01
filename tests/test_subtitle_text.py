@@ -11,11 +11,14 @@ import os
 
 import pytest
 
-from autodub.editor import (EditorError, save_segment_texts,
-                            save_subtitle_texts)
-from autodub.text.srt import (SUBTITLE_FIELD, generate_srt,
-                              has_subtitle_override, split_for_display,
-                              subtitle_text)
+from autodub.editor import EditorError, save_segment_texts, save_subtitle_texts
+from autodub.text.srt import (
+    SUBTITLE_FIELD,
+    generate_srt,
+    has_subtitle_override,
+    split_for_display,
+    subtitle_text,
+)
 
 
 def seg(**kw) -> dict:

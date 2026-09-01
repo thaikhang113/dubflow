@@ -4,8 +4,8 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 CommandRunner = Callable[[list[str]], tuple[int, str]]
 

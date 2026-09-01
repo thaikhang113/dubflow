@@ -3,7 +3,11 @@ from __future__ import annotations
 
 from PySide6.QtCore import QThread
 from PySide6.QtWidgets import (
-    QComboBox, QHBoxLayout, QLabel, QSizePolicy, QWidget,
+    QComboBox,
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QWidget,
 )
 
 from autodub.providers.openai_compatible import OpenAICompatibleProvider
@@ -105,7 +109,7 @@ class ProviderChecks(CollapsibleSection):
         listed = model in models
         return (f"API key và model “{model}” hoạt động"
                 + ("" if listed else
-                   f" (model không nằm trong /models nhưng đã chạy thử được)."),
+                   " (model không nằm trong /models nhưng đã chạy thử được)."),
                 models)
 
     def _run(self, key: str, button: GhostButton, busy_text: str, task) -> None:
@@ -141,7 +145,7 @@ class ProviderChecks(CollapsibleSection):
                 self.model_combo.clear()
                 self.model_combo.addItems(model_choices(models, current))
                 selected = self.model_combo.findText(current)
-                self.model_combo.setCurrentIndex(selected if selected >= 0 else 0)
+                self.model_combo.setCurrentIndex(max(selected, 0))
                 self.model_combo.blockSignals(False)
                 polish_combo(self.model_combo)
                 self._select_model(self.model_combo.currentText())

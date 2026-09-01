@@ -6,7 +6,7 @@ import json
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 from urllib.parse import urlencode
 
 try:
@@ -15,12 +15,21 @@ except ImportError:
     requests = None
 
 from autodub.speech.tts.capcut_api.config import BASE_URL, catalog_file
-from autodub.speech.tts.capcut_api.exceptions import CapCutAPIError, CapCutError, CapCutTaskError
-from autodub.speech.tts.capcut_api.models import DeviceConfig, SubtitleResult, UploadResult, VoiceInfo
+from autodub.speech.tts.capcut_api.exceptions import (
+    CapCutAPIError,
+    CapCutError,
+    CapCutTaskError,
+)
+from autodub.speech.tts.capcut_api.models import (
+    DeviceConfig,
+    SubtitleResult,
+    UploadResult,
+    VoiceInfo,
+)
 from autodub.speech.tts.capcut_api.signer import (
     base_headers,
-    compact_json,
     common_query,
+    compact_json,
     escape_xml,
     make_sign_header,
     make_tts_payload_sign,
@@ -28,7 +37,7 @@ from autodub.speech.tts.capcut_api.signer import (
 from autodub.speech.tts.capcut_api.uploader import VODUploader
 
 
-def _checked_json_response(resp: Any, label: str) -> Dict[str, Any]:
+def _checked_json_response(resp: Any, label: str) -> dict[str, Any]:
     try:
         data = resp.json()
     except Exception as exc:
@@ -52,8 +61,8 @@ class CapCutClient:
 
     def __init__(
         self,
-        device: Optional[Union[DeviceConfig, Dict[str, Any], str, Path]] = None,
-        session: Optional[Any] = None,
+        device: DeviceConfig | dict[str, Any] | str | Path | None = None,
+        session: Any | None = None,
     ):
         """
         Initialize CapCutClient.
@@ -78,10 +87,10 @@ class CapCutClient:
 
     def resolve_voice(
         self,
-        voice: Optional[str] = None,
-        resource_id: Optional[str] = None,
-        catalog_path: Optional[Union[str, Path]] = None,
-    ) -> Tuple[str, str]:
+        voice: str | None = None,
+        resource_id: str | None = None,
+        catalog_path: str | Path | None = None,
+    ) -> tuple[str, str]:
         """
         Resolve voice_type and resource_id from Voice.json catalog or explicit inputs.
 
@@ -120,11 +129,11 @@ class CapCutClient:
 
     def build_tts_new_request(
         self,
-        texts: Union[str, List[str]],
-        voice: Optional[str] = "BV074_streaming",
-        resource_id: Optional[str] = None,
+        texts: str | list[str],
+        voice: str | None = "BV074_streaming",
+        resource_id: str | None = None,
         rate: str = "1.0",
-    ) -> Tuple[str, Dict[str, str], str]:
+    ) -> tuple[str, dict[str, str], str]:
         """
         Build URL, headers, and body string for creating a new TTS task.
         Automatically resolves resource_id for voice character if omitted.
@@ -208,7 +217,7 @@ class CapCutClient:
         language: str = "zh-CN",
         translation_language: str = "vi-VN",
         use_translation: bool = False,
-    ) -> Tuple[str, Dict[str, str], str]:
+    ) -> tuple[str, dict[str, str], str]:
         """
         Build URL, headers, and body string for creating a new STT task.
         """
@@ -271,7 +280,7 @@ class CapCutClient:
         token: str,
         mode: str = "tts",
         bind_id: str = "",
-    ) -> Tuple[str, Dict[str, str], str]:
+    ) -> tuple[str, dict[str, str], str]:
         """
         Build URL, headers, and body string for querying a task.
         :param mode: "tts" or "stt"
@@ -313,11 +322,11 @@ class CapCutClient:
 
     def create_tts_task(
         self,
-        texts: Union[str, List[str]],
-        voice: Optional[str] = "BV074_streaming",
-        resource_id: Optional[str] = None,
+        texts: str | list[str],
+        voice: str | None = "BV074_streaming",
+        resource_id: str | None = None,
         rate: str = "1.0",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Submit a new Text-to-Speech task to CapCut API.
         """
@@ -329,7 +338,7 @@ class CapCutClient:
 
     def query_tts_task(
         self, task_id: str, token: str, bind_id: str = ""
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Query TTS task status by task_id and token.
         """
@@ -343,14 +352,14 @@ class CapCutClient:
 
     def generate_speech(
         self,
-        texts: Union[str, List[str]],
-        voice: Optional[str] = "BV074_streaming",
-        resource_id: Optional[str] = None,
+        texts: str | list[str],
+        voice: str | None = "BV074_streaming",
+        resource_id: str | None = None,
         rate: str = "1.0",
         wait: bool = True,
         poll_interval: float = 1.0,
         timeout: float = 60.0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Convenience method: Submits TTS task and polls until completed.
         """
@@ -388,7 +397,7 @@ class CapCutClient:
 
         raise CapCutTaskError(f"TTS Task timed out after {timeout} seconds")
 
-    def upload_audio(self, file_path: Union[str, Path]) -> UploadResult:
+    def upload_audio(self, file_path: str | Path) -> UploadResult:
         """
         Upload audio or video file to VOD space.
         """
@@ -403,7 +412,7 @@ class CapCutClient:
         language: str = "zh-CN",
         translation_language: str = "vi-VN",
         use_translation: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Submit Speech-to-Text task using pre-uploaded media vid and md5.
         """
@@ -417,7 +426,7 @@ class CapCutClient:
 
     def query_stt_task(
         self, task_id: str, token: str, bind_id: str = ""
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Query STT task status by task_id and token.
         """
@@ -431,14 +440,14 @@ class CapCutClient:
 
     def transcribe_file(
         self,
-        file_path: Union[str, Path],
+        file_path: str | Path,
         language: str = "zh-CN",
         translation_language: str = "vi-VN",
         use_translation: bool = False,
         wait: bool = True,
         poll_interval: float = 2.0,
         timeout: float = 120.0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Upload media file, create STT task, and optionally poll for completion.
         """
@@ -478,7 +487,7 @@ class CapCutClient:
 
         raise CapCutTaskError(f"STT Task timed out after {timeout} seconds")
 
-    def extract_subtitles(self, query_response: Dict[str, Any]) -> SubtitleResult:
+    def extract_subtitles(self, query_response: dict[str, Any]) -> SubtitleResult:
         """
         Extract and parse subtitles from an STT query response payload.
         """
@@ -496,8 +505,8 @@ class CapCutClient:
             raise CapCutError(f"Failed to parse subtitle payload: {exc}") from exc
 
     def list_voices(
-        self, lang: Optional[str] = None, catalog_path: Optional[Union[str, Path]] = None
-    ) -> List[VoiceInfo]:
+        self, lang: str | None = None, catalog_path: str | Path | None = None
+    ) -> list[VoiceInfo]:
         """
         List available CapCut TTS voices from catalog file.
         """

@@ -1,5 +1,6 @@
 from autodub.text import translate_common
 
+
 def test_translation_checkpoint_writes_atomically(tmp_path, monkeypatch):
     calls = []
 

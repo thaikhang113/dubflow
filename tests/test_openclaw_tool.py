@@ -157,6 +157,47 @@ def test_retry_failed_replaces_failed_job_in_batch(tmp_path):
     assert manifest["job_ids"] == retried["job_ids"]
 
 
+def test_retry_failed_rolls_back_partial_replacements(monkeypatch, tmp_path):
+    import autodub.openclaw_tool as tool_module
+
+    submitted = handle(
+        {
+            "action": "submit",
+            "links": ["https://example.com/a", "https://example.com/b"],
+            "options": {},
+        },
+        queue_root=str(tmp_path),
+        settings=Settings(),
+    )
+    for job_id in submitted["job_ids"]:
+        status_path = tmp_path / "status" / f"{job_id}.json"
+        status = json.loads(status_path.read_text())
+        status["status"] = "failed"
+        status_path.write_text(json.dumps(status), encoding="utf-8")
+
+    original_submit = tool_module.submit_job
+    calls = 0
+
+    def fail_second_submit(root, payload):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("retry queue failure")
+        return original_submit(root, payload)
+
+    monkeypatch.setattr(tool_module, "submit_job", fail_second_submit)
+    with pytest.raises(OSError, match="retry queue failure"):
+        handle(
+            {"action": "retry_failed", "batch_id": submitted["batch_id"]},
+            queue_root=str(tmp_path),
+            settings=Settings(),
+        )
+
+    assert not list((tmp_path / "inbox").glob("*-retry-*.json"))
+    retry_statuses = list((tmp_path / "status").glob("*-retry-*.json"))
+    assert len(retry_statuses) == 1
+    assert json.loads(retry_statuses[0].read_text())["status"] == "cancelled"
+
 def test_cli_emits_utf8_json_on_windows(tmp_path):
     result = subprocess.run(
         [
@@ -202,3 +243,34 @@ def test_status_keeps_translation_pending_distinct_from_failed(tmp_path):
 def test_mixed_completed_and_cancelled_batch_is_terminal():
     jobs = [{"status": "completed"}, {"status": "cancelled"}]
     assert _aggregate_status(jobs) == "cancelled"
+
+def test_submit_rolls_back_jobs_when_manifest_write_fails(monkeypatch, tmp_path):
+    import autodub.openclaw_tool as tool_module
+
+    original_replace = tool_module.os.replace
+
+    def fail_manifest_replace(source, destination):
+        if destination.parent.name == "batches":
+            raise OSError("manifest disk failure")
+        return original_replace(source, destination)
+
+    monkeypatch.setattr(tool_module.os, "replace", fail_manifest_replace)
+
+    with pytest.raises(OSError, match="manifest disk failure"):
+        handle(
+            {
+                "action": "submit",
+                "links": ["https://example.com/a", "https://example.com/b"],
+                "options": {},
+            },
+            queue_root=str(tmp_path),
+            settings=Settings(),
+        )
+
+    assert not list((tmp_path / "inbox").glob("*.json"))
+    statuses = list((tmp_path / "status").glob("*.json"))
+    assert len(statuses) == 2
+    assert all(
+        json.loads(path.read_text(encoding="utf-8"))["status"] == "cancelled"
+        for path in statuses
+    )

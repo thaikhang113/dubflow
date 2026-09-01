@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import subprocess
 
-import pytest
-
 from autodub.media.vsr import (
     build_vsr_command,
     normalize_vsr_regions,
@@ -61,6 +59,7 @@ def test_vsr_failure_returns_fallback_result(tmp_path):
 
 def test_hardware_plan_can_disable_vsr(monkeypatch, tmp_path):
     from types import SimpleNamespace
+
     from autodub.media.vsr import remove_subtitles
 
     plan = tmp_path / "backend-plan.json"

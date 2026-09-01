@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.0.19 - 2026-09-01
+
+### Fixed
+
+- CapCut protocol MD5 checks are explicitly marked non-security hashes.
+
+## 3.0.18 - 2026-09-01
+
+### Fixed
+
+- Manual translation hints now include saved video context.
+- Remote worker cancel watchers stop after each job.
+- OpenClaw binds to loopback by default and rolls back incomplete batches.
+- Release workflows validate versions without shell interpolation and pin
+  third-party actions.
+- DeepSeek-OCR and VSR setup sources use immutable revisions and safer
+  extraction.
+
 ## 3.0.17 - 2026-08-28
 
 ### Fixed

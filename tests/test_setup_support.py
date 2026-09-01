@@ -1,5 +1,5 @@
-from scripts.setup_support import is_nonempty_file, retry_call, smoke_request
 from autodub_gui.workers_setup import format_setup_failure, setup_environment
+from scripts.setup_support import is_nonempty_file, retry_call, smoke_request
 
 
 def test_retry_call_retries_transient_failure():

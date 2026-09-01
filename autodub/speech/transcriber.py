@@ -9,7 +9,11 @@ from autodub.config import Settings
 from autodub.languages import WHISPER_LANG_MAP
 from autodub.resources import GPU_LOCK
 from autodub.utils import (
-    asr_timeout_s, bundled_file, gpu_venv_dir, save_json_atomic, setup_logging,
+    asr_timeout_s,
+    bundled_file,
+    gpu_venv_dir,
+    save_json_atomic,
+    setup_logging,
 )
 
 logger = setup_logging("autodub.transcriber")
@@ -205,8 +209,7 @@ def transcribe(audio_path: str, language: str, settings: Settings,
                            "Trung (Paraformer).bat') — dùng Whisper")
         else:
             try:
-                from autodub.speech.paraformer_transcriber import (
-                    transcribe_paraformer)
+                from autodub.speech.paraformer_transcriber import transcribe_paraformer
                 segments = transcribe_paraformer(audio_path, settings)
             except Exception as e:
                 logger.warning(f"Paraformer lỗi ({e}) — chuyển sang Whisper")

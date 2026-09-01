@@ -5,10 +5,16 @@ import shutil
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QScrollArea, QStackedWidget, QVBoxLayout, QWidget,
+    QHBoxLayout,
+    QLabel,
+    QScrollArea,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
-from autodub_gui import icons, projects as projects_mod, tokens
+from autodub_gui import icons, tokens
+from autodub_gui import projects as projects_mod
 from autodub_gui.pages import BasePage
 from autodub_gui.run_state import REGISTRY
 from autodub_gui.system_open import open_file, open_folder
@@ -18,8 +24,8 @@ from autodub_gui.ui.grid import ProjectGrid
 from autodub_gui.ui.inputs import LabeledCombo, SearchBox
 from autodub_gui.ui.modal import ConfirmDialog
 from autodub_gui.ui.pagination import Pagination
-from autodub_gui.ui.toast import TOASTS
 from autodub_gui.ui.style import clear_background
+from autodub_gui.ui.toast import TOASTS
 
 PAGE_SIZE = 12
 _PAGE_MARGIN = 28

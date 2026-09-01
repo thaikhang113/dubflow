@@ -4,7 +4,7 @@ VOD Media Uploader for CapCut STT workflow.
 
 import time
 from pathlib import Path
-from typing import Any, Dict, Tuple, Union
+from typing import Any
 from urllib.parse import urlencode
 
 try:
@@ -17,9 +17,9 @@ from autodub.speech.tts.capcut_api.exceptions import CapCutAPIError, CapCutUploa
 from autodub.speech.tts.capcut_api.models import DeviceConfig, UploadResult
 from autodub.speech.tts.capcut_api.signer import (
     aws4_authorization,
-    compact_json,
-    common_query,
     base_headers,
+    common_query,
+    compact_json,
     crc32_hex,
     file_md5,
     make_sign_header,
@@ -27,7 +27,7 @@ from autodub.speech.tts.capcut_api.signer import (
 )
 
 
-def _checked_json_response(resp: Any, label: str) -> Dict[str, Any]:
+def _checked_json_response(resp: Any, label: str) -> dict[str, Any]:
     try:
         data = resp.json()
     except Exception as exc:
@@ -50,8 +50,8 @@ class VODUploader:
         self.session = session or (requests.Session() if requests else None)
 
     def _vod_signed_headers(
-        self, method: str, url: str, body: bytes, creds: Dict[str, Any]
-    ) -> Dict[str, str]:
+        self, method: str, url: str, body: bytes, creds: dict[str, Any]
+    ) -> dict[str, str]:
         amz_date, http_date = utc_now_for_vod()
         device_dict = self.device.to_dict()
         return {
@@ -78,7 +78,7 @@ class VODUploader:
             "pf": device_dict["pf"],
         }
 
-    def _upload_binary_headers(self, auth: str, crc32: str) -> Dict[str, str]:
+    def _upload_binary_headers(self, auth: str, crc32: str) -> dict[str, str]:
         device_dict = self.device.to_dict()
         headers = {
             "Authorization": auth,
@@ -96,7 +96,7 @@ class VODUploader:
             headers["X-Upload-Content-CRC32"] = crc32
         return headers
 
-    def _upload_sign_request(self) -> Tuple[str, Dict[str, str], str]:
+    def _upload_sign_request(self) -> tuple[str, dict[str, str], str]:
         device_dict = self.device.to_dict()
         body = {"biz": "cc_pc_text_recognize", "key_version": "v5"}
         body_text = compact_json(body)
@@ -111,7 +111,7 @@ class VODUploader:
             )
         return url, headers, body_text
 
-    def upload_file(self, file_path: Union[str, Path]) -> UploadResult:
+    def upload_file(self, file_path: str | Path) -> UploadResult:
         """
         Upload audio or video file to CapCut VOD space.
 

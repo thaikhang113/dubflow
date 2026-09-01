@@ -9,13 +9,18 @@ from dataclasses import dataclass, field
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QAbstractItemView, QHBoxLayout, QHeaderView, QStackedWidget,
-    QTableWidget, QTableWidgetItem, QWidget,
+    QAbstractItemView,
+    QHBoxLayout,
+    QHeaderView,
+    QStackedWidget,
+    QTableWidget,
+    QTableWidgetItem,
+    QWidget,
 )
 
 from autodub_gui import tokens
-from autodub_gui.ui.style import clear_background
 from autodub_gui.ui.empty import EmptyState, ErrorState, LoadingState
+from autodub_gui.ui.style import clear_background
 
 _ROW_H = 56
 

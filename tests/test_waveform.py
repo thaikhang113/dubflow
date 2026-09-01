@@ -7,7 +7,6 @@ import os
 import wave
 
 import numpy as np
-import pytest
 
 from autodub_gui import waveform
 from autodub_gui.waveform import CACHE_NAME, DEFAULT_BUCKETS, peaks

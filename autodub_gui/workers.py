@@ -7,21 +7,19 @@ records into the GUI log panel.
 """
 from __future__ import annotations
 
-import logging
 import json
+import logging
 import os
 import re
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from PySide6.QtCore import QObject, QRunnable, QThread, Signal
 
+from autodub.cancel import cancel_processes, clear_cancel_request, run_registered
 from autodub.config import Settings
 from autodub.pipeline import DubPipeline, DubRequest, DubResult
 from autodub.progress import PipelineCancelled
-from autodub.cancel import cancel_processes, clear_cancel_request, run_registered
-
 
 # --- Lọc log cho người dùng --------------------------------------------------
 # GuiLogHandler chỉ chuyển những gì người dùng cần thấy lên khung Nhật ký.
@@ -39,8 +37,9 @@ class GuiLogHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            from autodub_gui.log_text import notice_for
             import time as _time
+
+            from autodub_gui.log_text import notice_for
             result = notice_for(record.getMessage(), record.levelno)
             if result is None:
                 return
@@ -659,8 +658,8 @@ class DownloadWorker(QThread):
         self._cancel_event.set()
 
     def run(self) -> None:
-        from autodub.media.downloader import download_one
         from autodub.media.douyin import is_douyin_url
+        from autodub.media.downloader import download_one
         from autodub.utils import ensure_dir, save_json_atomic
 
         handler = attach_gui_logging(self.log)
@@ -720,7 +719,7 @@ class DownloadWorker(QThread):
                             transient = bool(re.search(
                                 r"\b(?:408|425|429|500|502|503|504|522|524)\b|"
                                 r"timed?\s*out|connection\s+(?:reset|aborted|error)|"
-                                r"temporar(?:y|ily)", message, re.I))
+                                r"temporar(?:y|ily)", message, re.IGNORECASE))
                             if not transient or attempt == 3:
                                 return i, url, None, message[:200]
                 finally:

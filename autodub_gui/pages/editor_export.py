@@ -5,11 +5,11 @@ lớp trộn: nó chỉ chứa hành vi, còn mọi widget đều do trang chín
 """
 from __future__ import annotations
 
-from dataclasses import replace
 import json
+from dataclasses import replace
 
 from autodub_gui.dub_constants import friendly_error
-from autodub_gui.log_text import Narrator, error_line
+from autodub_gui.log_text import error_line
 from autodub_gui.run_state import REGISTRY, ActiveJob
 from autodub_gui.system_open import open_file
 from autodub_gui.ui.modal import ConfirmDialog
@@ -301,7 +301,6 @@ class VoiceAndExportMixin:
             self._ocr_refresh_pending = (
                 settings, bool(enabled), float(y_min), source_logo_auto)
             return
-        from dataclasses import replace
         from autodub_gui.workers import OCRRefreshWorker
 
         ocr_settings = replace(
@@ -601,7 +600,6 @@ class VoiceAndExportMixin:
     def _run_export_subs_worker(self, output_path: str,
                                 subs_format: str) -> None:
         from autodub.workdir import data_path
-
         from autodub_gui.workers import ExportSubsFileWorker
 
         if self._busy_warn():
@@ -628,7 +626,7 @@ class VoiceAndExportMixin:
     def _on_export_subs_file_done(self, path: str) -> None:
         self.export_panel.set_status(f"Đã xuất: {path}")
         TOASTS.success(
-            f"Đã lưu phụ đề.", action_label="Mở tệp",
+            "Đã lưu phụ đề.", action_label="Mở tệp",
             on_action=lambda: open_file(path))
 
     def _export_audio_mp3(self) -> None:

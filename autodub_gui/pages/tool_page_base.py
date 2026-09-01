@@ -12,13 +12,23 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QColorDialog, QDoubleSpinBox, QHBoxLayout, QLabel, QScrollArea,
-    QVBoxLayout, QWidget,
+    QCheckBox,
+    QColorDialog,
+    QDoubleSpinBox,
+    QHBoxLayout,
+    QLabel,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
 )
 
 from autodub_gui import tokens
 from autodub_gui.env_store import (
-    bool_to_env, env_bool, env_to_multiline, multiline_to_env, read_env,
+    bool_to_env,
+    env_bool,
+    env_to_multiline,
+    multiline_to_env,
+    read_env,
     write_env,
 )
 from autodub_gui.pages import BasePage
@@ -26,7 +36,10 @@ from autodub_gui.pages import settings_fields as spec
 from autodub_gui.ui.buttons import GhostButton, PrimaryButton
 from autodub_gui.ui.collapsible import CollapsibleSection
 from autodub_gui.ui.inputs import (
-    LabeledCombo, LabeledLineEdit, LabeledSlider, LabeledWidget,
+    LabeledCombo,
+    LabeledLineEdit,
+    LabeledSlider,
+    LabeledWidget,
 )
 from autodub_gui.ui.modal import ConfirmDialog
 from autodub_gui.ui.style import clear_background

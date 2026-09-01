@@ -6,17 +6,32 @@ import webbrowser
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QApplication, QHBoxLayout, QLabel, QPlainTextEdit, QScrollArea,
-    QSizePolicy, QVBoxLayout, QWidget,
+    QApplication,
+    QHBoxLayout,
+    QLabel,
+    QPlainTextEdit,
+    QScrollArea,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
 
+from autodub.media.bilibili import has_login_cookies, save_netscape_cookies
+from autodub.media.douyin_cookies import (
+    save_douyin_cookies,
+    validate_douyin_cookies,
+)
 from autodub_gui import icons, tokens
+from autodub_gui.log_text import error_line
 from autodub_gui.pages import BasePage
 from autodub_gui.run_state import REGISTRY, ActiveJob
 from autodub_gui.system_open import open_file, open_folder, reveal_file
 from autodub_gui.ui.badges import StatusBadge
 from autodub_gui.ui.buttons import (
-    DangerButton, GhostButton, IconButton, PrimaryButton,
+    DangerButton,
+    GhostButton,
+    IconButton,
+    PrimaryButton,
 )
 from autodub_gui.ui.cards import Card
 from autodub_gui.ui.inputs import FilePicker, LabeledCombo
@@ -27,12 +42,7 @@ from autodub_gui.ui.table import Column, DataTable
 from autodub_gui.ui.toast import TOASTS
 from autodub_gui.widgets import LogPanel
 from autodub_gui.workers import DownloadWorker
-from autodub_gui.log_text import error_line
-from autodub.media.bilibili import has_login_cookies, save_netscape_cookies
-from autodub.media.douyin_cookies import (
-    save_douyin_cookies,
-    validate_douyin_cookies,
-)
+
 
 def download_finish_ok(success: int, failed: int) -> bool:
     return int(failed) == 0
@@ -42,9 +52,9 @@ def download_finish_detail(success: int, failed: int) -> str:
     if failed:
         detail += f", {int(failed)} liên kết lỗi"
     return detail
-from autodub_gui.env_store import read_env, write_env
 from autodub.config import Settings
 from autodub.utils import app_root
+from autodub_gui.env_store import read_env, write_env
 
 _PAGE_MARGIN = 28
 _INPUT_MIN_H = 72
@@ -551,8 +561,8 @@ class DownloadPage(BasePage):
             TOASTS.warn(message)
 
     def _open_link(self, url: str) -> None:
-        from PySide6.QtGui import QDesktopServices
         from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
 
         QDesktopServices.openUrl(QUrl(url))
 

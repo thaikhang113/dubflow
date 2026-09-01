@@ -265,7 +265,7 @@ def test_vieneu_workers_env_wins_over_governor(monkeypatch):
 
 
 def test_vieneu_workers_adaptive_by_ram(monkeypatch):
-    import autodub.config as config
+    from autodub import config
     monkeypatch.setattr("autodub.config.load_dotenv", lambda *a, **kw: None)
     monkeypatch.delenv("VIENEU_MAX_WORKERS", raising=False)
     monkeypatch.setattr("autodub.config.os.cpu_count", lambda: 16)
@@ -287,7 +287,7 @@ def test_vieneu_workers_adaptive_by_ram(monkeypatch):
 
 
 def test_vieneu_workers_capped_by_cores(monkeypatch):
-    import autodub.config as config
+    from autodub import config
     monkeypatch.setattr("autodub.config.load_dotenv", lambda *a, **kw: None)
     monkeypatch.delenv("VIENEU_MAX_WORKERS", raising=False)
     monkeypatch.setattr("autodub.sysinfo.available_ram_gb", lambda: 32.0)

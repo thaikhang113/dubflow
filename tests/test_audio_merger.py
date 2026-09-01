@@ -1,6 +1,8 @@
 import os
+
 from pydub import AudioSegment
 from pydub.generators import Sine
+
 from autodub.media.audio import merge_segments
 
 

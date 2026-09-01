@@ -5,8 +5,8 @@
 """
 from __future__ import annotations
 
-import os
 import hashlib
+import os
 import shutil
 import subprocess
 import sys
@@ -14,12 +14,13 @@ import tarfile
 import tempfile
 import urllib.request
 import zipfile
+from pathlib import PurePosixPath
 
 from PySide6.QtCore import QThread, Signal
 
 from autodub.doctor import run_doctor
 from autodub.utils import app_root, data_root
-from autodub_gui.status_text import STATUS_ERROR, STATUS_OK
+from autodub_gui.status_text import STATUS_OK
 
 # --------------------------------------------------------------------------- #
 # Helper
@@ -49,6 +50,83 @@ _PORTABLE_PYTHON_URL = (
 _PORTABLE_PYTHON_SHA256 = (
     "506191be3ee7bd190a8834dcdc1b3bc70aab50608deccc711935aa007239cabd"
 )
+
+def _safe_extract_tar(archive: tarfile.TarFile, destination: str) -> None:
+    """Extract regular files while keeping links and paths inside destination."""
+    root = os.path.realpath(destination)
+    os.makedirs(root, exist_ok=True)
+    entries = []
+
+    def target_for(name: str) -> str:
+        normalized = name.replace("\\", "/")
+        parts = PurePosixPath(normalized).parts
+        if (
+            not normalized
+            or PurePosixPath(normalized).is_absolute()
+            or ".." in parts
+            or (parts and ":" in parts[0])
+        ):
+            raise RuntimeError("Python runtime có đường dẫn archive không an toàn.")
+        target = os.path.realpath(os.path.join(root, *parts))
+        try:
+            inside = os.path.commonpath((root, target)) == root
+        except ValueError:
+            inside = False
+        if not inside:
+            raise RuntimeError("Python runtime có đường dẫn archive không an toàn.")
+        return target
+
+    def link_target(member: tarfile.TarInfo, target: str) -> None:
+        link_name = member.linkname.replace("\\", "/")
+        if PurePosixPath(link_name).is_absolute():
+            raise RuntimeError("Python runtime có liên kết archive không an toàn.")
+        linked = os.path.realpath(
+            os.path.join(os.path.dirname(target), *PurePosixPath(link_name).parts)
+        )
+        try:
+            inside = os.path.commonpath((root, linked)) == root
+        except ValueError:
+            inside = False
+        if not inside:
+            raise RuntimeError("Python runtime có liên kết archive không an toàn.")
+
+    for member in archive.getmembers():
+        target = target_for(member.name)
+        if member.issym() or member.islnk():
+            link_target(member, target)
+        entries.append((member, target))
+
+    for member, target in entries:
+        if member.isdir():
+            os.makedirs(target, exist_ok=True)
+            continue
+        if not member.isfile():
+            if member.issym() or member.islnk():
+                continue
+            raise RuntimeError("Python runtime chứa loại file archive không an toàn.")
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        source = archive.extractfile(member)
+        if source is None:
+            raise RuntimeError("Python runtime chứa file archive không đọc được.")
+        with source, open(target, "wb") as output:
+            shutil.copyfileobj(source, output)
+        os.chmod(target, member.mode & 0o7777)
+
+    for member, target in entries:
+        if os.path.lexists(target):
+            if member.isdir() and os.path.isdir(target):
+                continue
+            raise RuntimeError("Python runtime trùng đường dẫn archive.")
+        if member.issym():
+            os.symlink(member.linkname, target)
+        elif member.islnk():
+            linked = os.path.realpath(
+                os.path.join(
+                    os.path.dirname(target),
+                    *PurePosixPath(member.linkname.replace("\\", "/")).parts,
+                )
+            )
+            os.link(linked, target)
 
 def _portable_python() -> str:
     root = os.path.join(data_root(), _PORTABLE_PYTHON_DIR)
@@ -84,12 +162,7 @@ def _download_portable_python(log, progress) -> str:
             raise RuntimeError("Python runtime tải về không khớp SHA256.")
 
         with tarfile.open(archive_path, "r:gz") as archive:
-            members = archive.getmembers()
-            for member in members:
-                target = os.path.realpath(os.path.join(temp_root, member.name))
-                if not target.startswith(os.path.realpath(temp_root) + os.sep):
-                    raise RuntimeError("Python runtime có đường dẫn archive không an toàn.")
-            archive.extractall(temp_root)
+            _safe_extract_tar(archive, temp_root)
         os.makedirs(os.path.dirname(root), exist_ok=True)
         if os.path.isdir(root):
             shutil.rmtree(root)
@@ -340,10 +413,9 @@ class FFmpegDownloadWorker(QThread):
     finished_ok = Signal()
     failed      = Signal(str)
 
-    def run(self) -> None:  # noqa: C901
+    def run(self) -> None:
         try:
             data_dir = data_root()
-            app_dir = app_root()
             os.environ["DUBFLOW_DATA_DIR"] = data_dir
             bin_dir = os.path.join(data_root(), "bin")
             suffix = ".exe" if sys.platform == "win32" else ""

@@ -3,13 +3,13 @@ import os
 import re
 import threading
 import time
-from typing import Callable
-from urllib.parse import urlparse, parse_qs
+from collections.abc import Callable
+from urllib.parse import parse_qs, urlparse
 
 import yt_dlp
 
-from autodub.utils import setup_logging, ensure_dir, save_json_atomic
 from autodub.progress import PipelineCancelled
+from autodub.utils import ensure_dir, save_json_atomic, setup_logging
 
 logger = setup_logging("autodub.downloader")
 
@@ -119,7 +119,7 @@ def download_video(
     # Douyin's yt-dlp extractor is broken upstream (requires `a_bogus`
     # signature). Route Douyin URLs (including v.douyin.com short links)
     # through the Playwright-based fallback.
-    from autodub.media.douyin import is_douyin_url, download_douyin
+    from autodub.media.douyin import download_douyin, is_douyin_url
     if is_douyin_url(url):
         logger.info(f"Routing to Playwright Douyin extractor: {url}")
         info = download_douyin(
@@ -277,7 +277,7 @@ def download_one(
     Playwright-based extractor because yt-dlp's Douyin path is broken upstream.
     All other sites continue through yt-dlp.
     """
-    from autodub.media.douyin import is_douyin_url, download_douyin
+    from autodub.media.douyin import download_douyin, is_douyin_url
     if is_douyin_url(url):
         logger.info(f"Routing to Playwright Douyin extractor: {url}")
         return download_douyin(

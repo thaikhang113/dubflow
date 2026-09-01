@@ -6,7 +6,6 @@ from autodub.media.douyin_cookies import (
     validate_douyin_cookies,
 )
 
-
 COOKIE_TEXT = (
     "# Netscape HTTP Cookie File\n"
     ".douyin.com\tTRUE\t/\tFALSE\t0\tsessionid\tsecret\n"

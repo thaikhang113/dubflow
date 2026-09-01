@@ -8,14 +8,25 @@ from __future__ import annotations
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QHBoxLayout, QLabel, QListWidget,
-    QListWidgetItem, QPlainTextEdit, QScrollArea, QVBoxLayout, QWidget,
+    QAbstractItemView,
+    QCheckBox,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QPlainTextEdit,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
 )
 
 from autodub_gui import dub_constants as consts
 from autodub_gui import icons, tokens
 from autodub_gui.formatting import (
-    format_duration, format_hours, format_size, format_timecode,
+    format_duration,
+    format_hours,
+    format_size,
+    format_timecode,
 )
 from autodub_gui.ui.buttons import GhostButton, IconButton, PrimaryButton
 from autodub_gui.ui.collapsible import CollapsibleSection
@@ -63,7 +74,7 @@ class _GrowingTextEdit(QPlainTextEdit):
             self.setMaximumHeight(height)
             self.height_changed.emit()
 
-    def resizeEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         # Đổi bề rộng làm chữ xuống dòng khác đi — đo lại chiều cao.
         self._fit()
@@ -160,7 +171,7 @@ class SegmentRow(QWidget):
             lambda: self.height_changed.emit(self._id))
 
     @staticmethod
-    def _text_box(text: str, color: str) -> "_GrowingTextEdit":
+    def _text_box(text: str, color: str) -> _GrowingTextEdit:
         box = _GrowingTextEdit(text)
         box.setStyleSheet(
             f"QPlainTextEdit {{ background: transparent; border: none; "
@@ -199,8 +210,8 @@ class SegmentRow(QWidget):
 
     def _open_voice_popup(self) -> None:
         """Mở popup chọn giọng cho riêng câu này."""
-        from autodub.speech.tts import voices as catalog
         from autodub.config import Settings
+        from autodub.speech.tts import voices as catalog
         from autodub_gui.voice_picker import _VoicePopup
 
         try:
@@ -1067,8 +1078,9 @@ class ExportPanel(CollapsibleSection):
             self._hist_list.addItem(item)
 
     def _open_history_item(self, item: QListWidgetItem) -> None:
-        from autodub_gui.system_open import open_file
         from PySide6.QtCore import Qt
+
+        from autodub_gui.system_open import open_file
 
         path = item.data(Qt.ItemDataRole.UserRole)
         if path:
@@ -1266,9 +1278,7 @@ class QCPanel(QWidget):
             # Màu sắc theo loại
             if cat == "timing":
                 item.setForeground(QColor(tokens.DANGER))
-            elif cat == "empty":
-                item.setForeground(QColor(tokens.WARNING))
-            elif cat == "fast":
+            elif cat == "empty" or cat == "fast":
                 item.setForeground(QColor(tokens.WARNING))
             else:  # dirty
                 item.setForeground(QColor(tokens.TEXT_MUTED))

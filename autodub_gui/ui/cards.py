@@ -4,7 +4,13 @@ from __future__ import annotations
 from PySide6.QtCore import QRect, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import (
-    QFrame, QGridLayout, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
 
 from autodub_gui import icons, tokens
@@ -81,7 +87,7 @@ class ThumbnailLabel(QLabel):
             self._show_play = shown
             self.update()
 
-    def paintEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
@@ -405,22 +411,22 @@ class ProjectCard(QFrame):
         """Gắn ảnh đại diện khi luồng nền tạo xong."""
         self.thumb.set_thumbnail(pixmap)
 
-    def enterEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def enterEvent(self, event) -> None:
         self.actions.setVisible(True)
         self.thumb.set_play_overlay(True)
         super().enterEvent(event)
 
-    def leaveEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def leaveEvent(self, event) -> None:
         self.actions.setVisible(False)
         self.thumb.set_play_overlay(False)
         super().leaveEvent(event)
 
-    def mousePressEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit(self._key)
         super().mousePressEvent(event)
 
-    def sizeHint(self) -> QSize:  # noqa: N802 — theo quy ước của Qt
+    def sizeHint(self) -> QSize:
         width = max(self.width(), tokens.CARD_MIN_W)
         return QSize(width, int(width * CARD_THUMB_RATIO) + _INFO_BLOCK_H)
 
@@ -463,7 +469,7 @@ class QuickStartCard(QFrame):
         root.addWidget(caption)
         root.addStretch()
 
-    def mousePressEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit()
         super().mousePressEvent(event)
@@ -543,7 +549,7 @@ class SystemStatusCard(QFrame):
         """Mở khóa nút khi đã kiểm tra xong."""
         self._btn.set_loading(False)
 
-    def mousePressEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit()
         super().mousePressEvent(event)

@@ -12,7 +12,11 @@ import os
 import pytest
 
 from autodub.editor import (
-    EditorError, add_segment, delete_segment, merge_segments, set_segment_time,
+    EditorError,
+    add_segment,
+    delete_segment,
+    merge_segments,
+    set_segment_time,
     split_segment,
 )
 from autodub.workdir import data_path
@@ -167,7 +171,7 @@ def test_split_segment_divides_text_at_word_boundary(work_dir) -> None:
     right_text = segments[2][_TEXT_FIELD]
     assert left_text and right_text
     assert " ".join((left_text, right_text)).split() == (
-        "Câu thoại số 2 bằng tiếng Việt".split())
+        ["Câu", "thoại", "số", "2", "bằng", "tiếng", "Việt"])
 
 
 def test_split_segment_renumbers_and_moves_audio(work_dir) -> None:

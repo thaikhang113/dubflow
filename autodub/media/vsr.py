@@ -1,11 +1,11 @@
 """Adapter for the optional video-subtitle-remover backend."""
 from __future__ import annotations
 
-import os
 import json
+import os
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 VSR_MODE = "sttn-det"
 

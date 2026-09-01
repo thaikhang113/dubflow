@@ -22,8 +22,8 @@ from autodub.utils import (
     bundled_file,
     demucs_model_dir,
     demucs_venv_python,
-    gpu_venv_dir,
     ffmpeg_timeout_s,
+    gpu_venv_dir,
     setup_logging,
 )
 

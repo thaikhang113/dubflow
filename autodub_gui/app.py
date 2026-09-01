@@ -15,8 +15,13 @@ _frozen.init()  # phải chạy trước mọi thứ khác: PATH, PLAYWRIGHT_BRO
 from PySide6.QtCore import QEvent, QObject, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QFont, QIcon, QKeyEvent
 from PySide6.QtWidgets import (
-    QApplication, QHBoxLayout, QMainWindow, QMessageBox, QStackedWidget,
-    QVBoxLayout, QWidget,
+    QApplication,
+    QHBoxLayout,
+    QMainWindow,
+    QMessageBox,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
 from autodub.config import Settings
@@ -29,7 +34,7 @@ from autodub_gui.ui.toast import TOASTS
 
 APP_NAME = "DubFlow"
 APP_TAGLINE = "Lồng tiếng video bằng AI"
-APP_VERSION = "3.0.17"
+APP_VERSION = "3.0.19"
 
 def _runtime_version() -> str:
     """Read release version written into frozen bundles."""
@@ -600,7 +605,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(activity.text, 6000)
 
     # -- Kích thước cửa sổ ---------------------------------------------
-    def resizeEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         width = self.width()
         for threshold, name, sidebar_w in _BREAKPOINTS:
@@ -626,7 +631,7 @@ class MainWindow(QMainWindow):
         """Đọc lại tệp cấu hình mỗi lần chạy để thay đổi có hiệu lực ngay."""
         return Settings.load(override=True)
 
-    def closeEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def closeEvent(self, event) -> None:
         running = [p for p in self._built_pages()
                    if hasattr(p, "is_running") and p.is_running()]
         if running and not self._force_close:
@@ -662,7 +667,7 @@ class _NavKeyFilter(QObject):
                  Qt.Key.Key_Down, Qt.Key.Key_Home, Qt.Key.Key_End,
                  Qt.Key.Key_PageUp, Qt.Key.Key_PageDown}
 
-    def eventFilter(self, obj, event) -> bool:  # noqa: N802 — theo quy ước của Qt
+    def eventFilter(self, obj, event) -> bool:
         if (event.type() == QEvent.Type.KeyPress
                 and event.key() in self._NAV_KEYS and event.text()):
             clean = QKeyEvent(event.type(), event.key(), event.modifiers())
@@ -778,11 +783,13 @@ def _probe_optional_imports(checks: dict) -> None:
         checks["multimedia_error"] = str(e)
     try:
         from autodub.media.timing import apply_soft_timing  # noqa: F401
+        from autodub.providers.openai_compatible import (
+            OpenAICompatibleProvider,  # noqa: F401
+        )
         from autodub.speech.align import align_segments  # noqa: F401
         from autodub.speech.tts.voices import catalog  # noqa: F401
         from autodub.text.ass_karaoke import build_karaoke_ass  # noqa: F401
         from autodub.text.subtitles import refresh_subtitles  # noqa: F401
-        from autodub.providers.openai_compatible import OpenAICompatibleProvider  # noqa: F401
     except Exception as e:  # noqa: BLE001
         checks["new_modules_importable"] = False
         checks["new_modules_error"] = str(e)
@@ -901,7 +908,8 @@ def main() -> int:
 
     # Tạo .env từ .env.example nếu chưa có — tránh Settings.load() dùng toàn
     # giá trị mặc định mà không ghi lại được gì cho lần sau.
-    from autodub.utils import app_root as _app_root, data_root as _data_root
+    from autodub.utils import app_root as _app_root
+    from autodub.utils import data_root as _data_root
     _env_path = os.path.join(_data_root(), ".env")
     _env_example = os.path.join(_app_root(), ".env.example")
     if not os.path.isfile(_env_path) and os.path.isfile(_env_example):

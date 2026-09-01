@@ -77,6 +77,41 @@ def test_payload_has_no_slot_field():
     s = {**seg(1, 0.0, 2.0), "slot": 2.0}
     assert "slot" not in payload_segment(s)
 
+def test_manual_hint_includes_cached_video_context(tmp_path):
+    import json
+
+    from autodub.config import Settings
+    from autodub.languages import get_target
+    from autodub.text.translate_hint import write_hint
+
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "video_context.json").write_text(
+        json.dumps({
+            "summary": "Review điện thoại Xiaomi.",
+            "domain": "công nghệ",
+            "pronouns": "mình - các bạn",
+            "glossary": ["续航 = thời lượng pin"],
+            "style_notes": "Nói ngắn, thân mật.",
+        }, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    write_hint(
+        str(tmp_path),
+        get_target("vi"),
+        "zh-CN",
+        settings=Settings(),
+    )
+
+    prompt = (tmp_path / "TRANSLATE_PENDING.txt").read_text(encoding="utf-8")
+    for value in (
+        "Review điện thoại Xiaomi.",
+        "công nghệ",
+        "mình - các bạn",
+        "续航 = thời lượng pin",
+        "Nói ngắn, thân mật.",
+    ):
+        assert value in prompt
+
 
 # --------------------------- ensure_terminal_punct --------------------------- #
 

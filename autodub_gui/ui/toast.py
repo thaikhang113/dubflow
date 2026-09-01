@@ -6,14 +6,23 @@ thao tác phá hủy và báo lỗi nghiêm trọng vẫn dùng hộp thoại tr
 from __future__ import annotations
 
 from PySide6.QtCore import (
-    QEasingCurve, QObject, QPoint, QPropertyAnimation, QTimer, Qt,
+    QEasingCurve,
+    QObject,
+    QPoint,
+    QPropertyAnimation,
+    Qt,
+    QTimer,
 )
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
 )
 
-from autodub_gui import icons
-from autodub_gui import tokens
+from autodub_gui import icons, tokens
 from autodub_gui.ui.effects import soft_shadow
 
 _WIDTH = 340

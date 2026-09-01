@@ -1,8 +1,8 @@
 import json
 
 from autodub.media.ocr_regions import (
-    detections_to_regions,
     detections_to_logo_regions,
+    detections_to_regions,
     load_regions,
     merge_regions,
     save_regions,

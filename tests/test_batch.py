@@ -13,7 +13,6 @@ from autodub.config import Settings
 from autodub.pipeline import DubRequest
 from autodub.progress import PipelineCancelled
 
-
 # ------------------------------------------------------------ parse_lines --- #
 
 def test_parse_plain_urls():
@@ -111,7 +110,6 @@ class FakePipeline:
         os.makedirs(output_dir, exist_ok=True)
         video_path = os.path.join(output_dir, "dubbed_video.mp4")
         audio_path = os.path.join(output_dir, "dub_audio.wav")
-        report_path = os.path.join(output_dir, "report.json")
         for path in (video_path, audio_path):
             with open(path, "wb") as handle:
                 handle.write(b"fake artifact")

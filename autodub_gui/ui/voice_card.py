@@ -10,7 +10,12 @@ import zlib
 from PySide6.QtCore import QPointF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
 
 from autodub_gui import tokens
@@ -37,14 +42,14 @@ class WaveformBar(QWidget):
         """Cao độ 0.25..1.0 cho từng cột, băm từ seed nên không đổi."""
         heights: list[float] = []
         for i in range(_BAR_COUNT):
-            h = zlib.crc32(f"{seed}:{i}".encode("utf-8")) % 100
+            h = zlib.crc32(f"{seed}:{i}".encode()) % 100
             heights.append(0.25 + (h / 100) * 0.75)
         return heights
 
-    def sizeHint(self) -> QSize:  # noqa: N802 — theo quy ước của Qt
+    def sizeHint(self) -> QSize:
         return QSize(120, _BAR_HEIGHT)
 
-    def paintEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
@@ -76,7 +81,9 @@ class VoiceCard(QFrame):
 
     def _build(self) -> None:
         from autodub.speech.tts.voices import (
-            COUNTRIES, GENDERS, STYLES,
+            COUNTRIES,
+            GENDERS,
+            STYLES,
         )
         gender_label = dict((k, v) for v, k in GENDERS)
         country_label = dict((k, v) for v, k in COUNTRIES)
@@ -155,7 +162,7 @@ class VoiceCard(QFrame):
     def set_preview_enabled(self, enabled: bool) -> None:
         self.btn_preview.setEnabled(enabled)
 
-    def mouseReleaseEvent(self, event) -> None:  # noqa: N802 — quy ước Qt
+    def mouseReleaseEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             self.selected.emit(self.voice.name)
         super().mouseReleaseEvent(event)

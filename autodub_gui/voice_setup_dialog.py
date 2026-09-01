@@ -8,7 +8,11 @@ from __future__ import annotations
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QDialog, QLabel, QProgressBar, QPushButton, QVBoxLayout,
+    QDialog,
+    QLabel,
+    QProgressBar,
+    QPushButton,
+    QVBoxLayout,
 )
 
 from autodub_gui import tokens

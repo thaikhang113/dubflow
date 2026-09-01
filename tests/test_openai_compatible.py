@@ -1,14 +1,14 @@
-import json
 
 import pytest
 
+from autodub.pipeline import _api_translation_batches
 from autodub.providers.openai_compatible import (
     OpenAICompatibleError,
     OpenAICompatibleProvider,
     build_translation_prompt,
     normalize_endpoint,
 )
-from autodub.pipeline import _api_translation_batches
+
 
 def test_api_translation_batches_cap_large_configured_batch():
     batches = _api_translation_batches(list(range(25)), 40)

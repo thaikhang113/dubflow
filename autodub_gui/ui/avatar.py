@@ -10,7 +10,11 @@ import zlib
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import (
-    QColor, QFont, QLinearGradient, QPainter, QPainterPath,
+    QColor,
+    QFont,
+    QLinearGradient,
+    QPainter,
+    QPainterPath,
 )
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
@@ -50,10 +54,10 @@ class InitialAvatar(QWidget):
     def name(self) -> str:
         return self._name
 
-    def sizeHint(self) -> QSize:  # noqa: N802 — theo quy ước của Qt
+    def sizeHint(self) -> QSize:
         return QSize(self._size, self._size)
 
-    def paintEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(0.5, 0.5, self.width() - 1, self.height() - 1)

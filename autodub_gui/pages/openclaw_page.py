@@ -3,8 +3,14 @@ from __future__ import annotations
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QHBoxLayout, QLabel, QLineEdit, QVBoxLayout,
-    QPlainTextEdit, QWidget,
+    QApplication,
+    QCheckBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPlainTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
 
 from autodub_gui import tokens

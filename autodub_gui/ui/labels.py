@@ -28,7 +28,7 @@ class ElidedLabel(QLabel):
         self.setMinimumWidth(_MIN_ELIDE_W)
         self.setText(text)
 
-    def setText(self, text: str) -> None:  # noqa: N802 — theo quy ước của Qt
+    def setText(self, text: str) -> None:
         self._full = text or ""
         self.setToolTip(self._full)
         self._apply()
@@ -42,7 +42,7 @@ class ElidedLabel(QLabel):
         shown = QFontMetrics(self.font()).elidedText(self._full, self._mode, width)
         QLabel.setText(self, shown)
 
-    def resizeEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._apply()
 

@@ -1,4 +1,3 @@
-import json
 
 from autodub.pipeline_state import (
     grouped_settings,
@@ -7,8 +6,7 @@ from autodub.pipeline_state import (
     record_event,
     save_pipeline_state,
 )
-from autodub.progress import ProgressEvent
-from autodub.progress import ProgressReporter
+from autodub.progress import ProgressEvent, ProgressReporter
 
 
 def test_pipeline_state_round_trips_and_records_events(tmp_path):

@@ -167,7 +167,7 @@ class CapCutSynthesizer:
                     raise RuntimeError("Máy chủ trả file audio rỗng")
                 _note_success()
                 return resp.content
-            except Exception as e:  # noqa: BLE001 — lỗi nào cũng đáng thử lại
+            except Exception as e:
                 last_error = e
                 if _is_shark_block(e):
                     # Bị chặn thì gửi lại y hệt chỉ tổ đào sâu thêm: phải đổi

@@ -1,7 +1,12 @@
-import os
 import logging
+import os
+
 from autodub.utils import (
-    asr_timeout_s, setup_logging, ensure_dir, format_timestamp, seg_wav_path,
+    asr_timeout_s,
+    ensure_dir,
+    format_timestamp,
+    seg_wav_path,
+    setup_logging,
 )
 
 

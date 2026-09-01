@@ -9,7 +9,6 @@ Các bước đều resume-safe — chạy lại script sẽ bỏ qua phần đ�
   4. Ghi danh sách 14 giọng đọc (voices.json) cho GUI
   5. Render thử 1 câu (smoke test) → installed_ok.json
 """
-import json
 import os
 import subprocess
 import sys

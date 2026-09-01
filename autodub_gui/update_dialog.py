@@ -1,9 +1,13 @@
 """In-app release download and installation dialog."""
 from __future__ import annotations
 
-from PySide6.QtCore import QThread, Qt, Signal
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
-    QDialog, QDialogButtonBox, QLabel, QMessageBox, QProgressBar,
+    QDialog,
+    QDialogButtonBox,
+    QLabel,
+    QMessageBox,
+    QProgressBar,
     QVBoxLayout,
 )
 

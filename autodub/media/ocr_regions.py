@@ -6,7 +6,6 @@ engine output into the normalized blur format already consumed by ffmpeg.
 from __future__ import annotations
 
 import json
-import math
 import re
 from pathlib import Path
 

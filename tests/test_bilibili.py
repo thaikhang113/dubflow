@@ -1,5 +1,7 @@
 from autodub.media.bilibili import (
-    canonical_url, has_login_cookies, save_netscape_cookies,
+    canonical_url,
+    has_login_cookies,
+    save_netscape_cookies,
 )
 
 

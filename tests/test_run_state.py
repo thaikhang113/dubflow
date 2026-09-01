@@ -6,8 +6,16 @@ from dataclasses import dataclass
 import pytest
 
 from autodub_gui.run_state import (
-    DEFAULT_FEED_LIMIT, LEVEL_ERROR, LEVEL_INFO, MAX_ACTIVITIES, STEP_LABELS,
-    STEP_WEIGHTS, ActiveJob, RunRegistry, estimate_eta, step_percent,
+    DEFAULT_FEED_LIMIT,
+    LEVEL_ERROR,
+    LEVEL_INFO,
+    MAX_ACTIVITIES,
+    STEP_LABELS,
+    STEP_WEIGHTS,
+    ActiveJob,
+    RunRegistry,
+    estimate_eta,
+    step_percent,
 )
 
 

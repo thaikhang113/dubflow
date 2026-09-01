@@ -187,7 +187,7 @@ def _build_version() -> str:
         return requested
     src = open(os.path.join(PROJECT_ROOT, "autodub_gui", "app.py"),
                encoding="utf-8").read()
-    match = re.search(r'^APP_VERSION\s*=\s*"([^"]+)"', src, re.M)
+    match = re.search(r'^APP_VERSION\s*=\s*"([^"]+)"', src, re.MULTILINE)
     return match.group(1) if match else "0.0.0"
 
 
@@ -421,7 +421,7 @@ def main() -> int:
         import re
         src = open(os.path.join(PROJECT_ROOT, "autodub_gui", "app.py"),
                    encoding="utf-8").read()
-        m = re.search(r'^APP_VERSION\s*=\s*"([^"]+)"', src, re.M)
+        m = re.search(r'^APP_VERSION\s*=\s*"([^"]+)"', src, re.MULTILINE)
         version = args.version or (m.group(1) if m else "0.0")
         zip_path = os.path.join(PROJECT_ROOT, "dist",
                                 f"DubFlow-v{version}-windows-x64.zip")

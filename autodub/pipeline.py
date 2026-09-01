@@ -23,15 +23,13 @@ import json
 import os
 import threading
 import time
-from dataclasses import asdict
-from dataclasses import dataclass, field
-from dataclasses import replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
 
 from autodub.config import Settings
 from autodub.languages import TargetLang, get_target, resolve_source_lang
 from autodub.progress import PipelineCancelled, ProgressFn, ProgressReporter
-from autodub.utils import setup_logging, ensure_dir, seg_wav_path
+from autodub.utils import ensure_dir, seg_wav_path, setup_logging
 from autodub.workdir import data_dir, data_path, youtube_dir
 
 logger = setup_logging("autodub.pipeline")
@@ -329,10 +327,10 @@ class DubPipeline:
     def _log_machine_info(settings: Settings) -> dict:
         """Một dòng cấu hình máy đầu mỗi lượt chạy — để đọc log là biết ngay
         video chậm vì máy yếu hay vì lỗi, không phải hỏi lại người dùng."""
-        from autodub.sysinfo import available_ram_gb, total_ram_gb
         from autodub.gpu import detect_gpu
-        from autodub.media.vocal_separator import gpu_venv_python
         from autodub.media.video import video_encoder_name
+        from autodub.media.vocal_separator import gpu_venv_python
+        from autodub.sysinfo import available_ram_gb, total_ram_gb
         from autodub.worker_plan import build_worker_plan
 
         total = total_ram_gb()
@@ -483,8 +481,8 @@ class DubPipeline:
             else:
                 rep.emit("ocr", "start")
                 try:
-                    from autodub.media.video import probe_dimensions, probe_duration_s
                     from autodub.media.ocr import detect_regions_with_logo
+                    from autodub.media.video import probe_dimensions, probe_duration_s
                     width, height = probe_dimensions(video_path)
                     ocr_regions, detected_logo_regions = detect_regions_with_logo(
                         video_path,
@@ -515,8 +513,8 @@ class DubPipeline:
                 blur_regions.extend(detected_logo_regions)
             else:
                 try:
-                    from autodub.media.video import probe_dimensions, probe_duration_s
                     from autodub.media.ocr import detect_logo_regions
+                    from autodub.media.video import probe_dimensions, probe_duration_s
                     logo_regions = detect_logo_regions(
                         video_path,
                         *probe_dimensions(video_path),
@@ -650,7 +648,7 @@ class DubPipeline:
             logger.info("Đang nghe và ghi lại lời thoại trong video — "
                         "video dài thì bước này hơi lâu...")
             rep.emit("asr", "start")
-            from autodub.speech.transcriber import transcribe, save_transcript
+            from autodub.speech.transcriber import save_transcript, transcribe
             from autodub.text.srt import generate_srt
             segments = transcribe(audio_path, lang_code, settings,
                                   whisper_cache=self._whisper_cache)
@@ -679,7 +677,6 @@ class DubPipeline:
         # trước khi máy chủ tốn một đồng phí AI nào. Khác biệt duy nhất giữa
         # hai luồng là THỜI ĐIỂM chốt: wizard dừng chờ bấm Xuất video, còn
         # batch/legacy chốt ngay sau khi xuất xong (xem cuối hàm).
-        video_duration_s = max(float(s.get("end", 0) or 0) for s in segments)
         effective_voice = req.voice
         clone_report: dict = {}
         clone_enabled = bool(req.clone_voice or settings.vieneu_clone_enabled)
@@ -830,9 +827,11 @@ class DubPipeline:
             rep.check_cancelled()
             logger.info("=" * 60)
             logger.info(f"STEP 5.5: Slowing video ({settings.video_speed}x)")
-            from autodub.media.retime import (apply_video_speed,
-                                              defer_video_speed,
-                                              rescale_blur_regions)
+            from autodub.media.retime import (
+                apply_video_speed,
+                defer_video_speed,
+                rescale_blur_regions,
+            )
             # Video đằng nào cũng mã hóa lại ở bước ghép (phụ đề ghi vào
             # hình / che chữ) → gộp setpts vào lượt đó, đỡ nguyên một lần
             # encode toàn bộ video. Không mã hóa lại thì đi đường rời như cũ.
@@ -1262,7 +1261,7 @@ class DubPipeline:
         lên máy chủ; lượt rà soát soát lại các câu nghi vấn. Cả ba đều có bộ
         nhớ đệm — chạy lại không tốn Vox cho phần đã xong.
         """
-        settings, rep = self.settings, self._reporter
+        settings = self.settings
         if resolve_source_lang(source_lang).casefold() == target.code.casefold():
             return [
                 {**segment, target.text_field: segment.get("text", "")}
@@ -1293,7 +1292,8 @@ class DubPipeline:
         source_lang: str, work_dir: str | None,
     ) -> list[dict]:
         from autodub.text.translate_common import (
-            TranslateCheckpoint, merge_translations,
+            TranslateCheckpoint,
+            merge_translations,
         )
         from autodub.text.translate_hint import effective_cps
         from autodub.text.translate_queue import TranslationQueue, TranslationTask
@@ -1323,7 +1323,6 @@ class DubPipeline:
             if cached is not None:
                 return cached
             report_state("running", f"{len(batch)} câu")
-            payload = [_payload_segment(item, cps) for item in batch]
             from autodub.providers.openai_compatible import (
                 OpenAICompatibleProvider,
             )
@@ -1599,17 +1598,21 @@ class DubPipeline:
             voice = self._resolve_clone_voice(req, segments, work_dir)
             return voice, segments
 
+        import numpy as np
+
+        from autodub.cancel import run_registered
         from autodub.speech.diarization import (
-            assign_voice_names_with_fallback, diarize_segments,
-            load_diarization_cache, save_diarization_cache,
+            assign_voice_names_with_fallback,
+            diarize_segments,
+            load_diarization_cache,
+            save_diarization_cache,
             select_reference_segments,
         )
         from autodub.speech.tts.voice_clone import (
-            enroll_reference_audio_batch, reference_hash,
+            enroll_reference_audio_batch,
+            reference_hash,
         )
         from autodub.utils import bundled_file, ffmpeg_timeout_s
-        from autodub.cancel import run_registered
-        import numpy as np
 
         cache_path = data_path(work_dir, "speaker_profiles.json",
                                create_dir=True)
@@ -1810,7 +1813,8 @@ class DubPipeline:
         """Create/reuse one VieNeu clone from a file or separated source voice."""
         from autodub.media.audio import wav_duration_s
         from autodub.speech.tts.voice_clone import (
-            enroll_reference_audio, prepare_reference_audio,
+            enroll_reference_audio,
+            prepare_reference_audio,
             select_reference_window,
         )
 

@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import json
 import os
-import platform
 import sys
 from dataclasses import dataclass
 
 from autodub.hardware import BackendPlan, detect_hardware, select_backends
-from autodub.utils import data_root as runtime_data_root, ensure_dir
+from autodub.utils import data_root as runtime_data_root
+from autodub.utils import ensure_dir
 
 STATE_VERSION = 1
 STATE_NAME = "bootstrap-state.json"

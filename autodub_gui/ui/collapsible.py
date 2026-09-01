@@ -42,7 +42,7 @@ class CollapsibleSection(QWidget):
             f"font-weight: 600; background: transparent;")
         row.addWidget(self._toggle)
         row.addWidget(self._title, 1)
-        header.mousePressEvent = lambda _e: self.toggle()   # noqa: SLF001
+        header.mousePressEvent = lambda _e: self.toggle()
         root.addWidget(header)
 
         # Phải gắn cha NGAY từ lúc tạo: một widget chưa có cha mà bị cho hiện

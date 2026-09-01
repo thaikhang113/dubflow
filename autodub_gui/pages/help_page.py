@@ -11,11 +11,15 @@ import os
 
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QProgressBar, QScrollArea, QVBoxLayout, QWidget,
+    QHBoxLayout,
+    QLabel,
+    QProgressBar,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
 )
 
 from autodub_gui import tokens
-from autodub_gui.ui.style import clear_background
 from autodub_gui.dub_constants import FRIENDLY_ERRORS, MODEL_SIZES
 from autodub_gui.pages import BasePage
 from autodub_gui.shortcuts import ALL_SHORTCUTS
@@ -23,6 +27,7 @@ from autodub_gui.system_open import open_file, open_folder
 from autodub_gui.ui.buttons import GhostButton
 from autodub_gui.ui.collapsible import CollapsibleSection
 from autodub_gui.ui.labels import ElidedLabel
+from autodub_gui.ui.style import clear_background
 from autodub_gui.ui.toast import TOASTS
 
 _PAGE_MARGIN = 28
@@ -516,7 +521,8 @@ class HelpPage(BasePage):
         if not script:
             return
         from autodub_gui.workers_setup import (
-            FFmpegDownloadWorker, SetupScriptWorker,
+            FFmpegDownloadWorker,
+            SetupScriptWorker,
         )
 
         worker = (

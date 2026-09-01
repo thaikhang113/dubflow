@@ -12,8 +12,14 @@ import os
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QHBoxLayout, QLabel, QScrollArea, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget,
+    QComboBox,
+    QHBoxLayout,
+    QLabel,
+    QScrollArea,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
 
 from autodub.workdir import data_path
@@ -92,7 +98,6 @@ class QualityPage(BasePage):
 
     def _scan_projects(self) -> None:
         """Quét thư mục output để tìm các dự án có quality_report.json."""
-        import os
 
         from autodub.utils import app_root
         from autodub_gui.projects import scan

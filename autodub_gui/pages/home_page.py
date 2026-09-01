@@ -9,13 +9,16 @@ import os
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QGridLayout, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
 )
 
-from autodub_gui import icons
+from autodub_gui import icons, tokens
 from autodub_gui import projects as projects_mod
-from autodub_gui import tokens
-from autodub_gui.ui.style import clear_background
 from autodub_gui.formatting import format_eta
 from autodub_gui.pages import BasePage
 from autodub_gui.run_state import REGISTRY
@@ -26,6 +29,7 @@ from autodub_gui.ui.dropzone import DragDropZone, is_video_file
 from autodub_gui.ui.empty import EmptyState
 from autodub_gui.ui.grid import ProjectGrid
 from autodub_gui.ui.labels import title_label
+from autodub_gui.ui.style import clear_background
 from autodub_gui.ui.toast import TOASTS
 
 RECENT_COUNT = 4

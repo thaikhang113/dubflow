@@ -3,7 +3,7 @@ import os
 import subprocess
 import sys
 import time
-from functools import lru_cache
+from functools import cache, lru_cache
 
 from autodub.utils import ffmpeg_timeout_s, setup_logging
 
@@ -73,7 +73,7 @@ def probe_duration_s(video_path: str) -> float | None:
         return None
 
 
-@lru_cache(maxsize=None)
+@cache
 def _encoder_works(*args: str) -> bool:
     """True nếu ffmpeg mã hóa được thật bằng bộ mã hóa này.
 
@@ -297,8 +297,7 @@ def render_preview_clip(
     # Không phóng to video vốn đã nhỏ hơn 480 điểm; -2 giữ chiều rộng chẵn.
     filters.append(f"scale=-2:'min({height},ih)'")
     if srt_path and os.path.exists(srt_path):
-        from autodub.media.subtitle import (build_force_style,
-                                            escape_subtitles_path)
+        from autodub.media.subtitle import build_force_style, escape_subtitles_path
         from autodub.utils import bundled_font_files, fonts_dir
         subs = f"subtitles='{escape_subtitles_path(srt_path)}'"
         if bundled_font_files():
@@ -381,9 +380,11 @@ def merge_video(
     if srt_path and subtitle_mode != "none" and not os.path.exists(srt_path):
         raise FileNotFoundError(f"Subtitle file not found: {srt_path}")
 
-    from autodub.media.subtitle import (build_filter_complex,
-                                        compact_blur_regions,
-                                        mirror_blur_regions)
+    from autodub.media.subtitle import (
+        build_filter_complex,
+        compact_blur_regions,
+        mirror_blur_regions,
+    )
 
     input_blur_count = len(blur_regions or [])
     render_blur_regions = compact_blur_regions(blur_regions)
@@ -461,7 +462,7 @@ def merge_video(
     if subtitle_mode == "soft":
         # mov_text is the subtitle codec MP4 containers accept.
         subtitle_input = 3 if logo_path else 2
-        cmd += [f"-map", f"{subtitle_input}:0", "-c:s", "mov_text",
+        cmd += ["-map", f"{subtitle_input}:0", "-c:s", "mov_text",
                 "-metadata:s:s:0", f"language={subtitle_lang}"]
 
     temp_output = output_path + ".part"

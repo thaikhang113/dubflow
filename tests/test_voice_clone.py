@@ -1,6 +1,10 @@
 import json
 import wave
 
+from autodub.speech.tts.vieneu_worker import (
+    available_voice_names,
+    load_custom_voices,
+)
 from autodub.speech.tts.voice_clone import (
     clone_voice_name,
     custom_voice_names,
@@ -8,10 +12,6 @@ from autodub.speech.tts.voice_clone import (
     reference_duration_seconds,
     select_reference_window,
     validate_reference_duration,
-)
-from autodub.speech.tts.vieneu_worker import (
-    available_voice_names,
-    load_custom_voices,
 )
 
 

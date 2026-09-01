@@ -21,17 +21,17 @@ import subprocess
 import threading
 import time
 import urllib.parse
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import requests
 
-from autodub.utils import setup_logging, ensure_dir
-from autodub.progress import PipelineCancelled
 from autodub.media.douyin_cookies import (
     load_douyin_cookies,
     playwright_cookies,
 )
+from autodub.progress import PipelineCancelled
+from autodub.utils import ensure_dir, setup_logging
 
 logger = setup_logging("autodub.downloader_douyin")
 

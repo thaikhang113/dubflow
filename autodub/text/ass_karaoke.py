@@ -18,8 +18,6 @@ Toạ độ style dùng canvas PlayResY=288 — cùng hệ với force_style c�
 """
 from __future__ import annotations
 
-import os
-
 from autodub.utils import seg_wav_path, setup_logging
 
 logger = setup_logging("autodub.ass_karaoke")
@@ -190,8 +188,12 @@ def _karaoke_body(chunk: list[tuple[str, float, float]],
 
 def _style_line(style: dict) -> str:
     """Dòng Style ASS, dựng từ đúng dict kiểu mà đường SRT cũng dùng."""
-    from autodub.media.subtitle import (_POSITION_ALIGN, hex_to_ass_color,
-                                        normalize_style, safe_font_name)
+    from autodub.media.subtitle import (
+        _POSITION_ALIGN,
+        hex_to_ass_color,
+        normalize_style,
+        safe_font_name,
+    )
 
     s = normalize_style(style)
     align = _POSITION_ALIGN.get(str(s["position"]), 2)

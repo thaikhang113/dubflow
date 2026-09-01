@@ -1,7 +1,15 @@
 """Toán chia khúc + crossfade của demucs_worker — thuần numpy, không cần torch."""
+import json
+import sys
+from unittest import mock
+
 import numpy as np
 
-from autodub.media.demucs_worker import crossfade_into, plan_chunks
+from autodub.media.demucs_worker import (
+    crossfade_into,
+    main,
+    plan_chunks,
+)
 
 
 def test_short_file_single_chunk():
@@ -55,3 +63,27 @@ def test_crossfade_handles_mismatched_lengths():
     head = np.zeros((2, 3), dtype=np.float32)
     out = crossfade_into(tail, head)   # không được nổ index
     assert out.shape == (2, 3)
+
+
+def test_one_shot_main_passes_torch_to_backend_probe(monkeypatch, capsys):
+    """One-shot mode reports its backend without leaving torch unbound."""
+    from autodub.media import demucs_worker
+
+    torch = mock.Mock()
+    torch.cuda.is_available.return_value = False
+    torch.version.hip = None
+    monkeypatch.setitem(sys.modules, "torch", torch)
+    monkeypatch.setattr(
+        demucs_worker, "separate_file", lambda *_args, **_kwargs: "cpu")
+    monkeypatch.setattr(
+        "sys.argv",
+        ["demucs_worker.py", "--input", "in.wav", "--vocals", "v.wav",
+         "--no-vocals", "nv.wav"],
+    )
+
+    assert main() == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "ok": True,
+        "device": "cpu",
+        "backend": "cpu",
+    }

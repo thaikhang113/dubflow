@@ -2,7 +2,6 @@
 and the word-mapping half of forced alignment (no model needed).
 """
 import math
-import os
 import struct
 import wave
 
@@ -16,7 +15,6 @@ from autodub.text.ass_karaoke import (
     chunk_words,
     estimate_word_times,
 )
-
 
 # ------------------------------------------------------------ estimation --- #
 

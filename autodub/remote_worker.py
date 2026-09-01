@@ -92,23 +92,38 @@ def _job_paths(root: Path, job_id: str) -> list[Path]:
 def submit_job(root: str, payload: dict) -> str:
     job = _validate_job(payload)
     base = _root(root)
-    if any(path.exists() for path in _job_paths(base, job["job_id"])):
+    job_id = job["job_id"]
+    if any(path.exists() for path in _job_paths(base, job_id)):
         raise JobValidationError(f"job already exists: {job['job_id']}")
-    _atomic_json(base / "inbox" / f"{job['job_id']}.json", job)
-    _atomic_json(
-        base / "status" / f"{job['job_id']}.json",
-        {
-            "job_id": job["job_id"],
-            "status": "queued",
-            "percent": 0,
-            "step": "queued",
-            "detail": "",
-            "output": {},
-            "warnings": [],
-            "error": "",
-        },
-    )
-    return job["job_id"]
+    inbox_path = base / "inbox" / f"{job_id}.json"
+    status_path = base / "status" / f"{job_id}.json"
+    try:
+        _atomic_json(inbox_path, job)
+        _atomic_json(
+            status_path,
+            {
+                "job_id": job_id,
+                "status": "queued",
+                "percent": 0,
+                "step": "queued",
+                "detail": "",
+                "output": {},
+                "warnings": [],
+                "error": "",
+            },
+        )
+    except Exception:
+        for path in (inbox_path, status_path):
+            try:
+                path.unlink()
+            except OSError:
+                pass
+            try:
+                path.with_name(path.name + ".part").unlink()
+            except OSError:
+                pass
+        raise
+    return job_id
 
 
 def load_job(root: str, job_id: str) -> dict:
@@ -181,6 +196,8 @@ def run_worker(root: str, settings, stop_event=None, poll_s: float = 1.0) -> Non
             os.replace(inbox_path, running_path)
         except OSError:
             continue
+        cancel_event = None
+        watcher = None
         try:
             payload = _validate_job(json.loads(running_path.read_text(encoding="utf-8")))
             _write_status(base, job_id, status="running", step="pipeline")
@@ -194,7 +211,7 @@ def run_worker(root: str, settings, stop_event=None, poll_s: float = 1.0) -> Non
             )
             watcher.start()
 
-            def on_progress(event):
+            def on_progress(event, job_id=job_id):
                 percent = round(
                     (event.current / event.total) * 100
                     if event.total else 0
@@ -218,6 +235,10 @@ def run_worker(root: str, settings, stop_event=None, poll_s: float = 1.0) -> Non
         except Exception as exc:
             _write_status(base, job_id, status="failed", error=str(exc))
         finally:
+            if cancel_event is not None:
+                cancel_event.set()
+            if watcher is not None:
+                watcher.join(timeout=1.0)
             try:
                 running_path.unlink()
             except OSError:

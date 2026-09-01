@@ -8,10 +8,12 @@ from __future__ import annotations
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
-    QButtonGroup, QHBoxLayout, QPushButton, QSizePolicy, QWidget,
+    QButtonGroup,
+    QHBoxLayout,
+    QPushButton,
+    QSizePolicy,
+    QWidget,
 )
-
-from autodub_gui import tokens
 
 _ICON_BTN_SIZE = 36
 _SPIN_FRAMES = ("Đang xử lý.", "Đang xử lý..", "Đang xử lý...")
@@ -32,7 +34,7 @@ class _BaseButton(QPushButton):
         self._timer_id = 0
         self._frame = 0
 
-    def setText(self, text: str) -> None:  # noqa: N802 — theo quy ước của Qt
+    def setText(self, text: str) -> None:
         if not self._loading:
             self._idle_text = text
         super().setText(text)
@@ -59,7 +61,7 @@ class _BaseButton(QPushButton):
             super().setText(self._idle_text)
             self.setEnabled(True)
 
-    def timerEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def timerEvent(self, event) -> None:
         if event.timerId() != self._timer_id:
             super().timerEvent(event)
             return
@@ -185,7 +187,7 @@ class SegmentedControl(QWidget):
                 self._buttons[i].setChecked(True)
                 return
 
-    def setEnabled(self, enabled: bool) -> None:  # noqa: N802 — quy ước Qt
+    def setEnabled(self, enabled: bool) -> None:
         super().setEnabled(enabled)
         for btn in self._buttons:
             btn.setEnabled(enabled)

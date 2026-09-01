@@ -12,8 +12,15 @@ from dataclasses import replace
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QGridLayout, QHBoxLayout, QInputDialog, QLabel, QMenu,
-    QScrollArea, QVBoxLayout, QWidget,
+    QCheckBox,
+    QGridLayout,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QMenu,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
 )
 
 from autodub.batch import BatchItem, parse_lines, validate_batch_report
@@ -21,13 +28,16 @@ from autodub.pipeline import DubRequest
 from autodub.utils import save_json_atomic
 from autodub_gui import dub_constants as consts
 from autodub_gui import icons, tokens
+from autodub_gui.log_text import Narrator, error_line
 from autodub_gui.pages import BasePage
-from autodub_gui.run_state import REGISTRY, ActiveJob
-from autodub_gui.run_state import step_percent
+from autodub_gui.run_state import REGISTRY, ActiveJob, step_percent
 from autodub_gui.system_open import open_folder
 from autodub_gui.ui.badges import StatusBadge
 from autodub_gui.ui.buttons import (
-    DangerButton, GhostButton, IconButton, PrimaryButton,
+    DangerButton,
+    GhostButton,
+    IconButton,
+    PrimaryButton,
 )
 from autodub_gui.ui.collapsible import CollapsibleSection
 from autodub_gui.ui.dropzone import DragDropZone, is_video_file
@@ -35,12 +45,11 @@ from autodub_gui.ui.inputs import LabeledCombo, LabeledSlider, LabeledWidget
 from autodub_gui.ui.labels import ElidedLabel
 from autodub_gui.ui.modal import ConfirmDialog
 from autodub_gui.ui.progress import ThinProgressBar
+from autodub_gui.ui.style import clear_background
 from autodub_gui.ui.table import Column, DataTable
 from autodub_gui.ui.toast import TOASTS
 from autodub_gui.widgets import LogPanel
 from autodub_gui.workers import BatchWorker
-from autodub_gui.ui.style import clear_background
-from autodub_gui.log_text import Narrator, error_line
 
 _PAGE_MARGIN = 28
 
@@ -805,7 +814,6 @@ class BatchPage(BasePage):
         self._chain_next = batch_finish_ok(summary) and bool(self._pending_adds)
 
     def _on_failed(self, message: str) -> None:
-        import logging as _log
         text, level = error_line(message)
         self.log.append_log(text, level)
         REGISTRY.finish_job(False, message[:120])
@@ -849,11 +857,11 @@ class BatchPage(BasePage):
             TOASTS.warn(message)
 
     # -- Kéo thả -------------------------------------------------------
-    def dragEnterEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def dragEnterEvent(self, event) -> None:
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
 
-    def dropEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def dropEvent(self, event) -> None:
         paths = [u.toLocalFile() for u in event.mimeData().urls()]
         self._add_files(paths)
 

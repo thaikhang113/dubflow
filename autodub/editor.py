@@ -16,7 +16,7 @@ from dataclasses import dataclass, field, replace
 from autodub.config import Settings
 from autodub.languages import TargetLang, get_target
 from autodub.progress import ProgressReporter
-from autodub.utils import save_json_atomic, setup_logging, seg_wav_path
+from autodub.utils import save_json_atomic, seg_wav_path, setup_logging
 from autodub.workdir import data_dir, data_path
 
 logger = setup_logging("autodub.editor")
@@ -197,10 +197,13 @@ def repair_over_budget_translations(
     provider=None,
 ) -> dict:
     """Shorten over-budget translations and return changed segment IDs."""
-    from autodub.text.translate_hint import (
-        annotate_slots, effective_cps, ensure_terminal_punct, payload_segment,
-    )
     from autodub.providers.openai_compatible import OpenAICompatibleProvider
+    from autodub.text.translate_hint import (
+        annotate_slots,
+        effective_cps,
+        ensure_terminal_punct,
+        payload_segment,
+    )
 
     target = get_target(target_key)
     path = _transcript_path(work_dir, target)
@@ -705,8 +708,7 @@ def _apply_slowdown(work_dir: str, segments: list[dict],
     slowed_marker = data_path(work_dir, "slowed_video.json")
     if not (os.path.isfile(slowed_video) and os.path.isfile(slowed_marker)):
         return video_path, None
-    from autodub.media.retime import (probe_duration, probe_video_info,
-                                      rescale_segments)
+    from autodub.media.retime import probe_duration, probe_video_info, rescale_segments
     try:
         orig_dur = probe_video_info(video_path)[0] if video_path else None
         new_dur = probe_duration(slowed_video)

@@ -6,13 +6,11 @@ Exceptions for CapCut TTS API Client.
 class CapCutError(Exception):
     """Base exception for all CapCut client errors."""
 
-    pass
 
 
 class CapCutSignError(CapCutError):
     """Raised when cryptography or signing fails."""
 
-    pass
 
 
 class CapCutAPIError(CapCutError):
@@ -27,10 +25,7 @@ class CapCutAPIError(CapCutError):
 class CapCutUploadError(CapCutError):
     """Raised when media upload to VOD fails."""
 
-    pass
 
 
 class CapCutTaskError(CapCutError):
     """Raised when a background TTS/STT task fails or times out."""
-
-    pass

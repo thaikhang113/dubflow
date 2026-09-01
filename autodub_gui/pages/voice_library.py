@@ -18,16 +18,24 @@ import zlib
 from PySide6.QtCore import QPointF, Qt, Signal
 from PySide6.QtGui import QColor, QKeySequence, QPainter, QPen, QShortcut
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton,
-    QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
+    QCheckBox,
+    QComboBox,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
 
 from autodub_gui import icons, tokens
 from autodub_gui.pages.settings_panels import VoiceSettingsPanel
 from autodub_gui.ui.avatar import InitialAvatar
 from autodub_gui.ui.buttons import DangerButton, GhostButton, IconButton, PrimaryButton
-from autodub_gui.ui.modal import ConfirmDialog
 from autodub_gui.ui.inputs import SearchBox, polish_combo
+from autodub_gui.ui.modal import ConfirmDialog
 from autodub_gui.ui.pagination import Pagination
 from autodub_gui.ui.pill_tabs import PillTabBar
 from autodub_gui.ui.style import clear_background
@@ -143,14 +151,14 @@ class _Waveform(QWidget):
             self._seed = seed
             self.update()
 
-    def paintEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         step = self.width() / _WAVE_BARS
         middle = self.height() / 2
         pen_w = max(1.6, step * 0.42)
         for i in range(_WAVE_BARS):
-            digest = zlib.crc32(f"{self._seed}:{i}".encode("utf-8"))
+            digest = zlib.crc32(f"{self._seed}:{i}".encode())
             half = (self.height() - 6) * (0.18 + digest % 100 / 100 * 0.82) / 2
             color = tokens.WAVEFORM if digest % 3 else tokens.WAVEFORM_LIGHT
             painter.setPen(QPen(QColor(color), pen_w, Qt.PenStyle.SolidLine,
@@ -171,7 +179,7 @@ class _RecentAvatar(InitialAvatar):
         self.setToolTip(f"Chọn lại giọng «{name}».")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
-    def mouseReleaseEvent(self, event) -> None:  # noqa: N802 — quy ước Qt
+    def mouseReleaseEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit(self.name())
         super().mouseReleaseEvent(event)
@@ -289,7 +297,7 @@ class _VoiceRow(QFrame):
             f"border: 1px solid {border}; "
             f"border-radius: {tokens.RADIUS_MD}px; }}{hover}")
 
-    def mouseReleaseEvent(self, event) -> None:  # noqa: N802 — quy ước Qt
+    def mouseReleaseEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit(self.voice.name)
         super().mouseReleaseEvent(event)
@@ -647,7 +655,6 @@ class VoiceLibraryTab(QWidget):
         """Giọng thuộc tab nguồn đang chọn; tab ẩn thì trả cả danh mục."""
         if not self._src_tabs.isVisible():
             return self._voices
-        from autodub.speech.tts.voices import source_group
 
         want = ("capcut" if self._src_tab == _SRC_CAPCUT
                 else "clone" if self._src_tab == _SRC_CLONE

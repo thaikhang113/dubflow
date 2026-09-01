@@ -10,8 +10,6 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QPushButton, QWidget
 
-from autodub_gui import tokens
-
 
 class PillTabBar(QWidget):
     """Hàng nút viên thuốc, mỗi lúc chỉ chọn được một."""

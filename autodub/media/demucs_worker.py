@@ -307,6 +307,8 @@ def main() -> int:
         parser.error("--input/--vocals/--no-vocals là bắt buộc khi không --serve")
 
     try:
+        import torch
+
         device = separate_file(args.input, args.vocals, args.no_vocals,
                                model_name=args.model,
                                force_chunked=args.chunked)

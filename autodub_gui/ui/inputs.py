@@ -9,8 +9,17 @@ import os
 
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
-    QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit,
-    QSizePolicy, QSlider, QStyledItemDelegate, QVBoxLayout, QWidget,
+    QComboBox,
+    QDoubleSpinBox,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QSizePolicy,
+    QSlider,
+    QStyledItemDelegate,
+    QVBoxLayout,
+    QWidget,
 )
 
 from autodub_gui import icons, tokens

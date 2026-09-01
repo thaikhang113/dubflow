@@ -2,8 +2,9 @@
 
 ffmpeg/ffprobe are monkeypatched — no real encoding happens.
 """
-import pytest
 from pathlib import Path
+
+import pytest
 
 from autodub.media import video as video_mod
 

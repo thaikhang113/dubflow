@@ -15,8 +15,7 @@ _ALLOWED_SUFFIXES = (
 
 def _allowed_domain(domain: str) -> bool:
     host = domain.lstrip(".").lower()
-    if host.startswith("#httponly_"):
-        host = host[len("#httponly_"):]
+    host = host.removeprefix("#httponly_")
     return any(host == suffix or host.endswith("." + suffix)
                for suffix in _ALLOWED_SUFFIXES)
 

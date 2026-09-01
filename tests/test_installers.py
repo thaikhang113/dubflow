@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -54,6 +55,7 @@ def test_ci_and_release_gate_installed_artifact_smoke():
 def test_icons_have_runtime_logo_fallback(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
+
     from autodub_gui import icons
 
     app = QApplication.instance() or QApplication([])
@@ -199,12 +201,92 @@ def test_preflight_rejects_ffmpeg_without_ffprobe(monkeypatch):
 
     assert result.level == "fail"
 
+def test_vsr_extraction_rejects_zip_slip(tmp_path):
+    import io
+    import zipfile
+
+    from scripts.setup_vsr import _safe_extract
+
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as handle:
+        handle.writestr("../outside.txt", "blocked")
+    archive.seek(0)
+    destination = tmp_path / "extract"
+    destination.mkdir()
+
+    with zipfile.ZipFile(archive) as handle, pytest.raises(
+        RuntimeError, match="unsafe ZIP member"
+    ):
+        _safe_extract(handle, destination)
+
+    assert not (tmp_path / "outside.txt").exists()
+
 def test_linux_first_run_has_portable_python_runtime():
     source = (ROOT / "autodub_gui" / "workers_setup.py").read_text(
         encoding="utf-8")
     assert "python-build-standalone" in source
     assert "_PORTABLE_PYTHON_SHA256" in source
     assert "_download_portable_python" in source
+
+def test_portable_python_rejects_tar_symlink_escape(monkeypatch, tmp_path):
+    import hashlib
+    import io
+    import tarfile
+
+    from autodub_gui import workers_setup
+
+    archive_data = io.BytesIO()
+    outside = tmp_path / "outside"
+    with tarfile.open(fileobj=archive_data, mode="w:gz") as archive:
+        root = tarfile.TarInfo("python")
+        root.type = tarfile.DIRTYPE
+        root.mode = 0o755
+        archive.addfile(root)
+
+        link = tarfile.TarInfo("python/escape")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "/outside"
+        archive.addfile(link)
+
+        payload = tarfile.TarInfo("python/escape/pwned")
+        payload_data = b"must not escape"
+        payload.size = len(payload_data)
+        archive.addfile(payload, io.BytesIO(payload_data))
+    archive_bytes = archive_data.getvalue()
+
+    class Response:
+        def __init__(self):
+            self.headers = {"Content-Length": str(len(archive_bytes))}
+            self._done = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, _size):
+            if self._done:
+                return b""
+            self._done = True
+            return archive_bytes
+
+    monkeypatch.setattr(workers_setup, "data_root", lambda: str(tmp_path / "data"))
+    monkeypatch.setattr(
+        workers_setup,
+        "_PORTABLE_PYTHON_SHA256",
+        hashlib.sha256(archive_bytes).hexdigest(),
+    )
+    monkeypatch.setattr(
+        workers_setup.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: Response(),
+    )
+
+    with pytest.raises(RuntimeError, match="archive"):
+        workers_setup._download_portable_python(lambda _msg: None, lambda _value: None)
+
+    assert not (outside / "pwned").exists()
 
 def test_whisper_setup_finds_worker_in_pyinstaller_data_dirs():
     source = (ROOT / "scripts" / "setup_whisper.py").read_text(

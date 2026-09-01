@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 
+
 def ocr_frame_timeout_s(frame_count: int) -> int:
     return max(60, min(1800, 60 + max(0, int(frame_count)) * 8))
 import sys
@@ -24,6 +25,8 @@ _BOX_RE = re.compile(
     r"\[\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*"
     r"(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\]"
 )
+MODEL_NAME = "deepseek-ai/DeepSeek-OCR"
+MODEL_REVISION = "9f30c71f441d010e5429c532364a86705536c53a"
 
 
 def _frames(video: str, times: list[float], output_dir: str) -> list[str]:
@@ -136,11 +139,15 @@ def _load_model(model_dir: str):
     else:
         device = torch.device(device_name)
 
-    model_name = "deepseek-ai/DeepSeek-OCR"
     tokenizer = AutoTokenizer.from_pretrained(
-        model_name, cache_dir=model_dir, trust_remote_code=True)
+        MODEL_NAME,
+        cache_dir=model_dir,
+        revision=MODEL_REVISION,
+        trust_remote_code=True,
+    )
     kwargs = {
         "cache_dir": model_dir,
+        "revision": MODEL_REVISION,
         "trust_remote_code": True,
         "use_safetensors": True,
         "_attn_implementation": (
@@ -148,10 +155,10 @@ def _load_model(model_dir: str):
         ),
     }
     try:
-        model = AutoModel.from_pretrained(model_name, **kwargs)
+        model = AutoModel.from_pretrained(MODEL_NAME, **kwargs)
     except Exception:
         kwargs["_attn_implementation"] = "eager"
-        model = AutoModel.from_pretrained(model_name, **kwargs)
+        model = AutoModel.from_pretrained(MODEL_NAME, **kwargs)
     return tokenizer, model.eval().to(device=device, dtype=dtype)
 
 

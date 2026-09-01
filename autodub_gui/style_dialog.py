@@ -23,11 +23,27 @@ import subprocess
 import tempfile
 
 from PySide6.QtCore import QPoint, QRect, QRectF, QSize, Qt, QThread, Signal
-from PySide6.QtGui import (QColor, QFont, QGuiApplication, QPainter,
-                           QPainterPath, QPen, QPixmap)
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QGuiApplication,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QHBoxLayout,
-    QLabel, QPushButton, QSpinBox, QVBoxLayout, QWidget,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QFileDialog,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
 )
 
 from autodub_gui import tokens
@@ -548,7 +564,7 @@ class StyleDialog(QDialog):
         # không thì dùng mẫu mặc định. Điều này giúp xem trước đúng với độ
         # dài thực tế của câu thoại đang chỉnh.
         if preview_text:
-            global PREVIEW_TEXT, PREVIEW_TEXT_KARAOKE  # noqa: PLW0603
+            global PREVIEW_TEXT, PREVIEW_TEXT_KARAOKE
             PREVIEW_TEXT = preview_text
             words = preview_text.split()
             PREVIEW_TEXT_KARAOKE = " ".join(words[:3]) if len(words) >= 3 else preview_text
@@ -931,17 +947,17 @@ class StyleDialog(QDialog):
     def _load_controls(self) -> None:
         s = self._style
         d_idx = self.cb_display.findData(s.get("display", "sentence"))
-        self.cb_display.setCurrentIndex(d_idx if d_idx >= 0 else 0)
+        self.cb_display.setCurrentIndex(max(d_idx, 0))
         self.sp_line_words.setValue(int(s.get("line_words", 0) or 0))
         self.sp_max_lines.setValue(int(s.get("max_lines", 2)))
         self.chk_all_caps.setChecked(bool(s.get("all_caps", False)))
         e_idx = self.cb_effect.findData(s.get("effect", "pop"))
-        self.cb_effect.setCurrentIndex(e_idx if e_idx >= 0 else 0)
+        self.cb_effect.setCurrentIndex(max(e_idx, 0))
         self.sp_words.setValue(int(s.get("words_per_cue", 3)))
         self._paint_color_button(self.btn_highlight,
                                  s.get("highlight_color", tokens.SUBTITLE_HIGHLIGHT_DEFAULT))
         idx = self.cb_pos.findData(s.get("position", "bottom"))
-        self.cb_pos.setCurrentIndex(idx if idx >= 0 else 0)
+        self.cb_pos.setCurrentIndex(max(idx, 0))
         self._select_font(s.get("font", "Arial"))
         self.sp_size.setValue(int(s.get("font_size", 22)))
         self.sp_margin.setValue(int(s.get("margin_v", 40)))
@@ -949,7 +965,7 @@ class StyleDialog(QDialog):
         self.sp_shadow.setValue(int(s.get("shadow", 0)))
         self.chk_bold.setChecked(bool(s.get("bold", True)))
         b_idx = self.cb_box.findData(s.get("box", "none"))
-        self.cb_box.setCurrentIndex(b_idx if b_idx >= 0 else 0)
+        self.cb_box.setCurrentIndex(max(b_idx, 0))
         self.sp_box_opacity.setValue(int(s.get("box_opacity", 60)))
         self._paint_color_button(self.btn_box_color,
                                  s.get("box_color", tokens.SUBTITLE_BOXFILL_DEFAULT))
@@ -1109,7 +1125,7 @@ class StyleDialog(QDialog):
         if idx >= 0:
             self.cb_font.setCurrentIndex(idx)
 
-    def changeEvent(self, event) -> None:  # noqa: N802 — Qt API
+    def changeEvent(self, event) -> None:
         # Quay lại dialog sau khi thả font vào thư mục (Explorer) → đổ lại
         # danh sách để font mới hiện ngay, không phải mở lại app.
         from PySide6.QtCore import QEvent
@@ -1149,7 +1165,7 @@ class StyleDialog(QDialog):
                         "gói kèm app thoải mái.\n")
             except OSError:
                 pass
-        os.startfile(d)  # noqa: S606
+        os.startfile(d)
 
     def _pick_color(self, key: str) -> None:
         from PySide6.QtWidgets import QColorDialog

@@ -7,7 +7,6 @@ import os
 import subprocess
 import wave
 
-
 MIN_REFERENCE_SECONDS = 1.0
 MAX_REFERENCE_SECONDS = 8.0
 

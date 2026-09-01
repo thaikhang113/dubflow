@@ -16,8 +16,13 @@ from autodub.utils import setup_logging
 
 logger = setup_logging("autodub.tts")
 
-__all__ = ["Synthesizer", "TTSResult", "get_synthesizer", "SynthCache",
-           "NOT_INSTALLED_HINT"]
+__all__ = [
+    "NOT_INSTALLED_HINT",
+    "SynthCache",
+    "Synthesizer",
+    "TTSResult",
+    "get_synthesizer",
+]
 
 NOT_INSTALLED_HINT = (
     "Chưa cài bộ giọng VieNeu. Chạy một lần: py scripts/setup_vieneu.py"
@@ -81,9 +86,8 @@ def get_synthesizer(
     if not settings.vieneu_configured():
         raise ConfigError(NOT_INSTALLED_HINT)
 
-    from autodub.speech.tts.vieneu_vi import VieNeuSynthesizer
-
     from autodub.config import effective_vieneu_workers
+    from autodub.speech.tts.vieneu_vi import VieNeuSynthesizer
     workers = num_workers or min(
         settings.parallel_workers,
         effective_vieneu_workers(settings.vieneu_max_workers),

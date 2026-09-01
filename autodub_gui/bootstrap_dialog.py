@@ -1,12 +1,18 @@
 """Mandatory first-run dependency installer."""
 from __future__ import annotations
 
-import shutil
-
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QThread
 from PySide6.QtWidgets import (
-    QDialog, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
-    QMessageBox, QProgressBar, QPushButton, QPlainTextEdit, QVBoxLayout,
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QMessageBox,
+    QPlainTextEdit,
+    QProgressBar,
+    QPushButton,
+    QVBoxLayout,
 )
 
 from autodub_gui import bootstrap, tokens
@@ -122,7 +128,9 @@ class BootstrapDialog(QDialog):
             return
 
         from autodub_gui.workers_setup import (
-            FFmpegDownloadWorker, PythonRuntimeWorker, SetupScriptWorker,
+            FFmpegDownloadWorker,
+            PythonRuntimeWorker,
+            SetupScriptWorker,
         )
         if step.kind == "python":
             worker = PythonRuntimeWorker(self)

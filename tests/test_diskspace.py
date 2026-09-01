@@ -2,7 +2,12 @@
 import os
 
 from autodub.diskspace import (
-    OUTPUT_VIDEO, clean_all, clean_project, dir_size, measure, measure_project,
+    OUTPUT_VIDEO,
+    clean_all,
+    clean_project,
+    dir_size,
+    measure,
+    measure_project,
 )
 from autodub.workdir import DATA_SUBDIR
 

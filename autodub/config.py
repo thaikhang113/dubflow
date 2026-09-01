@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from dotenv import load_dotenv
 
-from autodub.utils import app_root, bundled_file, data_root
+from autodub.utils import bundled_file, data_root
 
 
 class ConfigError(Exception):
@@ -323,7 +323,7 @@ class Settings:
     # ------------------------------------------------------------------ #
 
     @classmethod
-    def load(cls, env_file: str | None = None, override: bool = False) -> "Settings":
+    def load(cls, env_file: str | None = None, override: bool = False) -> Settings:
         """Dựng Settings từ môi trường (sau khi nạp ``.env``).
 
         ``override=True`` đọc lại .env đè lên biến môi trường đã đặt — giao

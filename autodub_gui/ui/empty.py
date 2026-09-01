@@ -4,7 +4,11 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget,
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
 
 from autodub_gui import icons, tokens
@@ -138,11 +142,11 @@ class LoadingState(_StateBase):
         self._n = (self._n + 1) % 4
         self._label.setText(self._base + "." * self._n)
 
-    def hideEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def hideEvent(self, event) -> None:
         self._timer.stop()
         super().hideEvent(event)
 
-    def showEvent(self, event) -> None:  # noqa: N802 — theo quy ước của Qt
+    def showEvent(self, event) -> None:
         self._timer.start()
         super().showEvent(event)
 

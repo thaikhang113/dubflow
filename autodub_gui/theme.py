@@ -58,7 +58,8 @@ def _triangle_asset(name: str, w: int, h: int, color: str, *,
     cạnh các ô chọn. Cách đúng là đưa cho Qt một ảnh mũi tên thật.
     Dùng QImage nên vẽ được ngay khi nạp mô-đun, trước cả QApplication.
     """
-    from PySide6.QtCore import QPointF, Qt as _Qt
+    from PySide6.QtCore import QPointF
+    from PySide6.QtCore import Qt as _Qt
     from PySide6.QtGui import QColor, QImage, QPainter, QPolygonF
 
     folder = _os.path.join(_os.path.expanduser("~"), ".voxdub_cache", "ui")

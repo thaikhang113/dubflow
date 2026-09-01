@@ -21,6 +21,7 @@ PYTHON = os.path.join(
 MODEL_DIR = os.path.join(DATA_ROOT, "models", "deepseek-ocr")
 MARKER = os.path.join(MODEL_DIR, "installed_ok.json")
 MODEL_NAME = "deepseek-ai/DeepSeek-OCR"
+MODEL_REVISION = "9f30c71f441d010e5429c532364a86705536c53a"
 DEFAULT_ROCM_INDEX = "https://download.pytorch.org/whl/rocm6.4"
 SUPPORTED_PYTHON = ((3, 10), (3, 11), (3, 12))
 DEEPSEEK_PYTHON_PACKAGES = (
@@ -198,7 +199,8 @@ def main() -> int:
         [PYTHON, "-c",
          "from transformers import AutoConfig; "
          f"AutoConfig.from_pretrained({MODEL_NAME!r}, "
-         f"cache_dir={MODEL_DIR!r}, trust_remote_code=True)"],
+         f"cache_dir={MODEL_DIR!r}, revision={MODEL_REVISION!r}, "
+         "trust_remote_code=True)"],
         check=True,
         timeout=900,
     )
@@ -208,6 +210,7 @@ def main() -> int:
             "backend": "deepseek-ocr",
             "device_backend": backend,
             "model": MODEL_NAME,
+            "revision": MODEL_REVISION,
         }, handle, indent=2)
     log("XONG — DeepSeek-OCR sẵn sàng, chỉ chạy khi bật fallback.")
     return 0

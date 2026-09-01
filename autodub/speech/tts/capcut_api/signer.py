@@ -11,10 +11,14 @@ import json
 import secrets
 import time
 import uuid
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any
 from urllib.parse import parse_qsl, quote, urlsplit
 
-from autodub.speech.tts.capcut_api.config import TTS_SIGN_PUBLIC_KEY_PEM, VOD_REGION, VOD_SERVICE
+from autodub.speech.tts.capcut_api.config import (
+    TTS_SIGN_PUBLIC_KEY_PEM,
+    VOD_REGION,
+    VOD_SERVICE,
+)
 from autodub.speech.tts.capcut_api.exceptions import CapCutSignError
 
 
@@ -25,7 +29,9 @@ def compact_json(obj: Any) -> str:
 
 def make_x_ss_stub(body_text: str) -> str:
     """Generate x-ss-stub header value (MD5 of request body)."""
-    return hashlib.md5(body_text.encode("utf-8")).hexdigest()
+    return hashlib.md5(
+        body_text.encode("utf-8"), usedforsecurity=False
+    ).hexdigest()
 
 
 def make_trace_id() -> str:
@@ -45,7 +51,7 @@ def escape_xml(text: str) -> str:
     )
 
 
-def _der_len(data: bytes, pos: int) -> Tuple[int, int]:
+def _der_len(data: bytes, pos: int) -> tuple[int, int]:
     first = data[pos]
     pos += 1
     if first < 0x80:
@@ -54,19 +60,19 @@ def _der_len(data: bytes, pos: int) -> Tuple[int, int]:
     return int.from_bytes(data[pos : pos + nbytes], "big"), pos + nbytes
 
 
-def _der_value(data: bytes, pos: int, tag: int) -> Tuple[bytes, int]:
+def _der_value(data: bytes, pos: int, tag: int) -> tuple[bytes, int]:
     if data[pos] != tag:
         raise CapCutSignError(f"Bad DER tag: expected 0x{tag:02x}, got 0x{data[pos]:02x}")
     length, pos = _der_len(data, pos + 1)
     return data[pos : pos + length], pos + length
 
 
-def _der_int(data: bytes, pos: int) -> Tuple[int, int]:
+def _der_int(data: bytes, pos: int) -> tuple[int, int]:
     raw, pos = _der_value(data, pos, 0x02)
     return int.from_bytes(raw.lstrip(b"\x00"), "big"), pos
 
 
-def rsa_public_numbers_from_pem(pem: str) -> Tuple[int, int]:
+def rsa_public_numbers_from_pem(pem: str) -> tuple[int, int]:
     """Parse RSA modulus and exponent numbers from PEM formatted public key."""
     try:
         b64 = "".join(line for line in pem.splitlines() if not line.startswith("-----"))
@@ -92,7 +98,7 @@ def rsa_public_numbers_from_pem(pem: str) -> Tuple[int, int]:
         raise CapCutSignError(f"Failed to parse RSA PEM public key: {exc}") from exc
 
 
-def rsa_encrypt_pkcs1v15(message: Union[str, bytes], pem: str = TTS_SIGN_PUBLIC_KEY_PEM) -> str:
+def rsa_encrypt_pkcs1v15(message: str | bytes, pem: str = TTS_SIGN_PUBLIC_KEY_PEM) -> str:
     """
     Encrypt message using RSA PKCS#1 v1.5 with standard library cryptography logic.
     Returns Base64 encoded signature.
@@ -112,9 +118,11 @@ def rsa_encrypt_pkcs1v15(message: Union[str, bytes], pem: str = TTS_SIGN_PUBLIC_
     return base64.b64encode(encrypted).decode("ascii")
 
 
-def make_tts_payload_sign(ssml: str, extra_info: Optional[str], device_id: str, app_id: str) -> str:
+def make_tts_payload_sign(ssml: str, extra_info: str | None, device_id: str, app_id: str) -> str:
     """Generate RSA PKCS#1 v1.5 signature for TTS task inner payload."""
-    ssml_md5 = hashlib.md5(ssml.encode("utf-8")).hexdigest()
+    ssml_md5 = hashlib.md5(
+        ssml.encode("utf-8"), usedforsecurity=False
+    ).hexdigest()
     sign_input = f"appid:{app_id}&did:{device_id}&creditDisable:false&ssml:{ssml_md5}"
     if extra_info is not None:
         sign_input += f"&extraInfo:{extra_info}"
@@ -125,17 +133,19 @@ def make_sign_header(url: str, appvr: str, device_time: str, tdid: str) -> str:
     """Generate CapCut HTTP request sign header."""
     path = url.split("?", 1)[0]
     sign_str = f"9e2c|{path[-7:]}|3|{appvr}|{device_time}|{tdid}|11ac"
-    return hashlib.md5(sign_str.encode("utf-8")).hexdigest()
+    return hashlib.md5(
+        sign_str.encode("utf-8"), usedforsecurity=False
+    ).hexdigest()
 
 
-def sha256_hex(data: Union[str, bytes]) -> str:
+def sha256_hex(data: str | bytes) -> str:
     """SHA-256 hex digest helper."""
     if isinstance(data, str):
         data = data.encode("utf-8")
     return hashlib.sha256(data).hexdigest()
 
 
-def hmac_sha256(key: Union[str, bytes], msg: Union[str, bytes]) -> bytes:
+def hmac_sha256(key: str | bytes, msg: str | bytes) -> bytes:
     """HMAC-SHA256 digest helper."""
     if isinstance(key, str):
         key = key.encode("utf-8")
@@ -188,7 +198,7 @@ def aws4_authorization(
     return f"AWS4-HMAC-SHA256 Credential={access_key_id}/{scope}, SignedHeaders={signed_headers}, Signature={signature}"
 
 
-def utc_now_for_vod() -> Tuple[str, str]:
+def utc_now_for_vod() -> tuple[str, str]:
     """Return formatted ISO ISO8601 basic string and HTTP GMT date string for VOD headers."""
     now = dt.datetime.now(dt.timezone.utc)
     return now.strftime("%Y%m%dT%H%M%SZ"), now.strftime("%a, %d %b %Y %H:%M:%S GMT")
@@ -196,7 +206,7 @@ def utc_now_for_vod() -> Tuple[str, str]:
 
 def file_md5(path: str) -> str:
     """Calculate MD5 checksum of local file."""
-    h = hashlib.md5()
+    h = hashlib.md5(usedforsecurity=False)
     with open(path, "rb") as fp:
         for chunk in iter(lambda: fp.read(1024 * 1024), b""):
             h.update(chunk)
@@ -208,7 +218,7 @@ def crc32_hex(data: bytes) -> str:
     return f"{binascii.crc32(data) & 0xFFFFFFFF:08x}"
 
 
-def common_query(device: Dict[str, Any], babi_param: Any = None, include_region: bool = True) -> Dict[str, str]:
+def common_query(device: dict[str, Any], babi_param: Any = None, include_region: bool = True) -> dict[str, str]:
     """Build standard query parameter dict for CapCut API calls."""
     q = {
         "app_name": device["app_name"],
@@ -230,7 +240,7 @@ def common_query(device: Dict[str, Any], babi_param: Any = None, include_region:
     return q
 
 
-def base_headers(device: Dict[str, Any], body_text: str, appid: bool = False) -> Dict[str, str]:
+def base_headers(device: dict[str, Any], body_text: str, appid: bool = False) -> dict[str, str]:
     """Build base HTTP headers required by CapCut API endpoints."""
     now = str(int(time.time()))
     headers = {

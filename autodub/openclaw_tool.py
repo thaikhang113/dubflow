@@ -155,6 +155,20 @@ def _job_payload(job_id: str, link: str, options: dict,
 def _manifest_path(queue_root: str, batch_id: str) -> Path:
     return Path(queue_root).expanduser().resolve() / "batches" / f"{batch_id}.json"
 
+def _write_manifest(path: Path, manifest: dict) -> None:
+    temp = path.with_name(path.name + ".part")
+    try:
+        temp.write_text(json.dumps(manifest, ensure_ascii=False, indent=2),
+                        encoding="utf-8")
+        os.replace(temp, path)
+    except Exception:
+        temp.unlink(missing_ok=True)
+        raise
+
+def _rollback_jobs(queue_root: str, jobs: list[dict]) -> None:
+    for job in jobs:
+        cancel_job(queue_root, job["job_id"])
+
 
 def _read_manifest(queue_root: str, batch_id: str) -> dict:
     path = _manifest_path(queue_root, batch_id)
@@ -223,11 +237,15 @@ def _submit(payload: dict, queue_root: str, settings: Settings) -> dict:
     options = _options(payload)
     batch_id = "batch-" + uuid.uuid4().hex[:12]
     jobs = []
-    for index, link in enumerate(links, 1):
-        job_id = f"{batch_id}-{index:03d}"
-        job = _job_payload(job_id, link, options, settings)
-        submit_job(queue_root, job)
-        jobs.append(job)
+    try:
+        for index, link in enumerate(links, 1):
+            job_id = f"{batch_id}-{index:03d}"
+            job = _job_payload(job_id, link, options, settings)
+            submit_job(queue_root, job)
+            jobs.append(job)
+    except Exception:
+        _rollback_jobs(queue_root, jobs)
+        raise
     manifest = {
         "batch_id": batch_id,
         "job_ids": [job["job_id"] for job in jobs],
@@ -239,10 +257,11 @@ def _submit(payload: dict, queue_root: str, settings: Settings) -> dict:
     }
     path = _manifest_path(queue_root, batch_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_name(path.name + ".part")
-    temp.write_text(json.dumps(manifest, ensure_ascii=False, indent=2),
-                    encoding="utf-8")
-    os.replace(temp, path)
+    try:
+        _write_manifest(path, manifest)
+    except Exception:
+        _rollback_jobs(queue_root, jobs)
+        raise
     return {"ok": True, "batch_id": batch_id,
             "job_ids": manifest["job_ids"], "status": "queued"}
 
@@ -263,24 +282,31 @@ def _retry_failed(payload: dict, queue_root: str) -> dict:
     manifest = _read_manifest(queue_root, payload.get("batch_id", ""))
     replacement_jobs = []
     replacement_by_old_id = {}
-    for job in manifest["jobs"]:
-        status = _read_status(queue_root, job["job_id"])
-        if status.get("status") != "failed":
-            continue
-        new_id = f"{manifest['batch_id']}-retry-{uuid.uuid4().hex[:6]}"
-        replacement = dict(job)
-        replacement["job_id"] = new_id
-        submit_job(queue_root, replacement)
-        replacement_jobs.append(replacement)
-        replacement_by_old_id[job["job_id"]] = replacement
+    try:
+        for job in manifest["jobs"]:
+            status = _read_status(queue_root, job["job_id"])
+            if status.get("status") != "failed":
+                continue
+            new_id = f"{manifest['batch_id']}-retry-{uuid.uuid4().hex[:6]}"
+            replacement = dict(job)
+            replacement["job_id"] = new_id
+            submit_job(queue_root, replacement)
+            replacement_jobs.append(replacement)
+            replacement_by_old_id[job["job_id"]] = replacement
+    except Exception:
+        _rollback_jobs(queue_root, replacement_jobs)
+        raise
     manifest["jobs"] = [
         replacement_by_old_id.get(job["job_id"], job)
         for job in manifest["jobs"]
     ]
     manifest["job_ids"] = [job["job_id"] for job in manifest["jobs"]]
     path = _manifest_path(queue_root, manifest["batch_id"])
-    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2),
-                    encoding="utf-8")
+    try:
+        _write_manifest(path, manifest)
+    except Exception:
+        _rollback_jobs(queue_root, replacement_jobs)
+        raise
     return {"ok": True, "batch_id": manifest["batch_id"],
             "job_ids": [job["job_id"] for job in replacement_jobs]}
 

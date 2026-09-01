@@ -10,9 +10,9 @@ import hashlib
 import os
 import platform
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 _API_URL = "https://api.github.com/repos/{repo}/releases/latest"
 _TIMEOUT_S = 10

@@ -2,8 +2,8 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication
 
 from autodub_gui.video.layer_bridge import build_timeline
 from autodub_gui.video.layer_panel import LayerPanel

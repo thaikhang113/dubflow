@@ -1,5 +1,6 @@
 """Tests for autodub.updates — version parsing and update detection."""
 import pytest
+
 from autodub.updates import (
     UpdateInfo,
     _checksum,
@@ -8,7 +9,6 @@ from autodub.updates import (
     parse_version,
     platform_assets,
 )
-
 
 # -- parse_version ---------------------------------------------------------
 

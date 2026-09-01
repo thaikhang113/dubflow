@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import ast
 import inspect
 import json
-import os
 import sys
 import threading
 import time
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -18,13 +17,16 @@ from autodub.cancel import (
 )
 from autodub.progress import PipelineCancelled
 from autodub_gui import tokens
-from autodub_gui.ui.modal import ConfirmDialog
-from autodub_gui.pages.batch_page import batch_finish_detail, batch_finish_ok
-from autodub_gui.pages.batch_page import parse_batch_list_text
-from autodub_gui.pages.download_page import (
-    download_finish_detail, download_finish_ok,
+from autodub_gui.pages.batch_page import (
+    batch_finish_detail,
+    batch_finish_ok,
+    parse_batch_list_text,
 )
-
+from autodub_gui.pages.download_page import (
+    download_finish_detail,
+    download_finish_ok,
+)
+from autodub_gui.ui.modal import ConfirmDialog
 
 ROOT = Path(__file__).parents[1]
 
@@ -85,6 +87,42 @@ def test_ocr_refresh_queues_latest_editor_change() -> None:
     assert "settings, bool(enabled), float(y_min), source_logo_auto" in source
     assert "self._on_ocr_refresh_finished()" in source
     assert "self._start_ocr_refresh(*pending)" in source
+
+
+def test_start_ocr_refresh_applies_source_logo_override(monkeypatch) -> None:
+    """The branding override must resolve before the worker is launched."""
+    from types import SimpleNamespace
+
+    from autodub.config import Settings
+    from autodub_gui import workers as workers_module
+    from autodub_gui.pages.editor_export import VoiceAndExportMixin
+
+    class FakeWorker:
+        def __init__(self, settings, *args):
+            self.settings = settings
+            self.finished_ok = mock.Mock()
+            self.failed = mock.Mock()
+            self.finished = mock.Mock()
+
+        def start(self) -> None:
+            self.started = True
+
+    monkeypatch.setattr(workers_module, "OCRRefreshWorker", FakeWorker)
+
+    page = VoiceAndExportMixin.__new__(VoiceAndExportMixin)
+    page._work_dir = "project"
+    page._state = SimpleNamespace(video_path="video.mp4")
+    page._blur_regions = []
+    page._ocr_refresh_worker = None
+    page.target_key = lambda: "vi"
+
+    settings = Settings(branding_vision_enabled=True)
+    page._start_ocr_refresh(settings, True, 0.7, False)
+
+    assert page._ocr_refresh_worker.started is True
+    assert page._ocr_refresh_worker.settings.branding_vision_enabled is False
+    assert page._ocr_refresh_worker.settings.ocr_enabled is True
+    assert page._ocr_refresh_worker.settings.ocr_subtitle_y_min == 0.7
 
 def test_download_page_scrolls_full_results_area() -> None:
     source = _source("autodub_gui/pages/download_page.py")
@@ -230,6 +268,7 @@ def test_prefetch_worker_does_not_emit_success_after_cancel(monkeypatch, tmp_pat
 def test_video_step_shows_and_clears_download_progress(monkeypatch) -> None:
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
+
     from autodub_gui.pages.new_project_steps import VideoStep
 
     app = QApplication.instance() or QApplication([])
@@ -387,8 +426,9 @@ def test_new_project_keeps_download_button_locked_while_prefetch_runs(
 ) -> None:
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
-    from autodub.config import Settings
+
     import autodub_gui.pages.new_project_page as page_module
+    from autodub.config import Settings
 
     app = QApplication.instance() or QApplication([])
     monkeypatch.setattr(
@@ -489,8 +529,9 @@ def test_new_project_runtime_round_trips_detailed_six_step_values(
 ) -> None:
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
-    from autodub.config import Settings
+
     import autodub_gui.pages.new_project_page as page_module
+    from autodub.config import Settings
 
     app = QApplication.instance() or QApplication([])
     monkeypatch.setattr(
@@ -548,6 +589,7 @@ def test_style_canvas_round_trips_source_logo_region(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtGui import QPixmap
     from PySide6.QtWidgets import QApplication
+
     from autodub_gui.style_dialog import _FrameCanvas
 
     app = QApplication.instance() or QApplication([])
@@ -573,6 +615,7 @@ def test_style_canvas_clear_last_removes_last_manual_region(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtGui import QPixmap
     from PySide6.QtWidgets import QApplication
+
     from autodub_gui.style_dialog import _FrameCanvas
 
     app = QApplication.instance() or QApplication([])
@@ -601,6 +644,7 @@ def test_style_canvas_clear_last_prefers_manual_region_over_source_logo(
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtGui import QPixmap
     from PySide6.QtWidgets import QApplication
+
     from autodub_gui.style_dialog import _FrameCanvas
 
     app = QApplication.instance() or QApplication([])
@@ -642,6 +686,7 @@ def test_ocr_refresh_worker_updates_regions_off_editor_core(monkeypatch, tmp_pat
 def test_download_page_keeps_table_visible(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
+
     from autodub_gui.pages.download_page import DownloadPage
 
     app = QApplication.instance() or QApplication([])
@@ -672,6 +717,7 @@ def test_help_page_documents_ocr_and_uses_bundled_readme_name():
 def test_help_page_install_rows_use_in_app_buttons(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
+
     from autodub.config import Settings
     from autodub_gui.pages import help_page
     from autodub_gui.pages.help_page import HelpPage
@@ -689,6 +735,7 @@ def test_help_page_install_rows_use_in_app_buttons(monkeypatch):
 def test_openclaw_page_is_app_managed(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
+
     from autodub.openclaw_runtime import OpenClawRuntime
     from autodub_gui.pages.openclaw_page import OpenClawPage
 
@@ -725,10 +772,10 @@ def test_batch_queue_preserves_voice_and_completed_state(
 ) -> None:
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
-    from autodub.batch import BatchItem
-    from autodub.config import Settings
+
     import autodub_gui.pages.batch_page as page_module
     import autodub_gui.pages.new_project_page as new_project_module
+    from autodub.config import Settings
 
     app = QApplication.instance() or QApplication([])
     new_project_module.cache_dir = lambda: str(tmp_path / "cache")
@@ -779,9 +826,10 @@ def test_batch_does_not_chain_new_items_after_failed_run(
 ) -> None:
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
-    from autodub.config import Settings
+
     import autodub_gui.pages.batch_page as page_module
     import autodub_gui.pages.new_project_page as new_project_module
+    from autodub.config import Settings
 
     app = QApplication.instance() or QApplication([])
     new_project_module.cache_dir = lambda: str(tmp_path / "cache")
@@ -803,10 +851,11 @@ def test_batch_chain_keeps_completed_items_in_next_state_run(
 ) -> None:
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
-    from autodub.batch import BatchItem
-    from autodub.config import Settings
+
     import autodub_gui.pages.batch_page as page_module
     import autodub_gui.pages.new_project_page as new_project_module
+    from autodub.batch import BatchItem
+    from autodub.config import Settings
 
     app = QApplication.instance() or QApplication([])
     new_project_module.cache_dir = lambda: str(tmp_path / "cache")

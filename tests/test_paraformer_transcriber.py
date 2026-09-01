@@ -5,6 +5,7 @@ from unittest import mock
 from autodub.config import Settings
 from autodub.speech import paraformer_transcriber
 
+
 def _wav(path, rate=48000, channels=2):
     with wave.open(str(path), "wb") as wav:
         wav.setnchannels(channels)
@@ -16,7 +17,6 @@ def test_paraformer_normalizes_non_16k_input_and_cleans_temp(tmp_path):
     source = tmp_path / "source.wav"
     normalized = tmp_path / "source.wav.paraformer_16k_mono.wav"
     _wav(source)
-    seen = {}
 
     class Proc:
         returncode = 0
