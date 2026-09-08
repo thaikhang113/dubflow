@@ -1,6 +1,7 @@
 """Optional external Video2X post-render upscaler."""
 from __future__ import annotations
 
+from autodub.cancel import run_registered
 import os
 import shutil
 import subprocess
@@ -44,7 +45,7 @@ def run_video2x_or_fallback(
         raise FileNotFoundError(f"Video2X input not found: {input_path}")
     try:
         runner = run_command or (
-            lambda cmd: subprocess.run(
+            lambda cmd: run_registered(
                 cmd, check=True, capture_output=True, text=True,
                 encoding="utf-8", errors="replace",
             )
@@ -53,7 +54,7 @@ def run_video2x_or_fallback(
         if not os.path.isfile(output_path) or os.path.getsize(output_path) <= 0:
             raise RuntimeError("Video2X không tạo được file đầu ra.")
         return Video2XResult(output_path, True)
-    except Exception as exc:  # noqa: BLE001 - optional stage must not lose render
+    except Exception as exc:
         try:
             if os.path.isfile(output_path):
                 os.remove(output_path)

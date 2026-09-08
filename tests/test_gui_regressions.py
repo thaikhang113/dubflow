@@ -81,6 +81,33 @@ def test_smoke_report_checks_all_external_workers() -> None:
     assert "asr_whisper_worker.py" in source
     assert "asr_paraformer_worker.py" in source
 
+
+def test_smoke_probes_still_try_real_imports() -> None:
+    """Mỗi phép thử trong smoke report phải thực sự chạm vào module cần kiểm.
+
+    Khi sửa cảnh báo "import không dùng", ba khối `try:` đã bị rỗng ruột thành
+    `try: pass`, nên `except` không bao giờ chạy và `playwright_importable`,
+    `multimedia_importable`, `new_modules_importable` in ra True dù bản đóng gói
+    thiếu thư viện. Bộ kiểm này chặn sản phẩm lỗi trên CI, nên nó không được phép
+    luôn luôn đạt.
+    """
+    source = _source("autodub_gui/app.py")
+    assert "try:\n        pass\n" not in source, (
+        "có khối try/except rỗng — phép thử đã bị thay bằng pass nên không "
+        "bao giờ báo thất bại")
+    for probe in (
+        '"playwright.sync_api"',
+        '"PySide6.QtMultimedia"',
+        '"PySide6.QtMultimediaWidgets"',
+        '"autodub.media.timing"',
+        '"autodub.providers.openai_compatible"',
+        '"autodub.speech.align"',
+        '"autodub.text.ass_karaoke"',
+        '"autodub.text.subtitles"',
+    ):
+        assert probe in source, f"smoke report không còn nạp thử {probe}"
+
+
 def test_ocr_refresh_queues_latest_editor_change() -> None:
     source = _source("autodub_gui/pages/editor_export.py")
     assert "self._ocr_refresh_pending = (" in source

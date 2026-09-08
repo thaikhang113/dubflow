@@ -33,6 +33,14 @@ _LEGACY_INTERMEDIATES = (
 _LEGACY_DIR_PREFIXES = ("segments_speed", "segments_slow", "segments_fit",
                         "segments_post", "segments_timed")
 
+# data/ chứa cả hai thứ: tệp metadata nhỏ mà Editor / resume / batch đọc lại,
+# và tệp media nặng chỉ dùng một lần. Dọn theo loại tệp — không theo danh sách
+# tên — nên thêm metadata mới sau này không bịn xóa ẩm.
+# Giữ transcript_vi.json là bắt buộc: mất nó thì Editor báo "Run the dub
+# first" trên một dự án đã xuất video thành công.
+MEDIA_SUFFIXES = (".wav", ".mp4", ".mkv", ".webm", ".mov")
+SEGMENT_DIR_PREFIX = "segments"
+
 
 @dataclass
 class ProjectUsage:
@@ -101,8 +109,12 @@ def measure_project(work_dir: str) -> ProjectUsage:
     # cần giữ tệp trung gian để chạy tiếp từ chỗ dừng.
     if usage.has_output:
         for path in _cleanable_paths(work_dir):
-            usage.cleanable_bytes += (dir_size(path) if os.path.isdir(path)
-                                      else _file_size(path))
+            if os.path.isdir(path) and os.path.basename(path) == DATA_SUBDIR:
+                # data/ giữ lại metadata nhỏ, nên không được tính nguyên thư mục.
+                usage.cleanable_bytes += _clean_data_dir(path, dry_run=True)
+            else:
+                usage.cleanable_bytes += (
+                    dir_size(path) if os.path.isdir(path) else _file_size(path))
     return usage
 
 
@@ -155,8 +167,11 @@ def clean_project(work_dir: str) -> int:
         return 0
     freed = 0
     for path in _cleanable_paths(work_dir):
-        size = dir_size(path) if os.path.isdir(path) else _file_size(path)
         try:
+            if os.path.isdir(path) and os.path.basename(path) == DATA_SUBDIR:
+                freed += _clean_data_dir(path)
+                continue
+            size = dir_size(path) if os.path.isdir(path) else _file_size(path)
             if os.path.isdir(path):
                 shutil.rmtree(path)
             else:
@@ -167,6 +182,57 @@ def clean_project(work_dir: str) -> int:
     if freed:
         logger.info(f"Đã dọn tệp trung gian: {work_dir} "
                     f"({freed / (1024 ** 2):.0f} MB)")
+    return freed
+
+
+def _clean_data_dir(data_dir: str, *, dry_run: bool = False) -> int:
+    """Đếm (dry_run) hoặc thực sự xóa các tệp media nặng trong data/.
+
+    Dùng chung một lối đếm để chỉ số "dọn được" trên giao diện khớp đúng với
+    số byte clean_project() giải phóng, và để metadata nhỏ không bao giờ bị
+    tính là dọn được.
+    """
+    freed = 0
+    for name in sorted(os.listdir(data_dir)):
+        path = os.path.join(data_dir, name)
+        try:
+            if os.path.isdir(path):
+                if not name.startswith(SEGMENT_DIR_PREFIX):
+                    continue
+                freed += _clean_segment_dir(path, dry_run=dry_run)
+            elif name.endswith(MEDIA_SUFFIXES):
+                freed += _file_size(path)
+                if not dry_run:
+                    os.remove(path)
+        except OSError as e:
+            logger.warning(f"Không dọn {path}: {e}")
+    return freed
+
+
+def _clean_segment_dir(seg_dir: str, *, dry_run: bool) -> int:
+    """Xóa clip trong segments*/ nhưng giữ marker ẩn và thư mục còn marker.
+
+    segments/.render_mode phải sống sót qua auto-clean. Mất nó thì lần đọc lại
+    kế tiếp tạo segments/ không có marker, và editor._check_render_mode chặn
+    xuất video bằng cáo buộc "giọng đọc tạo theo cơ chế gộp câu đời cũ" —
+    dự án hết cách xuất dù video nguồn vẫn còn.
+    """
+    freed = 0
+    keep_dir = False
+    for root, _dirs, files in os.walk(seg_dir):
+        for fname in files:
+            fpath = os.path.join(root, fname)
+            if fname.startswith(".") or not fname.endswith(MEDIA_SUFFIXES):
+                keep_dir = True          # marker/an van kien khong phai media
+                continue
+            freed += _file_size(fpath)
+            if not dry_run:
+                try:
+                    os.remove(fpath)
+                except OSError as e:
+                    logger.warning(f"Không dọn {fpath}: {e}")
+    if not dry_run and not keep_dir:
+        shutil.rmtree(seg_dir, ignore_errors=True)
     return freed
 
 

@@ -4,7 +4,28 @@ from __future__ import annotations
 import base64
 import json
 import subprocess
+from urllib.error import URLError
 from urllib.request import Request, urlopen
+
+from autodub.cancel import run_registered
+
+
+OLLAMA_MODELS_URL = "http://127.0.0.1:11434/api/tags"
+
+
+def ollama_available(url: str = OLLAMA_MODELS_URL,
+                     timeout: float = 1.5) -> bool:
+    """Ollama có đang chạy trên máy này không.
+
+    Nhận diện logo nguồn là tính năng tùy chọn; khi không có Ollama thì vẫn giải
+    mã ba khung hình rồi mới nhận ra là gọi không được. Kiểm tra một lần với trần
+    ngắn để bước xuất video khỏi mấy giây chết đó.
+    """
+    try:
+        with urlopen(url, timeout=timeout) as response:  # nosec B310
+            return 200 <= response.status < 300
+    except (URLError, OSError, ValueError):
+        return False
 
 
 def _region(value):
@@ -40,7 +61,7 @@ def detect_logo_region(
         "stream": False,
     }).encode()
     try:
-        response = urlopen(
+        response = urlopen(  # nosec B310 — local Ollama endpoint
             Request(endpoint, data=body, headers={"Content-Type": "application/json"}),
             timeout=timeout,
         )
@@ -63,20 +84,24 @@ def detect_logo_region_video(
 ) -> dict | None:
     if not model or not video_path:
         return None
+    if not ollama_available():
+        # Không có Ollama thì ba lần giải mã khung hình chỉ để nhận một cái
+        # từ chối kết nối. Trên video dài đây là vài giây chết mỗi lượt xuất.
+        return None
     times = [0.2, 1.0, 2.0][:max(1, samples)]
     if duration is not None:
         times = [value for value in times if value < max(0.3, duration)]
     regions = []
     for time_s in times:
         try:
-            result = subprocess.run(
+            result = run_registered(
                 [
                     "ffmpeg", "-v", "error", "-ss", f"{time_s:.3f}",
                     "-i", video_path, "-frames:v", "1", "-f", "image2pipe",
                     "-vcodec", "mjpeg", "pipe:1",
                 ],
                 capture_output=True, timeout=30,
-            )
+            check=False)
             if result.returncode == 0 and result.stdout:
                 region = detect_logo_region(result.stdout, model)
                 if region:

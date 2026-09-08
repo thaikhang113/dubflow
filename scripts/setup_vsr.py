@@ -24,11 +24,11 @@ SOURCE_DIR = os.path.join(MODEL_DIR, "source")
 MARKER = os.path.join(MODEL_DIR, "installed_ok.json")
 SUPPORTED_PYTHON = ((3, 10), (3, 11), (3, 12))
 ARCHIVE_URL = (
-    "https://codeload.github.com/YaoFANGUK/video-subtitle-remover/"
-    "zip/3f3b061a53f770809db1ab975ae4ebcf5876edc3"
+    "https://github.com/YaoFANGUK/video-subtitle-remover/"
+    "archive/refs/tags/1.1.1.zip"
 )
 ARCHIVE_SHA256 = (
-    "206cb270fa43d40f1bd1ac580d9d729f767e23b50165a00403977107ebe03f2d"
+    "7ce750c2b75a41d9f6e81cb8c4b2753a6788d69cc42352f2b8273c91ed191baf"
 )
 
 def _verify_archive(path: str | Path) -> None:
@@ -91,8 +91,10 @@ def main() -> int:
     os.makedirs(MODEL_DIR, exist_ok=True)
     if not os.path.isdir(SOURCE_DIR):
         archive = os.path.join(MODEL_DIR, "source.zip")
-        log("Tải video-subtitle-remover 1.4.0 ...")
-        urllib.request.urlretrieve(ARCHIVE_URL, archive)
+        log("Tải video-subtitle-remover 1.1.1 ...")
+        urllib.request.urlretrieve(  # nosec B310 — pinned release URL
+            ARCHIVE_URL, archive,
+        )
         _verify_archive(archive)
         extracted = os.path.join(MODEL_DIR, "extract")
         os.makedirs(extracted, exist_ok=True)
@@ -116,7 +118,7 @@ def main() -> int:
         json.dump({
             "ok": True,
             "backend": "video-subtitle-remover",
-            "version": "1.4.0",
+            "version": "1.1.1",
             "source": SOURCE_DIR,
         }, handle, indent=2)
     log("XONG — VSR sẵn sàng.")

@@ -88,12 +88,19 @@ def _check_python() -> DoctorCheck:
     version = f"{sys.version_info[0]}.{sys.version_info[1]}"
     if (3, 10) <= sys.version_info[:2] <= (3, 12):
         return DoctorCheck("python", "Python runtime", "ok", f"Python {version}.")
+    # Dải 3.10–3.12 là ràng buộc của video-subtitle-remover và DeepSeek-OCR,
+    # còn app thì chạy được trên 3.13 (ctranslate2 / onnxruntime đều có wheel).
+    # Hai engine đó cài vào venv riêng do workers_setup chọn interpreter, nên
+    # interpreter của app không làm chúng hỏng: báo fail sẽ buộc người dùng cài
+    # lại Python vì một lý do không đúng.
     return DoctorCheck(
         "python",
         "Python runtime",
-        "fail",
-        f"Python {version} không nằm trong dải hỗ trợ 3.10–3.12.",
-        "Cài Python 3.12 rồi chạy lại tính năng cài đặt.",
+        "warn",
+        f"Python {version} ngoài dải 3.10–3.12 mà AI xóa phụ đề và "
+        "DeepSeek-OCR yêu cầu.",
+        "Bỏ qua nếu không dùng hai tính năng đó. Muốn bật thì cài Python 3.12 "
+        "rồi chạy scripts/setup_vsr.py hoặc scripts/setup_deepseek_ocr.py.",
     )
 
 
@@ -114,6 +121,10 @@ def _check_import(module: str, title: str, key: str) -> DoctorCheck:
 
 def _check_multimedia() -> DoctorCheck:
     try:
+        # Hai dòng này là NỘI DUNG KIỂM TRA, không phải import thừa: chạm vào
+        # thành phần phát video của PySide6 để biết thật sự nó nạp được. Xóa
+        # chúng thì hàm này không thể nào báo fail, và Doctor vẫn nói
+        # "Phát video: Sẵn sàng" dù máy thiếu QtMultimedia.
         from PySide6.QtMultimedia import QMediaPlayer  # noqa: F401
         from PySide6.QtMultimediaWidgets import QGraphicsVideoItem  # noqa: F401
     except Exception as exc:

@@ -63,7 +63,55 @@ def test_clean_project_new_layout_keeps_outputs(tmp_path):
     assert freed == 2000
     assert os.path.isfile(os.path.join(work, OUTPUT_VIDEO))
     assert os.path.isfile(os.path.join(work, "transcript_vi.srt"))
-    assert not os.path.exists(os.path.join(work, DATA_SUBDIR))
+
+
+def test_clean_project_keeps_every_metadata_file(tmp_path):
+    """Auto-clean chỉ được lấy tệp media nặng.
+
+    Mất transcript_vi.json thì Editor báo "Run the dub first" trên dự án đã
+    xuất video xong; mất transcript_original.json thì lần chạy sau nghe lại từ
+    đầu; mất report.json thì batch không validate được.
+    """
+    work = _make_project(tmp_path, "p1", done=True)
+    metadata = {
+        "report.json": 50, "pipeline_state.json": 100,
+        "quality_report.json": 60, "timing_guide.json": 40,
+        "render_opts.json": 30, "transcript_original.json": 45,
+        "transcript_vi.json": 55, "ocr_regions.json": 20,
+        "source_video.json": 25,
+    }
+    for name, size in metadata.items():
+        _write(os.path.join(work, DATA_SUBDIR, name), size)
+    _write(os.path.join(work, DATA_SUBDIR, "segments", ".render_mode"), 15)
+
+    freed = clean_project(work)
+
+    assert freed == 2000                      # chỉ hai tệp .wav
+    for name in metadata:
+        assert os.path.isfile(os.path.join(work, DATA_SUBDIR, name)), name
+    assert not os.path.exists(os.path.join(work, DATA_SUBDIR,
+                                           "original_audio.wav"))
+    # Marker phải còn: mất nó thì editor chặn xuất video ở lần sau
+    assert os.path.isfile(os.path.join(work, DATA_SUBDIR, "segments",
+                                       ".render_mode"))
+    assert not os.path.exists(os.path.join(work, DATA_SUBDIR, "segments",
+                                           "seg_00001.wav"))
+
+
+def test_clean_removes_segment_dir_without_marker(tmp_path):
+    """Không có marker thì thư mục clip rỗng được xóa hẳn."""
+    work = _make_project(tmp_path, "p1", done=True)
+    clean_project(work)
+    assert not os.path.exists(os.path.join(work, DATA_SUBDIR, "segments"))
+
+
+def test_measure_matches_what_clean_frees(tmp_path):
+    """Chữ "dọn được" trên giao diện phải khớp số byte clean_project trả về."""
+    work = _make_project(tmp_path, "p1", done=True)
+    _write(os.path.join(work, DATA_SUBDIR, "report.json"), 50)
+    _write(os.path.join(work, DATA_SUBDIR, "transcript_vi.json"), 55)
+    claimed = measure_project(work).cleanable_bytes
+    assert clean_project(work) == claimed
 
 
 def test_clean_project_legacy_keeps_outputs(tmp_path):

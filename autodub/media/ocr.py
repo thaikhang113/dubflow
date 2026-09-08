@@ -6,6 +6,7 @@ import math
 import os
 import subprocess
 
+from autodub.cancel import run_registered
 from autodub.gpu import detect_gpu
 from autodub.media.ocr_regions import (
     detections_to_logo_regions,
@@ -61,7 +62,7 @@ def preferred_ocr_backend(settings, gpu_info=None) -> str:
 def _sample_times(duration: float, interval: float) -> list[float]:
     if duration <= 0:
         return [0.0]
-    count = max(1, int(math.ceil(duration / interval)))
+    count = max(1, math.ceil(duration / interval))
     return [round(min(duration - 0.05, i * interval), 3) for i in range(count)]
 
 
@@ -98,10 +99,10 @@ def _run_engine_detections(
     env[cache_env[0]] = cache_env[1]
     if backend == "paddle":
         env["OCR_DEVICE"] = settings.ocr_device
-    proc = subprocess.run(cmd, capture_output=True, text=True,
+    proc = run_registered(cmd, capture_output=True, text=True,
                           encoding="utf-8", errors="replace",
                           env=env,
-                          timeout=max(300, int(duration * 2 + 120)))
+                          timeout=max(300, int(duration * 2 + 120)), check=False)
     detections = []
     errors = []
     for line in (proc.stdout or "").splitlines():

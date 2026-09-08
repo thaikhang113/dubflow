@@ -20,6 +20,8 @@ import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
+from autodub.cancel import register as register_process
+from autodub.cancel import unregister as unregister_process
 from autodub.config import Settings
 from autodub.resources import cpu_share
 from autodub.speech.tts.base import TTSResult, write_silence
@@ -32,6 +34,38 @@ STARTUP_TIMEOUT = 600
 SYNTH_TIMEOUT = 300
 
 _WORKER_SCRIPT = bundled_file("autodub", "speech", "tts", "vieneu_worker.py")
+
+
+#: RAM xấp xỉ một worker VieNeu cần lúc nạp model (khớp công thức ở config.py).
+_WORKER_RAM_GB = 1.5
+#: Để lại cho giao diện + ffmpeg + hệ điều hành.
+_RAM_HEADROOM_GB = 2.0
+
+
+class _NullLock:
+    """Lock rỗng: vào vùng cấm mà không chặn ai."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+
+def _ram_allows_parallel(num_workers: int) -> bool:
+    """RAM trống có đủ để N worker nạp model cùng lúc không.
+
+    Không đọc được RAM thì trả False — giữ nguyên hành vi tuần tự cũ, vì nạp
+    song song mà tràn bộ nhớ thì còn tệ hơn chờ thêm vài chục giây.
+    """
+    if num_workers <= 1:
+        return True
+    from autodub.sysinfo import available_ram_gb
+
+    avail = available_ram_gb()
+    if avail is None:
+        return False
+    return avail >= num_workers * _WORKER_RAM_GB + _RAM_HEADROOM_GB
 
 
 class _VieNeuWorker:
@@ -108,6 +142,9 @@ class _VieNeuWorker:
             encoding="utf-8",
             errors="replace",
         )
+        # Ghi danh để nút Dừng giết được worker đang nạp model. Không có nó thì
+        # bấm Dừng giữa bước tạo giọng vẫn phải chờ worker nạp xong (~14 s).
+        register_process(self._proc)
         # Reset the response queue — each (re)start gets a clean queue so
         # stale sentinels from a previous dead process don't confuse us.
         self._resp_queue = queue.Queue()
@@ -134,6 +171,7 @@ class _VieNeuWorker:
         p, self._proc = self._proc, None
         if p is None:
             return
+        unregister_process(p)
         try:
             if p.poll() is None:
                 p.stdin.close()
@@ -211,7 +249,12 @@ class VieNeuSynthesizer:
         # thêm vài lõi cho GUI và cho các slot ffmpeg — TTS không chạy một
         # mình trên máy.
         self.intra_threads = cpu_share(n)
-        self._start_lock = threading.Lock()
+        # Mỗi worker VieNeu chiếm ~1.5 GB RAM khi nạp model. Khóa này trước đây
+        # chặn tuyệt đối, nên warm-up "song song" thực chất vẫn tuần tự: N worker
+        # là N × ~13 s chỉ để nạp model. Cho phép nạp cùng khi khi RAM trống đủ
+        # cho cả nhóm; máy thiếu RAM vẫn đi tuần tự như cũ.
+        self._start_lock = (_NullLock() if _ram_allows_parallel(n)
+                            else threading.Lock())
         # Guards _workers/_free against concurrent mutation (warm-up thread
         # dropping a failed worker vs. dispatch threads pulling from _free).
         self._pool_lock = threading.Lock()

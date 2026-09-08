@@ -79,6 +79,7 @@ class BootstrapDialog(QDialog):
     def _advance_to_pending(self) -> None:
         state = bootstrap.load_state()
         completed = state.get("completed", {})
+        failed = state.get("failed", {})
         while self.index < len(self._steps):
             step = self._steps[self.index]
             if (step.key == "ffmpeg" and __import__("sys").platform.startswith("linux")):
@@ -89,6 +90,13 @@ class BootstrapDialog(QDialog):
                     completed[step.key] = True
             if completed.get(step.key) is True:
                 self.items[self.index].setText(f"{step.label}  -  complete")
+                self.index += 1
+                continue
+            if step.optional and step.key in failed:
+                # Đã thử và thất bại: để người dùng vào app, thiếu tính năng
+                # còn hơn kẹt ở màn hình cài đặt.
+                self.items[self.index].setText(
+                    f"{step.label}  -  skipped (optional)")
                 self.index += 1
                 continue
             self._run_current()
@@ -168,6 +176,12 @@ class BootstrapDialog(QDialog):
         self.items[self.index].setText(f"{step.label}  -  failed")
         self.status.setText(str(message))
         self.log.appendPlainText(str(message))
+        if step.optional:
+            # Bước tùy chọn hỏng thì đi tiếp, không giữ người dùng ở lại đây.
+            self.items[self.index].setText(f"{step.label}  -  skipped")
+            self.index += 1
+            self._advance_to_pending()
+            return
         self.retry.setVisible(True)
         self.cancel.setText("Close")
         self.cancel.setEnabled(True)

@@ -59,6 +59,51 @@ def test_bootstrap_steps_never_install_deepseek(monkeypatch):
     assert "ocr" in keys
     assert keys[-1] == "vsr"
 
+
+def test_vsr_step_is_optional(monkeypatch):
+    """VSR vẫn được chào trong wizard nhưng không còn là điều kiện mở app."""
+    monkeypatch.setenv("DEEPSEEK_OCR_ENABLED", "false")
+    plan = bootstrap.BackendPlan("paddleocr", "video-subtitle-remover", ())
+    vsr = next(s for s in bootstrap.steps(plan) if s.key == "vsr")
+    assert vsr.optional is True
+    assert vsr.script == "scripts/setup_vsr.py"
+
+
+def test_missing_vsr_does_not_block_startup(monkeypatch, tmp_path):
+    """Đủ engine bắt buộc nhưng thiếu VSR -> app vẫn mở được.
+
+    Trước đây bước vsr bị tính như bắt buộc, nên tải thất bại là
+    is_complete() trả False và app.main() đóng cửa sổ ngay.
+    """
+    monkeypatch.setattr(bootstrap, "data_root", lambda: str(tmp_path))
+    monkeypatch.setattr(bootstrap, "load_plan",
+                        lambda: bootstrap.BackendPlan(
+                            "paddleocr", "video-subtitle-remover", ()))
+    bootstrap.save_state({
+        "version": bootstrap.STATE_VERSION,
+        "completed": {s.key: True for s in bootstrap.steps()
+                      if not s.optional},
+        "failed": {"vsr": "download timed out"},
+    })
+
+    assert bootstrap.is_complete() is True
+
+
+def test_required_step_failure_still_blocks_startup(monkeypatch, tmp_path):
+    """Chỉ bước tùy chọn mới được bỏ qua; Whisper thiếu thì app chưa sẵn sàng."""
+    monkeypatch.setattr(bootstrap, "data_root", lambda: str(tmp_path))
+    monkeypatch.setattr(bootstrap, "load_plan",
+                        lambda: bootstrap.BackendPlan(
+                            "paddleocr", "video-subtitle-remover", ()))
+    bootstrap.save_state({
+        "version": bootstrap.STATE_VERSION,
+        "completed": {s.key: True for s in bootstrap.steps()
+                      if not s.optional and s.key != "whisper"},
+        "failed": {},
+    })
+
+    assert bootstrap.is_complete() is False
+
 def test_ensure_hardware_plan_replaces_disabled_deepseek_plan(
     monkeypatch, tmp_path
 ):

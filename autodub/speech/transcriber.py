@@ -7,11 +7,14 @@ from collections import deque
 
 from autodub.config import Settings
 from autodub.languages import WHISPER_LANG_MAP
+from autodub.cancel import register as register_process
+from autodub.cancel import unregister as unregister_process
 from autodub.resources import GPU_LOCK
 from autodub.utils import (
     asr_timeout_s,
     bundled_file,
     gpu_venv_dir,
+    data_root,
     save_json_atomic,
     setup_logging,
 )
@@ -27,7 +30,7 @@ def _rocminfo_ready() -> bool:
     try:
         result = subprocess.run(
             ["rocminfo"], capture_output=True, text=True, timeout=10,
-        )
+        check=False)
         return result.returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False
@@ -53,21 +56,32 @@ def _enable_cuda_dlls() -> bool:
         return _rocminfo_ready() and _ctranslate2_gpu_ready()
     import glob
 
+    # Thứ tự ưu tiên: nvidia pip package trong .venv-whisper (đúng CUDA 12
+    # mà ctranslate2 4.x cần) → torch/lib của venv GPU. Glob cublas64_*
+    # bừa trong torch/lib cũ có thể nạp cublas64_11 trong khi ctranslate2
+    # biên dịch bằng CUDA 12 — DLL nạp "thành công" nhưng GPU vẫn chết.
+    data = data_root()
+    candidates = [
+        os.path.join(data, ".venv-whisper", "Lib", "site-packages",
+                     "nvidia", "cublas", "bin"),
+        os.path.join(data, ".venv-whisper", "Lib", "site-packages",
+                     "nvidia", "cublas", "lib"),
+    ]
     venv = gpu_venv_dir()
-    if not venv:
-        return False
-    lib_dir = os.path.join(venv, "Lib", "site-packages", "torch", "lib")
-    # Glob thay vì ghim cublas64_12: torch cu13 mang cublas64_13 — ghim
-    # cứng số phiên bản là rơi về CPU âm thầm sau một lần nâng cấp venv.
-    matches = glob.glob(os.path.join(lib_dir, "cublas64_*.dll"))
-    if not matches:
-        return False
-    try:
-        os.add_dll_directory(lib_dir)
-        ctypes.CDLL(matches[0])
-        return True
-    except OSError:
-        return False
+    if venv:
+        candidates.append(os.path.join(venv, "Lib", "site-packages",
+                                       "torch", "lib"))
+    for lib_dir in candidates:
+        matches = glob.glob(os.path.join(lib_dir, "cublas64_*.dll"))
+        if not matches:
+            continue
+        try:
+            os.add_dll_directory(lib_dir)
+            ctypes.CDLL(matches[0])
+            return True
+        except OSError:
+            continue
+    return False
 
 
 def asr_will_use_gpu(settings: Settings, language: str) -> bool:
@@ -140,7 +154,7 @@ def _gpu_total_vram_gb() -> float:
             ["nvidia-smi", "--query-gpu=memory.total",
              "--format=csv,noheader,nounits"],
             capture_output=True, text=True, timeout=10,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), check=False)
         if out.returncode == 0 and out.stdout.strip():
             return max(float(x) for x in out.stdout.split()) / 1024.0
     except Exception:
@@ -265,13 +279,23 @@ def _transcribe_whisper_subprocess(
     Dùng cùng JSON-line protocol với asr_paraformer_worker nên kết quả
     có format Whisper-shaped giống hệt đường in-process.
     """
-    # Tìm thư mục torch/lib để worker có thể nạp cuBLAS trên Windows
+    # Tìm thư mục cuBLAS cho worker: ưu tiên nvidia pip package trong
+    # .venv-whisper (đúng CUDA 12), sau đó mới đến torch/lib của venv GPU.
     cuda_dll_dir = ""
-    venv = gpu_venv_dir()
-    if venv and os.name == "nt":
-        _lib = os.path.join(venv, "Lib", "site-packages", "torch", "lib")
-        if os.path.isdir(_lib):
-            cuda_dll_dir = _lib
+    if os.name == "nt":
+        whisper_root = os.path.dirname(
+            os.path.dirname(settings.whisper_venv_python_path()))
+        _nvidia = os.path.join(whisper_root, "Lib", "site-packages",
+                               "nvidia", "cublas", "bin")
+        if os.path.isdir(_nvidia):
+            cuda_dll_dir = _nvidia
+        else:
+            venv = gpu_venv_dir()
+            if venv:
+                _lib = os.path.join(venv, "Lib", "site-packages",
+                                    "torch", "lib")
+                if os.path.isdir(_lib):
+                    cuda_dll_dir = _lib
 
     cmd = [
         settings.whisper_venv_python_path(),
@@ -296,6 +320,9 @@ def _transcribe_whisper_subprocess(
         encoding="utf-8",
         errors="replace",
     )
+    # Worker giữ tiến trình con suốt cả lầt nghe — ghi danh để
+    # nút Dứng giết được ngay thay vì phải nghe hết video.
+    register_process(proc)
 
     stderr_tail: deque[str] = deque(maxlen=30)
     from autodub.media.audio import wav_duration_s
@@ -382,6 +409,7 @@ def _transcribe_whisper_subprocess(
         proc.wait(timeout=timeout)
     finally:
         watchdog.cancel()
+        unregister_process(proc)
         if proc.poll() is None:
             proc.kill()
         for s in (proc.stdout, proc.stderr):

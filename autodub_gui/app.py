@@ -12,9 +12,9 @@ from autodub_gui import _frozen
 
 _frozen.init()  # phải chạy trước mọi thứ khác: PATH, PLAYWRIGHT_BROWSERS_PATH, chdir
 
-from PySide6.QtCore import QEvent, QObject, Qt, QThread, QTimer, Signal  # noqa: E402
-from PySide6.QtGui import QFont, QIcon, QKeyEvent  # noqa: E402
-from PySide6.QtWidgets import (  # noqa: E402
+from PySide6.QtCore import QEvent, QObject, Qt, QThread, QTimer, Signal
+from PySide6.QtGui import QFont, QIcon, QKeyEvent
+from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
     QMainWindow,
@@ -24,17 +24,17 @@ from PySide6.QtWidgets import (  # noqa: E402
     QWidget,
 )
 
-from autodub.config import Settings  # noqa: E402
-from autodub_gui import icons, theme, tokens  # noqa: E402
-from autodub_gui.run_state import REGISTRY  # noqa: E402
-from autodub_gui.shell import AppHeader, NotificationPopup, Sidebar  # noqa: E402
-from autodub_gui.ui.modal import ConfirmDialog  # noqa: E402
-from autodub_gui.ui.style import panel_background  # noqa: E402
-from autodub_gui.ui.toast import TOASTS  # noqa: E402
+from autodub.config import Settings
+from autodub_gui import icons, theme, tokens
+from autodub_gui.run_state import REGISTRY
+from autodub_gui.shell import AppHeader, NotificationPopup, Sidebar
+from autodub_gui.ui.modal import ConfirmDialog
+from autodub_gui.ui.style import panel_background
+from autodub_gui.ui.toast import TOASTS
 
 APP_NAME = "DubFlow"
 APP_TAGLINE = "Lồng tiếng video bằng AI"
-APP_VERSION = "3.0.20"
+APP_VERSION = "3.0.21"
 
 def _runtime_version() -> str:
     """Read release version written into frozen bundles."""
@@ -218,7 +218,7 @@ class MainWindow(QMainWindow):
                 continue
             try:
                 self._ensure_page(row)
-            except Exception:  # noqa: BLE001 — dựng sẵn hỏng thì để lúc bấm dựng lại
+            except Exception:
                 self._page_widgets.pop(row, None)
             break
         if self._prewarm_queue:
@@ -518,7 +518,7 @@ class MainWindow(QMainWindow):
         try:
             repo = (Settings.load(override=True).update_repo
                     or "thaikhang113/dubflow")
-        except Exception:  # noqa: BLE001 — cấu hình hỏng thì bỏ qua lượt này
+        except Exception:
             self._update_check_started = False
             if manual:
                 TOASTS.error("Không đọc được cấu hình cập nhật.")
@@ -554,7 +554,7 @@ class MainWindow(QMainWindow):
 
         try:
             launch_installer(package_path)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             QMessageBox.critical(self, "Không thể cài cập nhật", str(exc))
             return
         self._force_close = True
@@ -663,9 +663,11 @@ class MainWindow(QMainWindow):
 class _NavKeyFilter(QObject):
     """Chặn ký tự rác do bộ gõ tiếng Việt sinh ra khi bấm phím mũi tên."""
 
-    _NAV_KEYS = {Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_Up,
-                 Qt.Key.Key_Down, Qt.Key.Key_Home, Qt.Key.Key_End,
-                 Qt.Key.Key_PageUp, Qt.Key.Key_PageDown}
+    _NAV_KEYS = frozenset({
+        Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_Up,
+        Qt.Key.Key_Down, Qt.Key.Key_Home, Qt.Key.Key_End,
+        Qt.Key.Key_PageUp, Qt.Key.Key_PageDown,
+    })
 
     def eventFilter(self, obj, event) -> bool:
         if (event.type() == QEvent.Type.KeyPress
@@ -769,34 +771,36 @@ def _probe_optional_imports(checks: dict) -> None:
     for key, module in probes.items():
         try:
             __import__(module)
-        except Exception:  # noqa: BLE001 — thiếu thư viện tùy chọn là bình thường
+        except Exception:
             checks[key] = False
     try:
-        from playwright.sync_api import sync_playwright  # noqa: F401
-    except Exception:  # noqa: BLE001
+        # Dung ten module qua importlib: xoa dong nay la xoa luon phep thu.
+        __import__("playwright.sync_api")
+    except Exception:
         checks["playwright_importable"] = False
     try:
-        from PySide6.QtMultimedia import QMediaPlayer  # noqa: F401
-        from PySide6.QtMultimediaWidgets import QGraphicsVideoItem  # noqa: F401
-    except Exception as e:  # noqa: BLE001
+        __import__("PySide6.QtMultimedia")
+        __import__("PySide6.QtMultimediaWidgets")
+    except Exception as e:
         checks["multimedia_importable"] = False
         checks["multimedia_error"] = str(e)
     try:
-        from autodub.media.timing import apply_soft_timing  # noqa: F401
-        from autodub.providers.openai_compatible import (
-            OpenAICompatibleProvider,  # noqa: F401
-        )
-        from autodub.speech.align import align_segments  # noqa: F401
-        from autodub.speech.tts.voices import catalog  # noqa: F401
-        from autodub.text.ass_karaoke import build_karaoke_ass  # noqa: F401
-        from autodub.text.subtitles import refresh_subtitles  # noqa: F401
-    except Exception as e:  # noqa: BLE001
+        for module in (
+            "autodub.media.timing",
+            "autodub.providers.openai_compatible",
+            "autodub.speech.align",
+            "autodub.speech.tts.voices",
+            "autodub.text.ass_karaoke",
+            "autodub.text.subtitles",
+        ):
+            __import__(module)
+    except Exception as e:
         checks["new_modules_importable"] = False
         checks["new_modules_error"] = str(e)
     try:
         from autodub_gui.fonts import load_app_fonts
         checks["app_fonts_loaded"] = len(load_app_fonts())
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
 
@@ -857,7 +861,7 @@ def _probe_env_file(checks: dict) -> None:
         write_env({"_SMOKE_TEST": ""})
         checks["env_path"] = ENV_PATH
         checks["env_existed_before"] = bool(before)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         checks["env_path_writable"] = False
         checks["env_error"] = str(e)
 

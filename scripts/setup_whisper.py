@@ -64,17 +64,16 @@ def step_venv() -> None:
 
 
 def step_install() -> None:
-    probe = subprocess.run([VENV_PY, "-c", "import faster_whisper"],
-                           capture_output=True)
-    if probe.returncode == 0:
-        log("faster-whisper đã cài — bỏ qua")
-        return
-    log("cài faster-whisper (ctranslate2, CPU/GPU) ...")
+    # faster-whisper luôn cài (kể cả khi đã có — pip tự bỏ qua).
+    # nvidia-cublas-cu12: ctranslate2 4.x cần CUDA 12, không phải CUDA 11
+    # như torch cu118 trong .venv-gpu. Không có gói này thì GPU fallback về
+    # CPU âm thầm hoặc chết với "cublas64_12.dll not found".
+    log("cài faster-whisper (ctranslate2, CPU/GPU) + nvidia-cublas-cu12 ...")
     retry_call(
         lambda: subprocess.run(
             [VENV_PY, "-m", "pip", "install", "--quiet",
              "--no-cache-dir", "--retries", "5", "--timeout", "120",
-             _WHISPER_SPEC],
+             _WHISPER_SPEC, "nvidia-cublas-cu12"],
             check=True,
         ),
         attempts=3,
@@ -114,7 +113,7 @@ def step_smoke() -> None:
             encoding="utf-8",
             errors="replace",
             timeout=600,
-        )
+        check=False)
     finally:
         try:
             os.remove(smoke_wav)

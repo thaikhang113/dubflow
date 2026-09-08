@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from autodub.cancel import run_registered
 import os
 import subprocess
 from collections.abc import Callable
@@ -113,7 +114,7 @@ def remove_subtitles(
         input_path,
         output_path,
         regions,
-        run_command=lambda cmd: subprocess.run(
+        run_command=lambda cmd: run_registered(
             cmd, check=True, capture_output=True, text=True,
             encoding="utf-8", errors="replace",
             env={

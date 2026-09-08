@@ -43,6 +43,10 @@ class BootstrapStep:
     label: str
     kind: str
     script: str = ""
+    #: Bước tùy chọn: thiếu nó thì app vẫn chạy được, chỉ mất một tính năng
+    #: nâng cao. is_complete() không bắt buộc nhóm này, và wizard bỏ qua khi
+    #: cài thất bại thay vì chặn người dùng ở màn hình setup.
+    optional: bool = False
 
 
 def load_plan() -> BackendPlan | None:
@@ -109,8 +113,12 @@ def steps(plan: BackendPlan | None = None) -> tuple[BootstrapStep, ...]:
     result = tuple(steps) + common
     if plan and plan.vsr_backend == "video-subtitle-remover":
         result += (
+            # Xóa phụ đề cứng bằng AI là tính năng tăng cường: thiếu nó pipeline
+            # vẫn chạy (rơi về blur). Bắt buộc nó khiến người dùng không mở
+            # được app chỉ vì tải thất bại ~700 MB, kể cả khi đã tắt
+            # "AI xóa phụ đề" trong Cài đặt.
             BootstrapStep("vsr", "Video subtitle remover", "script",
-                          "scripts/setup_vsr.py"),
+                          "scripts/setup_vsr.py", optional=True),
         )
     return result
 
@@ -153,6 +161,8 @@ def is_complete() -> bool:
         return False
     completed = load_state().get("completed", {})
     for step in steps():
+        if step.optional:
+            continue
         if step.key == "ffmpeg" and sys.platform.startswith("linux"):
             # Debian declares FFmpeg as a package dependency. Do not send
             # installed Debian users through the download worker.

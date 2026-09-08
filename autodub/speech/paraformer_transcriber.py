@@ -17,6 +17,8 @@ import threading
 from collections import deque
 
 from autodub.config import Settings
+from autodub.cancel import register as register_process
+from autodub.cancel import unregister as unregister_process
 from autodub.utils import asr_timeout_s, bundled_file, setup_logging
 
 logger = setup_logging("autodub.paraformer")
@@ -54,7 +56,7 @@ def transcribe_paraformer(audio_path: str, settings: Settings) -> list[dict]:
              "-y", normalized_path],
             capture_output=True, text=True,
             timeout=max(300, int((wav_duration_s(audio_path) or 0) * 4)),
-        )
+        check=False)
         if proc.returncode != 0 or not os.path.isfile(normalized_path):
             raise RuntimeError(
                 "Không chuẩn hóa được audio về 16 kHz mono cho Paraformer: "
@@ -85,6 +87,8 @@ def transcribe_paraformer(audio_path: str, settings: Settings) -> list[dict]:
             except OSError:
                 pass
         raise
+    # Ghi danh \u0111\u1ec3 n\u00fat D\u1ee9ng gi\u1ebft \u0111\u01b0\u1ee3c worker thay v\u00ec ph\u1ea3i nghe h\u1ebft video.
+    register_process(proc)
 
     stderr_tail: deque[str] = deque(maxlen=20)
     from autodub.media.audio import wav_duration_s
@@ -139,6 +143,7 @@ def transcribe_paraformer(audio_path: str, settings: Settings) -> list[dict]:
         proc.wait(timeout=timeout)
     finally:
         watchdog.cancel()
+        unregister_process(proc)
         if proc.poll() is None:
             proc.kill()
         for s in (proc.stdout, proc.stderr):

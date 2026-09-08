@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from pydub import AudioSegment
 
+from autodub.cancel import run_registered
 from autodub.media.video import probe_duration_s
 from autodub.resources import FFMPEG_SLOTS
 from autodub.utils import ensure_dir, ffmpeg_timeout_s, seg_wav_path, setup_logging
@@ -80,11 +81,11 @@ def apply_atempo(src: str, dst: str, speed: float) -> bool:
     tmp = dst + ".atempo.tmp.wav"
     try:
         with FFMPEG_SLOTS:
-            result = subprocess.run(
+            result = run_registered(
                 ["ffmpeg", "-y", "-i", src,
                  "-filter:a", f"atempo={speed:.3f}", tmp],
                 capture_output=True, text=True, timeout=_SEG_TIMEOUT_S,
-            )
+            check=False)
         failed = (result.returncode != 0 or not os.path.exists(tmp)
                   or os.path.getsize(tmp) == 0)
         err = result.stderr[:200] if failed else ""
@@ -127,9 +128,9 @@ def extract_audio(video_path: str, output_path: str, sample_rate: int = 16000,
     logger.info(f"Extracting audio: {video_path} → {output_path}")
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True,
+        result = run_registered(cmd, capture_output=True, text=True,
                                 timeout=ffmpeg_timeout_s(
-                                    probe_duration_s(video_path)))
+                                    probe_duration_s(video_path)), check=False)
     except subprocess.TimeoutExpired:
         raise RuntimeError(f"FFmpeg treo khi tách audio từ {video_path}")
     if result.returncode != 0:
@@ -161,9 +162,9 @@ def extract_audio_dual(video_path: str, asr_path: str, hq_path: str,
     ]
     logger.info(f"Extracting audio (1 pass, 2 outputs): {video_path}")
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True,
+        result = run_registered(cmd, capture_output=True, text=True,
                                 timeout=ffmpeg_timeout_s(
-                                    probe_duration_s(video_path)))
+                                    probe_duration_s(video_path)), check=False)
     except subprocess.TimeoutExpired:
         result = None
     ok = (result is not None and result.returncode == 0
@@ -208,11 +209,11 @@ def slow_segments(
             return
         try:
             with FFMPEG_SLOTS:
-                result = subprocess.run(
+                result = run_registered(
                     ["ffmpeg", "-y", "-i", src,
                      "-filter:a", f"atempo={factor}", dst],
                     capture_output=True, text=True, timeout=_SEG_TIMEOUT_S,
-                )
+                check=False)
             failed = (result.returncode != 0 or not os.path.exists(dst)
                       or os.path.getsize(dst) == 0)
             err = result.stderr[:120] if failed else ""
@@ -287,11 +288,11 @@ def postprocess_voice_clip(src: str, dst: str,
     tmp = dst + ".post.tmp.wav"
     try:
         with FFMPEG_SLOTS:
-            result = subprocess.run(
+            result = run_registered(
                 ["ffmpeg", "-y", "-i", src, "-filter:a", filters,
                  "-ar", str(src_rate), "-acodec", "pcm_s16le", tmp],
                 capture_output=True, text=True, timeout=_SEG_TIMEOUT_S,
-            )
+            check=False)
         failed = (result.returncode != 0 or not os.path.exists(tmp)
                   or os.path.getsize(tmp) == 0)
         err = result.stderr[:120] if failed else ""
@@ -407,11 +408,11 @@ def _decode_resampled(path: str, rate: int, ch: int):
     import numpy as np
 
     try:
-        result = subprocess.run(
+        result = run_registered(
             ["ffmpeg", "-v", "error", "-i", path,
              "-f", "s16le", "-ar", str(rate), "-ac", str(ch), "-"],
             capture_output=True, timeout=_SEG_TIMEOUT_S,
-        )
+        check=False)
         if result.returncode == 0 and result.stdout:
             return (np.frombuffer(result.stdout, dtype=np.int16)
                     .astype(np.int32).reshape(-1, ch))
@@ -490,13 +491,13 @@ def merge_segments(
         if background_gain_db:
             filters.insert(0, f"volume={background_gain_db}dB")
         try:
-            result = subprocess.run(
+            result = run_registered(
                 ["ffmpeg", "-y", "-i", background_path,
                  "-filter:a", ",".join(filters),
                  "-acodec", "pcm_s16le", bg_tmp],
                 capture_output=True, text=True,
                 timeout=ffmpeg_timeout_s(total_duration),
-            )
+            check=False)
             ok = result.returncode == 0 and os.path.getsize(bg_tmp) > 0
             err = result.stderr[:200] if not ok else ""
         except subprocess.TimeoutExpired:

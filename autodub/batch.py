@@ -87,7 +87,7 @@ BatchObserver = Callable[[int, int, BatchItem, str, str], None]
 def validate_batch_report(report: dict, *, skip_video: bool = False) -> str:
     """Validate published batch artifacts before recording success."""
     if not isinstance(report, dict):
-        raise RuntimeError("Batch report không hợp lệ")
+        raise TypeError("Batch report không hợp lệ")
     output_dir = str(report.get("output_dir") or "").strip()
     if not output_dir or not os.path.isdir(output_dir):
         raise RuntimeError(f"Batch thiếu thư mục output: {output_dir or '<trống>'}")
@@ -102,9 +102,12 @@ def validate_batch_report(report: dict, *, skip_video: bool = False) -> str:
     if not isinstance(persisted, dict) or not isinstance(
         persisted.get("files"), dict
     ):
-        raise RuntimeError(f"Batch report.json thiếu danh sách files: {report_path}")
+        raise TypeError(f"Batch report.json thiếu danh sách files: {report_path}")
     files = persisted["files"]
-    required = ["dub_audio"] if skip_video else ["dubbed_video", "dub_audio"]
+    # Video: only the user-facing MP4 must survive (data/audio_vi_full.wav is
+    # an intermediate that AUTO_CLEAN_INTERMEDIATES deletes). Audio-only: the
+    # merged WAV is the output itself and must exist.
+    required = ["dub_audio"] if skip_video else ["dubbed_video"]
     for key in required:
         path = str(files.get(key) or "").strip()
         if not path or not os.path.isfile(path) or os.path.getsize(path) <= 0:
@@ -146,7 +149,7 @@ class _Prefetcher:
                 from autodub.media.downloader import download_video
                 result["path"] = download_video(
                     item.url, dest, fragment_workers=self._fragment_workers)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logger.warning(f"Táº£i trÆ°á»›c tháº¥t báº¡i ({item.label}): {e}")
                 result["error"] = str(e)
             return result
@@ -339,12 +342,12 @@ def _run_items(
                     f"(work_dir={result.work_dir})."))
             output_dir = validate_batch_report(
                 result.report, skip_video=req_template.skip_video)
-            summary.success += 1
-            logger.info(f"[{i + 1}/{len(items)}] SUCCESS â†’ {output_dir}")
             if prefetched:
                 # Dá»n file táº£i trÆ°á»›c vÃ o work_dir Ä‘á»ƒ resume tá»± tÃ¬m tháº¥y.
                 _Prefetcher.adopt(prefetched, output_dir)
             on_result(item, result.report, None)
+            summary.success += 1
+            logger.info(f"[{i + 1}/{len(items)}] SUCCESS → {output_dir}")
             if observer:
                 observer(i, len(items), item, "success", output_dir)
         except PipelineCancelled:
@@ -393,7 +396,7 @@ def _load_state(state_path: str) -> dict[str, dict]:
         with open(state_path, encoding="utf-8") as f:
             data = json.load(f)
         return {v["video_url"]: v for v in data.get("videos", []) if v.get("video_url")}
-    except Exception as e:  # noqa: BLE001 â€” a corrupt state file must not block a run
+    except Exception as e:
         logger.warning(f"Ignoring unreadable {STATE_FILENAME}: {e}")
         return {}
 

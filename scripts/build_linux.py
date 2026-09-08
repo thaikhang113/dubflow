@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -16,6 +17,19 @@ import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIST = os.path.join(ROOT, "dist", "DubFlow")
+
+
+def _source_version() -> str:
+    """Đọc APP_VERSION từ nguồn — giống cách `build_exe.py` làm.
+
+    Tùy chọn `--version` trước đây giữ cứng một con số nên khi chạy cục bộ, tên
+    artifact lệch với bản thật và không bao giờ tăng theo.
+    """
+    src = open(os.path.join(ROOT, "autodub_gui", "app.py"),
+               encoding="utf-8").read()
+    match = re.search(r'^APP_VERSION\s*=\s*"([^"]+)"', src, re.MULTILINE)
+    return match.group(1) if match else "0.0.0"
+
 
 def _bundle_data_dir() -> str:
     for name in ("_internal", "data"):
@@ -89,7 +103,7 @@ def archive(version: str) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-test", action="store_true")
-    parser.add_argument("--version", default="3.0.19")
+    parser.add_argument("--version", default=_source_version())
     args = parser.parse_args()
     started = time.time()
 

@@ -46,7 +46,7 @@ def _rocminfo_ready() -> bool:
         result = subprocess.run(
             ["rocminfo"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             timeout=10,
-        )
+        check=False)
         return result.returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False
@@ -77,10 +77,15 @@ def _try_load_cuda_dlls(dll_dir: str) -> bool:
 
     try:
         os.add_dll_directory(dll_dir)
-        matches = glob.glob(os.path.join(dll_dir, "cublas64_*.dll"))
-        if matches:
-            ctypes.CDLL(matches[0])
-            return True
+        # Nạp cuBLAS tương thích trước: ctranslate2 4.x cần CUDA 12
+        # (cublas64_12), torch cu118 trong venv khác có cublas64_11 —
+        # nạp sai bản thì CUDA vẫn chết lúc encode. Thử từ mới xuống cũ.
+        for version in ("12", "13", "11"):
+            matches = glob.glob(
+                os.path.join(dll_dir, f"cublas64_{version}.dll"))
+            if matches:
+                ctypes.CDLL(matches[0])
+                return True
     except OSError:
         pass
     return False

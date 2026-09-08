@@ -21,6 +21,7 @@ import os
 import subprocess
 
 from autodub.utils import ffmpeg_timeout_s, setup_logging
+from autodub.cancel import run_registered
 
 logger = setup_logging("autodub.retime")
 
@@ -38,7 +39,7 @@ def probe_video_info(video_path: str) -> tuple[float, str]:
          "-show_entries", "stream=avg_frame_rate:format=duration",
          "-of", "json", video_path],
         capture_output=True, text=True, timeout=60,
-    )
+    check=False)
     if result.returncode != 0:
         raise RuntimeError(f"ffprobe failed on {video_path}: {result.stderr[:200]}")
     data = json.loads(result.stdout)
@@ -55,7 +56,7 @@ def probe_duration(path: str) -> float | None:
         ["ffprobe", "-v", "error", "-show_entries", "format=duration",
          "-of", "json", path],
         capture_output=True, text=True, timeout=60,
-    )
+    check=False)
     if result.returncode != 0:
         return None
     try:
@@ -84,9 +85,9 @@ def slow_video(video_path: str, output_path: str, speed: float,
     # Encode lại toàn bộ video — trần theo thời lượng nguồn, CPU yếu vẫn dư.
     dur = probe_duration(video_path)
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True,
+        result = run_registered(cmd, capture_output=True, text=True,
                                 timeout=max(900, int(dur * 8)) if dur
-                                else ffmpeg_timeout_s(None))
+                                else ffmpeg_timeout_s(None), check=False)
         err = result.stderr[:200]
         failed = result.returncode != 0
     except subprocess.TimeoutExpired:
@@ -102,13 +103,13 @@ def slow_background(background_path: str, output_path: str,
                     speed: float) -> bool:
     """Slow the background track by the same factor (atempo accepts ≥0.5)."""
     try:
-        result = subprocess.run(
+        result = run_registered(
             ["ffmpeg", "-v", "error", "-i", background_path,
              "-filter:a", f"atempo={max(0.5, min(2.0, speed)):.6f}",
              "-acodec", "pcm_s16le", "-y", output_path],
             capture_output=True, text=True,
             timeout=ffmpeg_timeout_s(probe_duration(background_path)),
-        )
+        check=False)
         err = result.stderr[:200]
         failed = result.returncode != 0
     except subprocess.TimeoutExpired:

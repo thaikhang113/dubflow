@@ -24,7 +24,7 @@ import os
 import threading
 import time
 from dataclasses import asdict, dataclass, field, replace
-from datetime import datetime
+from datetime import datetime, timezone
 
 from autodub.config import Settings
 from autodub.languages import TargetLang, get_target, resolve_source_lang
@@ -267,6 +267,33 @@ class DubPipeline:
             return self._synth_cache.get(target, self.settings, voice)
         return get_synthesizer(target, self.settings, voice)
 
+    def _warm_tts_early(self, target, requested_voice) -> None:
+        """Nạp model giọng đọc ở nền, phủ lên lúc ASR đang chạy.
+
+        Chỉ NẠP model — không tạo giọng. Synth được giữ lại để Bước 5 dùng
+        đúng đối tượng đã nóng, nhờ vậy lượt đọc không phải chờ thêm một lần
+        nạp nữa. Mọi lỗi ở đây đều bỏ qua: không có bộ giọng thì Bước 5 vẫn
+        tự thử lại như cũ.
+        """
+        if self._active_synth is not None:
+            return
+        try:
+            from autodub.speech.tts import voices as voice_catalog
+
+            name = voice_catalog.resolve(self.settings, requested_voice)
+            if voice_catalog.is_capcut_voice(name):
+                return          # engine mạng không có gì để nạp sớm
+            synth = self._get_synth(target, name)
+            self._early_synth = synth
+            self._active_synth = synth
+            warm = getattr(synth, "warm_up_async", None)
+            if warm is not None:
+                warm()
+        except Exception as e:
+            logger.info(f"Bỏ qua nạp sớm bộ giọng ({e})")
+            self._early_synth = None
+            self._active_synth = None
+
     # ------------------------------------------------------------------ #
 
     def run(self, req: DubRequest) -> DubResult:
@@ -274,6 +301,7 @@ class DubPipeline:
         background-separation future so a long-lived GUI process doesn't
         strand multi-GB worker subprocesses (VRAM) between runs."""
         self._active_synth = None
+        self._early_synth = None
         self._active_bg_future = None
         self._bg_executor = None
         original_settings = self.settings
@@ -404,7 +432,7 @@ class DubPipeline:
             logger.info(f"Resuming work directory: {work_dir}")
         else:
             output_dir = req.output_dir or self.default_output_dir(target)
-            folder_name = datetime.now().strftime("%Y%m%d%H%M%S") + target.folder_suffix
+            folder_name = datetime.now(tz=timezone.utc).strftime("%Y%m%d%H%M%S") + target.folder_suffix
             work_dir = ensure_dir(os.path.join(output_dir, folder_name))
             logger.info(f"Output folder: {work_dir}")
         # Cho caller (batch) biết lượt chạy này nằm ở thư mục nào — kể cả khi
@@ -564,6 +592,7 @@ class DubPipeline:
                 extract_audio(video_path, audio_path,
                               sample_rate=settings.audio_sample_rate)
             rep.emit("extract", "done", detail=audio_path)
+        _tick("extract")
         if settings.hq_background:
             if need_hq:
                 try:
@@ -606,6 +635,12 @@ class DubPipeline:
         # --- Step 3: Speech-to-Text (ASR) — GPU-exclusive ---
         rep.check_cancelled()
         logger.info("=" * 60)
+        # Nạp model giọng đọc SỚM, phủ lên lúc đang nghe. VieNeu chạy CPU nên
+        # không tranh VRAM với Whisper; bỏ tay không ~13 s chờ nạp model rồi mới
+        # tới lượt nghe là thời gian chết thật mà người dùng cảm nhận.
+        # Nhánh clone để dành việc này cho khối dưới vì tên giọng chưa biết.
+        if not (req.clone_voice or settings.vieneu_clone_enabled):
+            self._warm_tts_early(target, req.voice)
         segments = None
         if os.path.exists(transcript_orig_path):
             # Validate khi resume: file hỏng (crash giữa chừng ở bản cũ,
@@ -657,6 +692,7 @@ class DubPipeline:
                          text_field="text")
             logger.info(f"Nghe xong: video có {len(segments)} câu thoại")
             rep.emit("asr", "done", detail=f"{len(segments)} segments")
+        _tick("asr")
         logger.info(f"Transcribed {len(segments)} segments")
         if not segments:
             # Không có lời nói → dịch/TTS đều vô nghĩa; báo đúng nguyên nhân
@@ -729,15 +765,26 @@ class DubPipeline:
                     f"({len(route.groups)} voices)"
                 )
                 tts_synth = None
+                route_voice_name = None
             else:
-                tts_synth = self._get_synth(target, effective_voice)
-                self._active_synth = tts_synth
-                warm = getattr(tts_synth, "warm_up_async", None)
-                if warm is not None:
-                    # A3 fix: khởi động worker ngay lập tức thay vì chờ Demucs.
-                    # VieNeu chạy CPU-only — không tranh VRAM với Demucs (GPU),
-                    # nên có thể load song song và tiết kiệm 30-120s chờ đợi.
-                    warm()
+                # route.groups[0][0] là tên giọng thật đã giải trong _plan
+                route_voice_name = route.groups[0][0]
+                early = self._early_synth
+                early_name = getattr(early, "voice_name", None)
+                if early is not None and early_name == route_voice_name:
+                    # Đã nạp sớm trước lúc nghe — dùng lại, không dựng pool thứ
+                    # hai (mỗi pool là ~1.5 GB RAM cho mỗi luồng).
+                    tts_synth = early
+                    self._active_synth = early
+                else:
+                    tts_synth = self._get_synth(target, effective_voice)
+                    self._active_synth = tts_synth
+                    warm = getattr(tts_synth, "warm_up_async", None)
+                    if warm is not None:
+                        # A3 fix: khởi động worker ngay lập tức thay vì chờ
+                        # Demucs. VieNeu chạy CPU-only — không tranh VRAM với
+                        # Demucs (GPU), nên có thể load song song.
+                        warm()
         except Exception as e:
             logger.warning(f"Bỏ qua khởi động sớm bộ giọng ({e})")
             tts_synth = None
@@ -795,6 +842,7 @@ class DubPipeline:
             segments = self._load_translation(transcript_dub_path, segments, target)
             _refresh_subs(segments, work_dir, target, subtitle_style)
             rep.emit("translate", "done", detail=transcript_dub_path)
+        _tick("translate")
 
         # --- Step 5: TTS ---
         # Strict 1:1 rendering: every translated segment becomes exactly one
@@ -806,10 +854,16 @@ class DubPipeline:
         logger.info(f"STEP 5: Synthesizing {target.name} audio (TTS)")
         logger.info(f"Bắt đầu tạo giọng đọc cho {len(segments)} câu — "
                     "bước lâu nhất, tiến độ hiện ở khung bên trái...")
+        # Bước dài nhất của cả luồng phải phát "start": không có nó thì
+        # StepTracker/Narrator bên giao diện không bao giờ sáng ở "Đang tạo
+        # giọng đọc", và mọi tự động bấm theo bước (kiểm hủy, đo tiềm năng)
+        # không có mốc để bấm.
+        rep.emit("tts", "start", detail=f"{len(segments)} segments")
         seg_dir = ensure_dir(data_path(work_dir, "segments", create_dir=True))
         self._ensure_render_mode(work_dir, seg_dir)
         tts_results = self._synthesize_segments(target, effective_voice, segments,
                                                 seg_dir, synth=tts_synth)
+        _tick("tts")
         # Free the TTS workers' VRAM before the NVENC video encode — unless a
         # batch cache owns them (the next video reuses the warm pool).
         if (self._synth_cache is None and tts_synth is not None
@@ -924,6 +978,7 @@ class DubPipeline:
             duck_voice_db=settings.bg_duck_voice_db,
         )
         rep.emit("merge_audio", "done", detail=merged_audio_path)
+        _tick("merge_audio")
 
         # Mọi thứ phase Xuất video cần, gói làm một: luồng batch/legacy dùng
         # ngay tại chỗ; luồng wizard ghi xuống đĩa (mã hóa) rồi DỪNG — bấm
@@ -1151,6 +1206,10 @@ class DubPipeline:
                     logger.warning("Video2X fallback giữ bản FFmpeg: %s",
                                    result.error)
             rep.emit("merge_video", "done", detail=dubbed_video_path)
+            # Cùng định dạng với `_tick()` bên `_run_impl` để tổng hợp thời gian
+            # từng bước đọc được liên mạch từ một tệp log.
+            logger.info(f"  \u23f1  merge_video: "
+                        f"{time.time() - phase_start:.1f}s")
         else:
             # Luồng wizard dừng trước khi sinh phụ đề — xuất chỉ-âm-thanh
             # vẫn phải có tệp .srt trong thư mục kết quả.
@@ -1684,7 +1743,7 @@ class DubPipeline:
                      "-sample_fmt", "s16", "-y", clip_path],
                     capture_output=True, text=True,
                     timeout=ffmpeg_timeout_s(duration),
-                )
+)
                 if proc.returncode != 0 or not os.path.isfile(clip_path):
                     continue
             clip_paths.append((segment, clip_path))
@@ -1703,7 +1762,7 @@ class DubPipeline:
                  "--style", self.settings.vieneu_style],
                 capture_output=True, text=True, encoding="utf-8",
                 errors="replace", timeout=600,
-            )
+)
         finally:
             try:
                 os.remove(manifest)
@@ -1750,7 +1809,7 @@ class DubPipeline:
         clip_by_id = {segment.get("id"): path for segment, path in clip_paths}
         enroll_items = []
         for speaker, ranges in sorted(windows.items()):
-            start, end = ranges[0]
+            start, _end = ranges[0]
             source_segment = next(
                 (s for s in enriched
                  if s["speaker_id"] == speaker
