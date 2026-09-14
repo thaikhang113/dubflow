@@ -67,7 +67,7 @@ def estimate_word_times(text: str, start: float,
     total = sum(weights)
     out: list[tuple[str, float, float]] = []
     t = start
-    for tok, w in zip(tokens, weights):
+    for tok, w in zip(tokens, weights, strict=True):
         dur = duration * w / total
         out.append((tok, round(t, 3), round(t + dur, 3)))
         t += dur
@@ -149,7 +149,7 @@ def chunk_words(words: list[tuple[str, float, float]],
 
 def _ass_time(seconds: float) -> str:
     """ASS timestamp ``H:MM:SS.cc`` (centi-giây, không âm)."""
-    cs_total = max(0, int(round(seconds * 100)))
+    cs_total = max(0, round(seconds * 100))
     s_total, cs = divmod(cs_total, 100)
     h, rem = divmod(s_total, 3600)
     m, s = divmod(rem, 60)
@@ -181,7 +181,7 @@ def _karaoke_body(chunk: list[tuple[str, float, float]],
     """Nội dung dòng kiểu \\k: từng chữ đổi màu đúng lúc được đọc."""
     parts = []
     for word, t0, t1 in chunk:
-        cs = max(1, int(round((t1 - t0) * 100)))
+        cs = max(1, round((t1 - t0) * 100))
         parts.append(rf"{{\k{cs}}}{_escape_text(word.upper() if all_caps else word)}")
     return " ".join(parts)
 

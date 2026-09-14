@@ -12,7 +12,10 @@ from urllib.parse import urlparse
 
 import requests
 
-from autodub.text.translate_common import parse_response_segments
+from autodub.text.translate_common import (
+    parse_response_object,
+    parse_response_segments,
+)
 
 
 class OpenAICompatibleError(RuntimeError):
@@ -167,6 +170,44 @@ class OpenAICompatibleProvider:
         except Exception as exc:
             raise OpenAICompatibleError(
                 _redact(f"Model không trả lời: {exc}", self.api_key)
+            ) from exc
+
+    def complete_object(self, prompt: str, *, system: str = "",
+                        temperature: float = 0.4,
+                        timeout: float = 120.0) -> dict:
+        """Một lượt hỏi - đáp mà kết quả bắt buộc là một JSON object.
+
+        Dùng cho các bước phụ (tiêu đề + mô tả đăng bài) nên chỉ gọi một lần,
+        không vòng retry như :meth:`translate`: hỏng thì người gọi bỏ qua bước
+        này, video vẫn xong.
+        """
+        if not self.endpoint or not self.model:
+            raise OpenAICompatibleError("Thiếu endpoint hoặc model dịch.")
+        payload = {
+            "model": self.model,
+            "temperature": temperature,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": system or "Chỉ trả JSON hợp lệ. Không dùng markdown fence.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+        }
+        try:
+            response = self.session.post(
+                f"{self.endpoint}/chat/completions",
+                headers={**self._headers(), "Content-Type": "application/json"},
+                json=payload,
+                timeout=timeout,
+            )
+            response.raise_for_status()
+            body = response.json()
+            content = body["choices"][0]["message"]["content"]
+            return parse_response_object(str(content))
+        except Exception as exc:
+            raise OpenAICompatibleError(
+                _redact(f"Không lấy được kết quả: {exc}", self.api_key)
             ) from exc
 
     def translate(

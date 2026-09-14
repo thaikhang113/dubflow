@@ -44,7 +44,7 @@ def main() -> int:
         ]
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
-    process = subprocess.run(command, env=env)
+    process = subprocess.run(command, env=env, check=False)
     print(json.dumps({"returncode": process.returncode}), flush=True)
     return process.returncode
 

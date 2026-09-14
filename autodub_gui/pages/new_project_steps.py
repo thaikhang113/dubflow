@@ -76,8 +76,10 @@ class _StepPanel(QWidget):
 class VideoStep(_StepPanel):
     """Bước 1: chọn nguồn video."""
 
-    SOURCES = [("Dán liên kết", "url"), ("Tải tệp lên", "file"),
-               ("Tiếp tục dang dở", "resume")]
+    SOURCES = (
+        ("Dán liên kết", "url"), ("Tải tệp lên", "file"),
+        ("Tiếp tục dang dở", "resume"),
+    )
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__("Chọn video", "Dán liên kết, chọn tệp từ máy, hoặc "
@@ -294,9 +296,9 @@ class VideoStep(_StepPanel):
     def set_resume(self, work_dir: str) -> None:
         """Chuyển bước 1 sang «Tiếp tục dang dở» trỏ vào một dự án có sẵn.
 
-        Trang cha gọi khi một lượt chạy dừng giữa chừng (lỗi, hết tín dụng, chờ
-        dịch tay) — bấm chạy lại sẽ đi tiếp đúng dự án cũ thay vì tạo dự án
-        mới và bị trừ tín dụng lần nữa.
+        Trang cha gọi khi một lượt chạy dừng giữa chừng (lỗi dịch tự động, chờ
+        dịch tay, bấm dừng) — bấm chạy lại sẽ đi tiếp đúng dự án cũ thay vì tạo
+        một dự án mới và nghe-chép lại từ đầu.
         """
         self.source.set_key("resume")
         self._on_source("resume")
@@ -484,10 +486,11 @@ class TranslateStep(_StepPanel):
         self.auto_translate.toggled.connect(self._on_auto_translate)
         self.body.addWidget(self.auto_translate)
 
-        self.metadata = QCheckBox("Tạo tiêu đề + mô tả đăng bài (+20 tín dụng)")
+        self.metadata = QCheckBox("Tạo tiêu đề + mô tả đăng bài")
         self.metadata.setToolTip(
-            "Máy chủ viết sẵn tiêu đề, mô tả và thẻ cho mạng xã hội, lưu vào "
-            "tệp youtube_post.txt trong thư mục dự án. Tắt đi nếu bạn tự viết.")
+            "Model ở endpoint dịch viết sẵn tiêu đề, mô tả và thẻ cho mạng xã "
+            "hội, lưu vào tệp youtube_post.txt trong thư mục dự án. Chưa cấu "
+            "hình endpoint thì bỏ qua; lời thoại và ảnh bìa gốc vẫn được lưu.")
         self.metadata.setChecked(True)
         self.metadata.toggled.connect(lambda _c: self.changed.emit())
         self.body.addWidget(self.metadata)
@@ -622,7 +625,7 @@ class TranslateStep(_StepPanel):
             settings = Settings.load()
             fb_auto = settings.translate_enabled
             fb_meta = settings.generate_metadata
-        except Exception:  # noqa: BLE001 — cấu hình hỏng thì dùng mặc định
+        except Exception:
             fb_auto, fb_meta = True, True
         self.auto_translate.setChecked(bool(data.get("auto_translate", fb_auto)))
         self.metadata.setChecked(bool(data.get("generate_metadata", fb_meta)))
@@ -807,7 +810,7 @@ class VoiceStep(_StepPanel):
         try:
             from autodub.config import Settings
             return Settings.load(override=True).vieneu_voice or DEFAULT_VOICE
-        except Exception:  # noqa: BLE001 — cấu hình hỏng thì dùng giọng gốc
+        except Exception:
             return DEFAULT_VOICE
 
     def _refresh_default_label(self) -> None:
@@ -974,9 +977,9 @@ class RunStep(_StepPanel):
         self.body.addWidget(LabeledWidget("Tóm tắt lựa chọn", self.summary))
 
         note = QLabel(
-            "Giá của video chốt ngay sau bước nghe-chép, theo số câu thoại "
-            "(10 tín dụng/câu, 12 nếu bật dịch tự động, +20 cho gói tiêu đề + mô "
-            "tả) và không đổi nữa — ứng dụng báo tổng tín dụng trước khi trừ ví.")
+            "Toàn bộ bước nghe-chép, giọng đọc, phụ đề và xuất video chạy trên "
+            "máy bạn, không tính phí. Chi phí duy nhất có thể phát sinh là model "
+            "dịch ở endpoint bạn tự cấu hình.")
         note.setWordWrap(True)
         note.setStyleSheet(
             f"color: {tokens.TEXT_MUTED}; font-size: {tokens.FS_META}px; "
@@ -1065,13 +1068,13 @@ class RunStep(_StepPanel):
 
 
 class ExportSummaryStep(_StepPanel):
-    style_requested = Signal()
+    """Bước 6: chọn cách xuất và xem lại toàn bộ lựa chọn của lần chạy.
 
-    """Bước 6: tổng kết lần chạy và chốt Vox khi bấm Xuất video.
-
-    Nút Xuất video là nút chính ở chân trang (do trang cha đổi nhãn khi
-    đến bước này) — bước chỉ lo hiển thị số liệu.
+    Docstring phải là câu lệnh đầu tiên của lớp; để nó sau dòng
+    ``style_requested`` thì nó chỉ còn là một chuỗi vô nghĩa.
     """
+
+    style_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__("Xuất video",
@@ -1134,20 +1137,15 @@ class ExportSummaryStep(_StepPanel):
         self.body.addWidget(LabeledWidget("Tổng kết lần chạy", self.summary))
 
         self.notice = QLabel(
-            "Chưa xuất thì chưa xem được bản dịch hay âm thanh — dữ liệu "
-            "đang được khóa. Bỏ qua bước này thì dự án tự mở khóa sau 48 "
-            "giờ, không tốn thêm tín dụng.")
+            "Xuất video chạy tự động ngay sau bước ghép âm thanh. Chọn xong thì "
+            "bấm Bắt đầu lồng tiếng; muốn đổi cách xuất về sau, mở dự án ở "
+            "Trình chỉnh sửa.")
         self.notice.setWordWrap(True)
         self.notice.setStyleSheet(
             f"color: {tokens.TEXT_MUTED}; font-size: {tokens.FS_META}px; "
             f"background: transparent;")
         self.body.addWidget(self.notice)
         self.finish()
-
-    @staticmethod
-    def _fmt_duration(seconds: float) -> str:
-        mins, secs = divmod(int(seconds or 0), 60)
-        return f"{mins} phút {secs:02d} giây" if mins else f"{secs} giây"
 
     def set_summary(self, rows: list[tuple[str, str]]) -> None:
         lines = [f"<b>{name}:</b> {value}" for name, value in rows]
@@ -1156,33 +1154,6 @@ class ExportSummaryStep(_StepPanel):
     def set_style_summary(self, text: str) -> None:
         self.style_summary.setText(text)
 
-    def set_stats(self, sentences: int, duration_s: float,
-                  usage: dict | None, hold: dict | None) -> None:
-        """Đổ bảng tổng kết: thời lượng, số câu thoại, tổng Vox, số dư.
-
-        Chỉ một con số tiền: TỔNG Vox của video, chốt từ lúc giữ chỗ và không
-        đổi nữa. Không tách theo bước xử lý — người dùng không trả theo bước,
-        bày ra chỉ khiến họ đi tìm cách tối ưu một thứ không tồn tại.
-        ``hold``: dict hold từ máy chủ, dùng ``estimatedVox`` làm tổng.
-        """
-        total = int((hold or {}).get("estimatedVox")
-                    or (usage or {}).get("vox") or 0)
-        rows = [
-            ("Thời lượng video", self._fmt_duration(duration_s)),
-            ("Số câu thoại", f"{sentences:,}"),
-            ("Tổng tín dụng của video", f"<b>{total:,} tín dụng</b>"),
-        ]
-        balance = int((usage or {}).get("balance_after") or 0)
-        if balance:
-            rows.append(("Số dư còn lại", f"{balance:,} tín dụng"))
-        self.summary.setText(
-            "<br>".join(f"<b>{name}:</b> {value}" for name, value in rows))
-
-    def set_error(self, message: str) -> None:
-        """Xuất trượt (thường do mất mạng) — nói rõ không tốn thêm Vox."""
-        self.notice.setText(
-            f"Chưa xuất được: {message}\nKhông tốn thêm tín dụng nào và dữ liệu "
-            "vẫn được khóa an toàn. Kiểm tra mạng rồi bấm Xuất video lần nữa.")
 
     def values(self) -> dict:
         return {

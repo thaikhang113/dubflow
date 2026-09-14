@@ -6,6 +6,7 @@ Không nạp Qt, chỉ đọc chữ, nên chạy được trên mọi máy.
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 import pytest
@@ -111,6 +112,6 @@ if __name__ == "__main__":
             print(f"FAIL: {len(all_findings)} emoji instances found:")
             for fname, lineno, line in all_findings:
                 print(f"  {fname}:{lineno}: {line}")
-            exit(1)
+            sys.exit(1)
         else:
             print("OK: No emoji found in source files.")

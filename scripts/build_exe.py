@@ -64,10 +64,11 @@ def step_pyinstaller() -> None:
         log("xóa dist/DubFlow cũ...")
         try:
             shutil.rmtree(DIST_DIR)
-        except PermissionError:
+        except PermissionError as exc:
             raise SystemExit(
                 "!! Không xóa được dist/DubFlow — đóng DubFlow.exe đang chạy, "
-                "cửa sổ Explorer/terminal đang mở thư mục đó, rồi build lại.")
+                "cửa sổ Explorer/terminal đang mở thư mục đó, rồi build lại."
+            ) from exc
     log("chạy PyInstaller (vài phút)...")
     run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean",
          os.path.join(PROJECT_ROOT, "autodub.spec")])
@@ -205,7 +206,7 @@ def step_smoke_test() -> bool:
     # QT_QPA_PLATFORM=offscreen nếu chạy trên máy không có màn hình:
     # env["QT_QPA_PLATFORM"] = "offscreen"
     proc = subprocess.run([os.path.join(DIST_DIR, "DubFlow.exe")], env=env,
-                          cwd=DIST_DIR, timeout=180)
+                          cwd=DIST_DIR, timeout=180, check=False)
 
     try:
         if not os.path.isfile(result_json):

@@ -787,7 +787,7 @@ def _draw_sliders(p: QPainter, r: QRectF, c: QColor) -> None:
     rows = (0.25, 0.50, 0.75)
     knobs = (0.65, 0.35, 0.55)
     knob_r = w * 0.09
-    for row, knob in zip(rows, knobs):
+    for row, knob in zip(rows, knobs, strict=True):
         y = r.top() + h * row
         p.drawLine(QPointF(r.left() + 1, y), QPointF(r.right() - 1, y))
         p.setBrush(c)

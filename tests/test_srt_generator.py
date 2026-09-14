@@ -1,3 +1,4 @@
+import itertools
 import os
 
 from autodub.text.srt import (
@@ -72,7 +73,7 @@ def test_long_segment_splits_into_cues():
     # cues tile the segment: continuous, ordered, exact ends
     assert cues[0]["start"] == 10.0
     assert cues[-1]["end"] == 17.4
-    for a, b in zip(cues, cues[1:]):
+    for a, b in itertools.pairwise(cues):
         assert a["end"] == b["start"]
 
 

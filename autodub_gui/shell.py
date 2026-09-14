@@ -592,7 +592,7 @@ class AppHeader(QFrame):
         self._actions.setSpacing(tokens.SP_2)
         row.addLayout(self._actions)
 
-        # Chỗ gắn widget hiện ở MỌI trang (huy hiệu Vox) — tách khỏi
+        # Chỗ gắn widget hiện ở MỌI trang — tách khỏi
         # ``_actions`` vì chỗ kia bị xóa sạch mỗi lần chuyển trang.
         self._persistent = QHBoxLayout()
         self._persistent.setSpacing(tokens.SP_2)

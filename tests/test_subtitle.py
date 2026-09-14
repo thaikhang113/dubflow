@@ -95,7 +95,7 @@ def test_blur_region_converted_to_pixels():
 def test_blur_dimensions_are_even():
     """Odd crop sizes break yuv420p chroma subsampling."""
     graph = build_filter_complex([{"x": 0, "y": 0, "w": 0.333, "h": 0.111}], W, H)
-    crop = [p for p in graph.split(";") if "crop=" in p][0]
+    crop = next(p for p in graph.split(";") if "crop=" in p)
     w, h = crop.split("crop=")[1].split(",")[0].split(":")[:2]
     assert int(w) % 2 == 0 and int(h) % 2 == 0
 
@@ -103,7 +103,7 @@ def test_blur_dimensions_are_even():
 def test_region_clamped_to_frame():
     """An oversized region must not crop outside the video."""
     graph = build_filter_complex([{"x": 0.9, "y": 0.9, "w": 0.5, "h": 0.5}], W, H)
-    crop = [p for p in graph.split(";") if "crop=" in p][0]
+    crop = next(p for p in graph.split(";") if "crop=" in p)
     w, h, x, y = (int(v) for v in crop.split("crop=")[1].split(",")[0].split(":"))
     assert x + w <= W and y + h <= H
 

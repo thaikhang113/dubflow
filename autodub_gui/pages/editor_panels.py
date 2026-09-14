@@ -216,7 +216,7 @@ class SegmentRow(QWidget):
 
         try:
             voices = catalog.catalog(Settings.load())
-        except Exception:  # noqa: BLE001
+        except Exception:
             voices = []
         popup = _VoicePopup(self)
         popup.picked.connect(self._emit_voice)
@@ -517,9 +517,9 @@ class OverviewPanel(QScrollArea):
     def _build_context_section(self) -> CollapsibleSection:
         """Mục xem/sửa ngữ cảnh dịch riêng của video này.
 
-        Đây là chính ``data/video_context.json`` — thứ lượt phân tích tự động
-        đã đoán ra. Người dùng sửa ở đây rồi dịch lại/xuất lại thì bản dịch
-        dùng đúng thuật ngữ và xưng hô họ muốn, không phải đoán nữa.
+        Đây là chính ``data/video_context.json`` — ngữ cảnh riêng của video
+        này. Sửa ở đây rồi dịch lại/xuất lại thì bản dịch dùng đúng thuật
+        ngữ và cách xưng hô người dùng muốn, không phải đoán nữa.
         """
         section = CollapsibleSection("Ngữ cảnh dịch của video này",
                                      expanded=False)

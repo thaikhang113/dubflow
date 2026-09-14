@@ -64,7 +64,7 @@ def run(overwrite: bool = False) -> int:
         print("Đang học giọng, tiến độ hiện bên dưới. Đừng tắt cửa sổ này.\n")
         result = subprocess.run(command, capture_output=True,
                                 encoding="utf-8", errors="replace",
-                                timeout=TIMEOUT_S)
+                                timeout=TIMEOUT_S, check=False)
     finally:
         if os.path.exists(batch_path):
             os.remove(batch_path)

@@ -65,11 +65,11 @@ def _rocm_index() -> str:
 def _torch_probe() -> tuple[bool, bool]:
     result = subprocess.run(
         [VENV_PY, "-c",
-         "import torch; print(int(torch.cuda.is_available())); "
-         "print(int(getattr(torch.version, 'hip', None) is not None))"],
+         ("import torch; print(int(torch.cuda.is_available())); "
+         "print(int(getattr(torch.version, 'hip', None) is not None))")],
         capture_output=True,
         text=True,
-    )
+    check=False)
     values = [line.strip() for line in result.stdout.splitlines()]
     return (
         result.returncode == 0 and values[:1] == ["1"],
@@ -95,8 +95,8 @@ def step_install() -> None:
     probe = subprocess.run(
         [VENV_PY, "-c", "import demucs, soundfile"],
         capture_output=True,
-    )
-    cuda_ready, rocm_ready = _torch_probe()
+    check=False)
+    _cuda_ready, rocm_ready = _torch_probe()
     wants_rocm = _has_rocm()
     if probe.returncode == 0 and (not wants_rocm or rocm_ready):
         log("Demucs và soundfile đã cài — bỏ qua")
@@ -114,7 +114,7 @@ def step_install() -> None:
             ),
             attempts=3,
         )
-        cuda_ready, rocm_ready = _torch_probe()
+        _cuda_ready, rocm_ready = _torch_probe()
         if not rocm_ready:
             raise SystemExit(
                 "!! Torch ROCm cài xong nhưng không nhận GPU; "
@@ -178,7 +178,7 @@ def step_smoke() -> None:
             encoding="utf-8",
             errors="replace",
             timeout=1800,
-        )
+        check=False)
     finally:
         for name in ("smoke_test.wav", "smoke_vocals.wav", "smoke_no_vocals.wav"):
             try:
@@ -193,11 +193,11 @@ def step_smoke() -> None:
             f"{(result.stdout or '')[-800:]}\n{(result.stderr or '')[-800:]}"
         )
 
-    cuda_ready, rocm_ready = _torch_probe()
+    _cuda_ready, rocm_ready = _torch_probe()
     with open(MARKER, "w", encoding="utf-8") as marker:
         json.dump(
             {"ok": True, "model": "htdemucs",
-             "backend": _backend_name(cuda_ready, rocm_ready)},
+             "backend": _backend_name(_cuda_ready, rocm_ready)},
             marker,
             ensure_ascii=False,
             indent=2,

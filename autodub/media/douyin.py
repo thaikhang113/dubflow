@@ -114,8 +114,7 @@ def is_douyin_url(url: str) -> bool:
     if "://" not in url:
         url = "https://" + url
     host = urllib.parse.urlparse(url).netloc.lower()
-    return (host == "douyin.com" or host.endswith(".douyin.com")
-            or host == "iesdouyin.com" or host.endswith(".iesdouyin.com"))
+    return (host == "douyin.com" or host.endswith((".douyin.com", ".iesdouyin.com")) or host == "iesdouyin.com")
 
 
 def _extract_video_id(url: str) -> str | None:
@@ -457,9 +456,9 @@ def _ffmpeg_mux(video_path: Path, audio_path: Path, output_path: Path) -> None:
         str(output_path),
     ]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-    except subprocess.TimeoutExpired:
-        raise RuntimeError("ffmpeg mux treo quá 600s")
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600, check=False)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("ffmpeg mux treo quá 600s") from exc
     if proc.returncode != 0:
         raise RuntimeError(f"ffmpeg mux failed: {proc.stderr[-500:]}")
 

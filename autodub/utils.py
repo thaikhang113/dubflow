@@ -237,7 +237,7 @@ def format_timestamp(seconds: float) -> str:
     Derived from total milliseconds so fractions like 59.9996 carry into the
     seconds field instead of producing an invalid ``,1000`` millisecond part.
     """
-    ms_total = max(0, int(round(seconds * 1000)))
+    ms_total = max(0, round(seconds * 1000))
     secs_total, millis = divmod(ms_total, 1000)
     hours, rem = divmod(secs_total, 3600)
     minutes, secs = divmod(rem, 60)

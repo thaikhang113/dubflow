@@ -391,7 +391,7 @@ class CapCutClient:
                     return query_tasks[0]
                 if status in ("success", "succeed"):
                     return query_res
-                elif status == "failed":
+                if status == "failed":
                     raise CapCutTaskError(f"TTS Task failed: {query_res}")
             time.sleep(poll_interval)
 
@@ -481,7 +481,7 @@ class CapCutClient:
                 status = query_tasks[0].get("status")
                 if status == "success":
                     return query_res
-                elif status == "failed":
+                if status == "failed":
                     raise CapCutTaskError(f"STT Task failed: {query_res}")
             time.sleep(poll_interval)
 

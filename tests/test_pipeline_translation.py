@@ -99,6 +99,109 @@ def test_quality_report_does_not_require_missing_usage_snapshot() -> None:
     )
     assert report["translate_usage"] == {}
 
+
+# -- Lùi sang dịch tay khi endpoint hỏng ---------------------------------- #
+
+def _vi_target():
+    return get_target("vi")
+
+
+def test_endpoint_failure_falls_back_to_manual_translation(monkeypatch):
+    """Mất mạng / JSON hỏng không được xóa bỏ phần nghe-chép đã mất vài phút."""
+    from autodub.providers.openai_compatible import OpenAICompatibleError
+
+    pipeline = DubPipeline(Settings())
+
+    def boom(*_args, **_kwargs):
+        raise OpenAICompatibleError("Không nối được tới endpoint")
+
+    monkeypatch.setattr(pipeline, "_auto_translate", boom)
+    translated, reason = pipeline._try_auto_translate(
+        SEGMENTS, _vi_target(), _request(), "work")
+
+    assert translated is None
+    assert "endpoint" in reason
+
+
+def test_disabled_auto_translation_reports_no_error_reason(monkeypatch):
+    pipeline = DubPipeline(Settings())
+    monkeypatch.setattr(pipeline, "_auto_translate",
+                        lambda *a, **k: None)
+
+    translated, reason = pipeline._try_auto_translate(
+        SEGMENTS, _vi_target(), _request(), "work")
+
+    assert translated is None
+    assert reason == ""
+
+
+def test_missing_translation_config_is_still_a_hard_error(monkeypatch):
+    """Thiếu endpoint/model: một nút "Lưu" là xong, không dúi người dùng sang
+    dịch tay im lặng."""
+    from autodub.config import ConfigError
+
+    pipeline = DubPipeline(Settings())
+
+    def missing(*_args, **_kwargs):
+        raise ConfigError("Thiếu cấu hình dịch: endpoint")
+
+    monkeypatch.setattr(pipeline, "_auto_translate", missing)
+    with pytest.raises(ConfigError):
+        pipeline._try_auto_translate(SEGMENTS, _vi_target(), _request(), "work")
+
+
+def test_cancellation_during_translation_is_not_swallowed(monkeypatch):
+    from autodub.progress import PipelineCancelled
+
+    pipeline = DubPipeline(Settings())
+
+    def cancelled(*_args, **_kwargs):
+        raise PipelineCancelled("cancelled")
+
+    monkeypatch.setattr(pipeline, "_auto_translate", cancelled)
+    with pytest.raises(PipelineCancelled):
+        pipeline._try_auto_translate(SEGMENTS, _vi_target(), _request(), "work")
+
+
+def test_successful_translation_reports_no_reason(monkeypatch):
+    pipeline = DubPipeline(Settings())
+    translated_rows = [{**SEGMENTS[0], "text_vi": "xin chào"}]
+    monkeypatch.setattr(pipeline, "_auto_translate",
+                        lambda *a, **k: translated_rows)
+
+    result, reason = pipeline._try_auto_translate(
+        SEGMENTS, _vi_target(), _request(), "work")
+
+    assert result == translated_rows
+    assert reason == ""
+
+
+def test_hint_file_names_the_failure_reason(tmp_path):
+    from autodub.text.translate_hint import write_hint
+
+    path = write_hint(str(tmp_path), get_target("vi"), "zh-CN",
+                      manual_reason="timeout sau 4 lần thử")
+    text = open(path, encoding="utf-8").read()
+
+    assert "Lỗi vừa gặp: timeout sau 4 lần thử" in text
+
+
+def test_hint_file_stays_plain_when_the_user_chose_manual(tmp_path):
+    from autodub.text.translate_hint import write_hint
+
+    path = write_hint(str(tmp_path), get_target("vi"), "zh-CN",
+                      settings=Settings(translate_enabled=False))
+    text = open(path, encoding="utf-8").read()
+
+    assert "Lỗi vừa gặp" not in text
+    assert '"Dịch tự động" TẮT' in text
+
+
+def _request():
+    from autodub.pipeline import DubRequest
+
+    return DubRequest(source_lang="zh-CN")
+
 def test_same_source_and_target_skips_translation_configuration() -> None:
     pipeline = DubPipeline(Settings())
 

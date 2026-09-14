@@ -107,7 +107,7 @@ def _map_words(
 
     out: list[tuple[str, float, float]] = []
     if na == nt:
-        pairs = zip(text_words, asr_words)
+        pairs = zip(text_words, asr_words, strict=True)
         for token, (_w, t0, t1) in pairs:
             out.append((token, clip_start + t0, clip_start + t1))
     else:

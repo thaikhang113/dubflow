@@ -43,7 +43,7 @@ def step_install_libs() -> None:
     probe = subprocess.run(
         [sys.executable, "-c",
          f"import sys; sys.path.insert(0, {LIBS_DIR!r}); import playwright"],
-        capture_output=True)
+        capture_output=True, check=False)
     if probe.returncode == 0:
         log("playwright đã cài trong libs/ — bỏ qua")
         return

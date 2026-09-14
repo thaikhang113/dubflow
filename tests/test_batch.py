@@ -277,7 +277,7 @@ def test_completed_report_uses_persisted_artifact_paths(tmp_path):
     assert batch_module.validate_batch_report(transient) == str(tmp_path)
 
 def test_resume_skips_completed_urls(env):
-    settings, template, state_path = env
+    settings, template, _state_path = env
     run_batch("https://a.com/1", settings, template, pipeline=FakePipeline())
 
     pipe2 = FakePipeline()

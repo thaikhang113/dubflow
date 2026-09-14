@@ -39,7 +39,7 @@ def test_drift_capped_and_compression_bounded():
     # atempo không bao giờ vượt trần.
     segs = _segs(2, 4, 6, 8, 10)
     p, r = plan_placements(segs, [3.5] * 5, max_drift_s=1.5, max_atempo=1.1)
-    for seg, placed in zip(segs, p):
+    for seg, placed in zip(segs, p, strict=True):
         assert placed["start"] - seg["start"] <= 1.5 + 1e-9
         assert placed["atempo"] <= 1.1 + 1e-9
     # Quá tải thật sự thì phải GHI NHẬN chồng lấn (không giấu).

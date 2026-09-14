@@ -127,7 +127,7 @@ class ProviderChecks(CollapsibleSection):
             def run(self) -> None:
                 try:
                     self.result = task()
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     self.error = str(exc)
 
         worker = _Worker(self)
@@ -170,7 +170,7 @@ class TranslateToolPage(ToolPage):
         "Nhập API key và endpoint, tải danh sách model, chọn model rồi "
         "kiểm tra trước khi chạy."
     )
-    EXPANDED = {"Ngữ cảnh video"}
+    EXPANDED = frozenset({"Ngữ cảnh video"})
     SAVE_LABEL = "Lưu cấu hình dịch"
     SAVED_TOAST = "Đã lưu cấu hình dịch."
 

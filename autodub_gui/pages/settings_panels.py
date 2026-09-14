@@ -80,7 +80,7 @@ class VoiceSettingsPanel(CollapsibleSection):
 
         try:
             total, todo = voice_library.summary(Settings.load())
-        except Exception:  # noqa: BLE001 — thiếu thư mục thì ẩn nút đi
+        except Exception:
             total, todo = 0, 0
         self.btn_library.setVisible(bool(total))
         if not total:
@@ -186,7 +186,7 @@ class VoiceSettingsPanel(CollapsibleSection):
                              if os.name == "nt" else 0)
                     result = subprocess.run(
                         command, capture_output=True, encoding="utf-8",
-                        errors="replace", timeout=3600, creationflags=flags)
+                        errors="replace", timeout=3600, creationflags=flags, check=False)
                     payload = _last_json_line(result.stdout or "")
                     if not payload.get("ok"):
                         self.error = (payload.get("error")
@@ -195,7 +195,7 @@ class VoiceSettingsPanel(CollapsibleSection):
                         return
                     self.added = len(payload.get("added", []))
                     self.failed = len(payload.get("failed", []))
-                except Exception as e:  # noqa: BLE001 — báo lên giao diện
+                except Exception as e:
                     self.error = f"{type(e).__name__}: {e}"
                 finally:
                     if os.path.exists(batch_path):
@@ -275,13 +275,13 @@ class VoiceSettingsPanel(CollapsibleSection):
                     result = subprocess.run(
                         command, capture_output=True, encoding="utf-8",
                         errors="replace", timeout=_ENROLL_TIMEOUT_S,
-                        creationflags=flags)
+                        creationflags=flags, check=False)
                     payload = _last_json_line(result.stdout or "")
                     if not payload.get("ok"):
                         self.error = (payload.get("error")
                                       or (result.stderr or "")[-300:]
                                       or "không rõ nguyên nhân")
-                except Exception as e:  # noqa: BLE001 — báo lên giao diện
+                except Exception as e:
                     self.error = f"{type(e).__name__}: {e}"
 
         worker = _Enroller(self)
@@ -314,89 +314,10 @@ class VoiceSettingsPanel(CollapsibleSection):
             self._thread.wait(10_000)
 
 
-class ConnectionChecks(CollapsibleSection):
-    """Thử kết nối tới máy chủ DubFlow và hiện số Vox còn lại.
-
-    Không còn API Key nào để kiểm tra: mô hình và mã đều nằm trên máy chủ.
-    Thứ người dùng cần biết khi nghi ngờ chỉ còn hai điều — máy chủ có trả
-    lời không, và ví còn bao nhiêu.
-    """
-
-    def __init__(self, values_provider=None, parent: QWidget | None = None):
-        super().__init__("Kiểm tra kết nối", expanded=False, parent=parent)
-        del values_provider     # giữ chữ ký cũ cho các nơi đang gọi
-        self._threads: dict[str, QThread] = {}
-        self._labels: dict[str, QLabel] = {}
-
-        row = QHBoxLayout()
-        row.setSpacing(tokens.SP_2)
-        button = GhostButton("Kiểm tra API dịch")
-        label = _hint_label("")
-        self._labels["server"] = label
-        button.clicked.connect(
-            lambda _c=False, b=button: self._run("server", b, self._probe_server))
-        row.addWidget(button)
-        row.addWidget(label, 1)
-        self.add_layout(row)
-
-    def select_engine(self, engine: str) -> None:
-        """Giữ chữ ký cũ — không còn nơi dịch nào để chọn."""
-        del engine
-
-    def _run(self, key: str, button: GhostButton, probe) -> None:
-        """Chạy phép thử ở luồng nền để cửa sổ không bị đứng."""
-        label = self._labels[key]
-        button.set_loading(True, "Đang kiểm tra")
-        label.setText("")
-
-        class _Checker(QThread):
-            def __init__(self, parent):
-                super().__init__(parent)
-                self.text = ""
-
-            def run(self) -> None:
-                try:
-                    self.text = probe()
-                except Exception as e:  # noqa: BLE001 — báo lên giao diện
-                    self.text = f"Không kiểm tra được: {type(e).__name__}: {e}"
-
-        checker = _Checker(self)
-
-        def _done() -> None:
-            button.set_loading(False)
-            label.setText(checker.text)
-            self._threads.pop(key, None)
-
-        checker.finished.connect(_done)
-        self._threads[key] = checker
-        checker.start()
-
-    def cleanup(self) -> None:
-        """Chờ các luồng kiểm tra kết nối xong trước khi teardown."""
-        for checker in list(self._threads.values()):
-            if checker.isRunning():
-                checker.wait(10_000)
-
-    @staticmethod
-    def _probe_server() -> str:
-        try:
-            from autodub.config import Settings
-            settings = Settings.load()
-            from autodub.providers.openai_compatible import OpenAICompatibleProvider
-            OpenAICompatibleProvider(
-                settings.translation_endpoint,
-                settings.translation_api_key,
-                settings.translation_model,
-            ).check_model()
-            return f"{STATUS_OK} API dịch trả lời bình thường."
-        except Exception as e:
-            return f"{STATUS_WARN} {e}"
-
-
 class MaintenancePanel(CollapsibleSection):
     """Các nút mở thư mục, dọn dữ liệu tạm và xuất nhật ký chẩn đoán."""
 
-    DIAGNOSTIC_FILE = "voxdub_diagnostics.txt"
+    DIAGNOSTIC_FILE = "dubflow_diagnostics.txt"
 
     def __init__(self, settings_provider, parent: QWidget | None = None):
         super().__init__("Bảo trì", expanded=False, parent=parent)
@@ -420,18 +341,18 @@ class MaintenancePanel(CollapsibleSection):
         self.add_widget(self.status)
 
     def _open_config(self) -> None:
-        from autodub.utils import app_root
+        from autodub.utils import data_root
         from autodub_gui.system_open import open_folder
 
-        ok, message = open_folder(app_root())
+        ok, message = open_folder(data_root())
         if not ok:
             TOASTS.warn(message)
 
     def _open_models(self) -> None:
-        from autodub.utils import app_root
+        from autodub.utils import data_root
         from autodub_gui.system_open import open_folder
 
-        path = os.path.join(app_root(), "models")
+        path = os.path.join(data_root(), "models")
         os.makedirs(path, exist_ok=True)
         ok, message = open_folder(path)
         if not ok:
@@ -455,7 +376,7 @@ class MaintenancePanel(CollapsibleSection):
 
         try:
             output_dir = self._settings_provider().output_dir
-        except Exception:  # noqa: BLE001 — cấu hình hỏng thì bỏ qua
+        except Exception:
             return 0
         targets = {THUMB_FILE, INDEX_FILE}
         removed = 0
@@ -474,9 +395,9 @@ class MaintenancePanel(CollapsibleSection):
 
     def _export_diagnostics(self) -> None:
         """Ghi một tệp chữ mô tả tình trạng máy, dùng khi cần nhờ hỗ trợ."""
-        from autodub.utils import app_root
+        from autodub.utils import data_root
 
-        path = os.path.join(app_root(), self.DIAGNOSTIC_FILE)
+        path = os.path.join(data_root(), self.DIAGNOSTIC_FILE)
         try:
             with open(path, "w", encoding="utf-8") as f:
                 f.write("\n".join(self._diagnostic_lines()))
@@ -495,7 +416,14 @@ class MaintenancePanel(CollapsibleSection):
         import shutil
         import sys
 
-        from autodub.utils import app_root, gpu_venv_dir
+        from autodub.utils import data_root, gpu_venv_dir
+
+        try:
+            from autodub.device_id import get_device_name, short_id
+
+            machine = f"{short_id()} \u00b7 {get_device_name()}"
+        except Exception as e:      # định danh máy chỉ là thông tin kèm theo
+            machine = f"không đọc được ({e})"
 
         try:
             settings = self._settings_provider()
@@ -508,18 +436,19 @@ class MaintenancePanel(CollapsibleSection):
             }
             voice_count = len(catalog(settings))
             output_dir = settings.output_dir
-        except Exception as e:  # noqa: BLE001 — vẫn ghi được phần còn lại
+        except Exception as e:
             ready, output_dir, voice_count = {}, f"không đọc được ({e})", 0
         lines = [
             "Nhật ký chẩn đoán DubFlow",
             f"Hệ điều hành: {platform.platform()}",
             f"Phiên bản Python: {sys.version.split()[0]}",
-            f"Thư mục ứng dụng: {app_root()}",
+            f"Thư mục dữ liệu ứng dụng: {data_root()}",
             f"Thư mục lưu video: {output_dir}",
             f"FFmpeg: {'có' if shutil.which('ffmpeg') else 'chưa cài'}",
             f"FFprobe: {'có' if shutil.which('ffprobe') else 'chưa cài'}",
             f"Venv card đồ họa: {gpu_venv_dir() or 'chưa có'}",
             f"Số giọng đọc đang có: {voice_count}",
+            f"Mã máy: {machine}",
         ]
         lines.extend(f"{name}: {'sẵn sàng' if ok else 'chưa sẵn sàng'}"
                      for name, ok in ready.items())
@@ -560,7 +489,7 @@ class DiskUsagePanel(CollapsibleSection):
     def _output_dir(self) -> str:
         try:
             return self._settings_provider().output_dir
-        except Exception:  # noqa: BLE001 — cấu hình hỏng thì bỏ qua
+        except Exception:
             return ""
 
     def _measure(self) -> None:
@@ -582,7 +511,7 @@ class DiskUsagePanel(CollapsibleSection):
             def run(self) -> None:
                 try:
                     self.report = measure(output_dir)
-                except Exception:  # noqa: BLE001 — coi như thư mục rỗng
+                except Exception:
                     self.report = None
 
         worker = _Scanner(self)
@@ -645,7 +574,7 @@ class DiskUsagePanel(CollapsibleSection):
             def run(self) -> None:
                 try:
                     self.cleaned, self.freed = clean_all(output_dir)
-                except Exception:  # noqa: BLE001 — phần dọn được vẫn đã dọn
+                except Exception:
                     pass
 
         worker = _Cleaner(self)

@@ -457,7 +457,7 @@ class VoiceLibraryTab(QWidget):
         spacer = QWidget()
         spacer.setFixedWidth(20)
         row.addWidget(spacer)
-        for title, stretch in zip(_HEADERS, _COLS):
+        for title, stretch in zip(_HEADERS, _COLS, strict=True):
             label = _text(title.upper(), tokens.SECTION_LABEL,
                           tokens.FS_BADGE, 700)
             label.setStyleSheet(label.styleSheet() + " letter-spacing: 0.8px;")
@@ -612,7 +612,7 @@ class VoiceLibraryTab(QWidget):
 
         try:
             self._voices = list(catalog.catalog(Settings.load()))
-        except Exception:  # noqa: BLE001 — thiếu tệp thì danh mục coi như rỗng
+        except Exception:
             self._voices = []
         # Chưa có giọng CapCut nào (chưa tải được) thì ẩn tab nguồn, giao
         # diện y như trước.
@@ -710,7 +710,8 @@ class VoiceLibraryTab(QWidget):
         counts = (len(subset),
                   sum(1 for v in subset if v.name in self._favorites),
                   sum(1 for v in subset if v.name in recent))
-        for button, label, count in zip(self._tab_buttons, _TAB_LABELS, counts):
+        for button, label, count in zip(self._tab_buttons, _TAB_LABELS,
+                                        counts, strict=True):
             button.setText(f"{label} ({count})")
         if self._src_tabs.isVisible():
             capcut = sum(1 for v in self._voices
@@ -720,7 +721,8 @@ class VoiceLibraryTab(QWidget):
             src_counts = (
                 len(self._voices) - capcut - clone, capcut, clone)
             for button, label, count in zip(self._src_tab_buttons,
-                                            _SRC_LABELS, src_counts):
+                                            _SRC_LABELS, src_counts,
+                                            strict=True):
                 button.setText(f"{label} ({count})")
         self._online_hint.setVisible(self._src_tabs.isVisible()
                                      and self._src_tab == _SRC_CAPCUT)
@@ -871,7 +873,7 @@ class VoiceLibraryTab(QWidget):
             return
         try:
             settings = self._settings_provider()
-        except Exception as e:  # noqa: BLE001 — báo lý do lên giao diện
+        except Exception as e:
             self._status.setText(f"Không đọc được cấu hình: {e}")
             return
         self._set_preview_enabled(False)

@@ -80,7 +80,9 @@ def download_voices(progress_callback=None) -> str:
         if progress_callback:
             progress_callback(downloaded, total_size)
 
-    urllib.request.urlretrieve(VOICES_RELEASE_URL, temp_zip, _report)
+    urllib.request.urlretrieve(  # nosec B310 — hardcoded GitHub release URL
+        VOICES_RELEASE_URL, temp_zip, _report,
+    )
     logger.info(f"Đã tải xong: {temp_zip}")
     return temp_zip
 
@@ -363,7 +365,7 @@ def ensure_voices_available(settings: Settings, progress_callback=None) -> bool:
         return result.get("ok", False)
 
     except Exception as e:
-        logger.error(f"Lỗi khi cài đặt voice library: {e}", exc_info=True)
+        logger.exception("Voice library setup failed")
         if progress_callback:
             progress_callback("error", str(e), None)
         return False

@@ -53,7 +53,9 @@ def log(msg: str) -> None:
 def _download(url: str, dest: str) -> None:
     log(f"tải {os.path.basename(dest)} ...")
     tmp = dest + ".part"
-    with urllib.request.urlopen(url, timeout=60) as resp, open(tmp, "wb") as f:
+    with urllib.request.urlopen(  # nosec B310 — hardcoded GitHub URL
+        url, timeout=60,
+    ) as resp, open(tmp, "wb") as f:
         total = int(resp.headers.get("Content-Length") or 0)
         done = 0
         while True:
@@ -94,7 +96,7 @@ def step_venv() -> None:
 
 def step_install() -> None:
     probe = subprocess.run([VENV_PY, "-c", "import sherpa_onnx, numpy"],
-                           capture_output=True)
+                           capture_output=True, check=False)
     if probe.returncode == 0:
         log("package sherpa-onnx đã cài — bỏ qua")
         return
@@ -130,7 +132,7 @@ def step_models() -> None:
             _download(PUNCT_TARBALL, tarball)
             _extract_flat(tarball, punct_dir, ("model.onnx",))
             os.remove(tarball)
-        except Exception as e:  # noqa: BLE001 — chấm câu là tùy chọn
+        except Exception as e:
             log(f"!! không tải được model chấm câu ({e}) — bỏ qua, "
                 "Paraformer vẫn chạy được (không có dấu câu)")
     else:
@@ -152,7 +154,7 @@ def step_smoke() -> None:
     subprocess.run([VENV_PY, "-c", gen], check=True)
     result = subprocess.run(
         [VENV_PY, WORKER, "--audio", smoke_wav, "--model-dir", MODEL_DIR],
-        capture_output=True, encoding="utf-8", errors="replace", timeout=600)
+        capture_output=True, encoding="utf-8", errors="replace", timeout=600, check=False)
     os.remove(smoke_wav)
     lines = [line for line in (result.stdout or "").splitlines() if line.strip()]
     ok = any('"done"' in line for line in lines)

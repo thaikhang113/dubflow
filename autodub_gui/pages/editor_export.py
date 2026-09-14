@@ -223,7 +223,7 @@ class VoiceAndExportMixin:
                 style = (settings.subtitle_style()
                          if preset == settings.subtitle_preset
                          else preset_style(preset))
-            except Exception:  # noqa: BLE001 — cấu hình hỏng thì dùng bộ sẵn
+            except Exception:
                 style = preset_style(preset)
 
         # Lấy câu phụ đề hiện đang hiện trong player làm chữ xem trước —
@@ -237,7 +237,7 @@ class VoiceAndExportMixin:
                 from autodub.text.srt import subtitle_text
                 preview_text = subtitle_text(
                     seg, self._state.target.text_field) or ""
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
         dialog = StyleDialog(

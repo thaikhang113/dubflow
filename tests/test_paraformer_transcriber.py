@@ -20,11 +20,11 @@ def test_paraformer_normalizes_non_16k_input_and_cleans_temp(tmp_path):
 
     class Proc:
         returncode = 0
-        stdout = [
+        stdout = [  # noqa: RUF012
             '{"seg":true,"start":0,"end":1,"text":"你好"}\n',
             '{"done":true}\n',
         ]
-        stderr = []
+        stderr = []  # noqa: RUF012
 
         def wait(self, timeout=None):
             return 0

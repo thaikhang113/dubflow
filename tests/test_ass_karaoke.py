@@ -1,6 +1,7 @@
 """Tests for karaoke subtitles: chunking, timing estimation, ASS output,
 and the word-mapping half of forced alignment (no model needed).
 """
+import itertools
 import math
 import struct
 import wave
@@ -24,7 +25,7 @@ def test_estimate_covers_full_duration():
     assert words[0][1] == 10.0
     assert words[-1][2] == pytest.approx(12.5, abs=0.01)
     # Mốc đơn điệu, không chồng nhau
-    for (_, s1, e1), (_, s2, _e2) in zip(words, words[1:]):
+    for (_, s1, e1), (_, s2, _e2) in itertools.pairwise(words):
         assert e1 == pytest.approx(s2, abs=0.001)
         assert s1 < e1
 
@@ -177,7 +178,7 @@ def test_map_words_monotonic_after_bad_asr_times():
     asr = [("a", 0.5, 0.4), ("b", 0.3, 0.9)]
     out = _map_words(["một", "hai"], asr, 0.0, 1.0)
     assert out is not None
-    for (_, s1, _e1), (_, s2, _e2) in zip(out, out[1:]):
+    for (_, s1, _e1), (_, s2, _e2) in itertools.pairwise(out):
         assert s2 >= s1
     for _, s, e in out:
         assert e >= s

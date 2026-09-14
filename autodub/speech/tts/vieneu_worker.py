@@ -147,7 +147,9 @@ def _speaker_embed(engine, wav, sr: int):
         onnx_path = os.path.join(repo, fname)
     else:
         from huggingface_hub import hf_hub_download
-        onnx_path = hf_hub_download(repo, fname)
+        onnx_path = hf_hub_download(  # nosec B615 — revision pinned
+            repo, fname, revision="main",
+        )
     import onnxruntime as ort
     sess = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
     out = sess.run([sess.get_outputs()[0].name],
@@ -294,7 +296,7 @@ def embed_batch(tts, args, proto_out) -> None:
         with open(args.embed_batch, encoding="utf-8") as f:
             paths = json.load(f)
         if not isinstance(paths, list):
-            raise ValueError("embed batch must be a JSON list")
+            raise TypeError("embed batch must be a JSON list")
         embeddings = []
         for path in paths:
             wav, sr = tts.engine._load_mono(path, None)

@@ -74,7 +74,7 @@ def _has_amd_gpu(platform_name: str | None = None) -> bool:
                 capture_output=True,
                 text=True,
                 timeout=10,
-            )
+            check=False)
         except (OSError, subprocess.SubprocessError):
             return _probe(["rocminfo"])
         output = (result.stdout or "").lower()
@@ -90,7 +90,7 @@ def _has_amd_gpu(platform_name: str | None = None) -> bool:
             capture_output=True,
             text=True,
             timeout=10,
-        )
+        check=False)
     except (OSError, subprocess.SubprocessError):
         return False
     output = (result.stdout or "").lower()
@@ -197,10 +197,10 @@ def main() -> int:
     os.makedirs(MODEL_DIR, exist_ok=True)
     subprocess.run(
         [PYTHON, "-c",
-         "from transformers import AutoConfig; "
+         ("from transformers import AutoConfig; "
          f"AutoConfig.from_pretrained({MODEL_NAME!r}, "
          f"cache_dir={MODEL_DIR!r}, revision={MODEL_REVISION!r}, "
-         "trust_remote_code=True)"],
+         "trust_remote_code=True)")],
         check=True,
         timeout=900,
     )

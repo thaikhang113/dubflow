@@ -25,6 +25,21 @@ logs/
 linkdouyin.txt
 openclaw.json
 
+# Cac artifact cua lan chay/quet bao mat tren may cua nguoi dung
+bandit.json
+bandit-current.json
+pip-audit-requirements.json
+bootstrap-state.json
+backend-plan.json
+uv-export.txt
+test_ui_data/
+qa/runs/
+qa/work/
+qa/logs/
+qa/shots/
+qa/findings*.json
+qa/__pycache__/
+
 # Models (nhieu GB; tai ve bang cac script trong scripts/)
 models/
 !control_server/src/models/
@@ -40,7 +55,12 @@ Thumbs.db
 .vscode/
 .idea/
 .claude/
+# Bản sao skill/agent do công cụ tạo, tái tạo lại được (như .claude/ ở trên)
+.agents/
+.codex/
+.opencode/
 .tool-runtime/
+skills-lock.json
 bilibili-cookies.txt
 
 # Build exe

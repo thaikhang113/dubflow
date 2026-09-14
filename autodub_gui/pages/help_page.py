@@ -35,79 +35,79 @@ _LABEL_W = 190
 
 QUICK_START = (
     ("Bước 1 — Đưa video vào",
-     "Kéo thả tệp video vào Trang chủ, hoặc dán liên kết ở trang Tạo dự án. "
-     "Ứng dụng nhận MP4, MKV, MOV, AVI và WebM."),
+     ("Kéo thả tệp video vào Trang chủ, hoặc dán liên kết ở trang Tạo dự án. "
+     "Ứng dụng nhận MP4, MKV, MOV, AVI và WebM.")),
     ("Bước 2 — Chọn giọng và phụ đề",
-     "Đi qua sáu bước ở trang Tạo dự án. Mọi mục đều đã có sẵn giá trị hợp lý, "
-     "bạn chỉ cần đổi thứ mình quan tâm."),
+     ("Đi qua sáu bước ở trang Tạo dự án. Mọi mục đều đã có sẵn giá trị hợp lý, "
+     "bạn chỉ cần đổi thứ mình quan tâm.")),
     ("Bước 3 — Bắt đầu và chờ",
-     "Bấm Bắt đầu lồng tiếng. Bạn có thể tắt máy giữa chừng: tiến độ được lưu "
-     "trên đĩa, lần sau chọn Tiếp tục dang dở là chạy tiếp từ chỗ dừng."),
+     ("Bấm Bắt đầu lồng tiếng. Bạn có thể tắt máy giữa chừng: tiến độ được lưu "
+     "trên đĩa, lần sau chọn Tiếp tục dang dở là chạy tiếp từ chỗ dừng.")),
     ("Bước 4 — Xem lại và chỉnh",
-     "Mở dự án trong Trình chỉnh sửa để sửa từng câu, nghe lại, rồi bấm Xuất "
-     "video để ghép bản cuối cùng."),
+     ("Mở dự án trong Trình chỉnh sửa để sửa từng câu, nghe lại, rồi bấm Xuất "
+     "video để ghép bản cuối cùng.")),
 )
 
 # (tên, mô tả, dung lượng, loại cài, script, hàm kiểm tra tình trạng)
 INSTALL_ITEMS = (
     ("Bộ giọng đọc VieNeu",
-     "Giọng Việt chạy trên bộ xử lý trung tâm nên nhanh và không cần card "
-     "đồ họa. Đây là bộ giọng duy nhất của ứng dụng.",
+     ("Giọng Việt chạy trên bộ xử lý trung tâm nên nhanh và không cần card "
+     "đồ họa. Đây là bộ giọng duy nhất của ứng dụng."),
      MODEL_SIZES["vieneu"], "script", "scripts/setup_vieneu.py",
      "vieneu_configured"),
     ("Thư viện giọng mẫu",
-     "Nạp thêm các giọng trong thư mục voices cạnh ứng dụng. Chạy một lần, "
-     "sau đó chọn giọng theo tên trong Cài đặt.",
+     ("Nạp thêm các giọng trong thư mục voices cạnh ứng dụng. Chạy một lần, "
+     "sau đó chọn giọng theo tên trong Cài đặt."),
      "không cần tải", "voices", "", "voices_enrolled"),
     ("Paraformer", "Nghe tiếng Trung chính xác hơn Whisper, chạy trên CPU.",
      MODEL_SIZES["paraformer"], "script", "scripts/setup_paraformer.py",
      "paraformer_configured"),
     ("Whisper ASR",
-     "Nhận dạng lời nói cho ngôn ngữ khác tiếng Trung. Cài riêng để không làm "
-     "phình bản DubFlow.",
+     ("Nhận dạng lời nói cho ngôn ngữ khác tiếng Trung. Cài riêng để không làm "
+     "phình bản DubFlow."),
      MODEL_SIZES["medium"], "script", "scripts/setup_whisper.py",
      "whisper_venv_configured"),
     ("PaddleOCR",
-     "Tự tìm chữ Trung trong vùng phụ đề để làm mờ. Chỉ cần khi muốn tự động "
+     ("Tự tìm chữ Trung trong vùng phụ đề để làm mờ. Chỉ cần khi muốn tự động "
      "che phụ đề gốc; logo gốc có thể tự dò bằng Vision hoặc chọn vùng riêng "
-     "trong Trình chỉnh sửa.",
+     "trong Trình chỉnh sửa."),
      "khoảng 2–3 GB (GPU)", "script", "scripts/setup_ocr.py",
      "ocr_configured"),
     ("DeepSeek-OCR (tùy chọn)",
-      "Fallback cho PaddleOCR và hỗ trợ tìm logo/chữ khó. Cài riêng và bật "
+      ("Fallback cho PaddleOCR và hỗ trợ tìm logo/chữ khó. Cài riêng và bật "
       "trong Cài đặt; NVIDIA dùng CUDA, AMD dùng ROCm trên Linux hoặc DirectML "
       "trên Windows nếu backend tương thích. Không tương thích thì PaddleOCR "
-      "vẫn hoạt động.",
+      "vẫn hoạt động."),
      "tải riêng theo model", "script", "scripts/setup_deepseek_ocr.py",
      "deepseek_ocr_configured"),
     ("AI xóa phụ đề VSR",
-     "Phục hồi nền video sau khi OCR tìm phụ đề cứng. Dùng STTN detection mặc định; "
-     "nếu lỗi sẽ tự quay về làm mờ để không chặn xuất video.",
+     ("Phục hồi nền video sau khi OCR tìm phụ đề cứng. Dùng STTN detection mặc định; "
+     "nếu lỗi sẽ tự quay về làm mờ để không chặn xuất video."),
      "tải riêng theo model", "script", "scripts/setup_vsr.py",
      "vsr_configured"),
 )
 
 EXTRA_PROBLEMS = (
     ("Máy chưa có FFmpeg",
-     "Bản Debian dùng FFmpeg của hệ thống và đã khai báo gói cần thiết. Bản "
+     ("Bản Debian dùng FFmpeg của hệ thống và đã khai báo gói cần thiết. Bản "
      "portable Linux không tự tải FFmpeg; hãy cài ffmpeg và ffprobe bằng trình "
      "quản lý gói của hệ điều hành rồi mở lại ứng dụng. Windows sẽ tự tải bản "
-     "FFmpeg phù hợp khi cần."),
+     "FFmpeg phù hợp khi cần.")),
     ("Làm mờ phụ đề hoặc logo gốc",
-     "Trong Trình chỉnh sửa, mở Tùy chỉnh phụ đề và vùng che. Bật OCR để tự "
+     ("Trong Trình chỉnh sửa, mở Tùy chỉnh phụ đề và vùng che. Bật OCR để tự "
      "tìm chữ Trung trong vùng 35% phía dưới; bật Tự dò logo gốc bằng Vision "
      "hoặc bật Khoanh vùng logo gốc rồi kéo một vùng riêng để làm mờ logo "
-     "cố định suốt video."),
+     "cố định suốt video.")),
     ("Card đồ họa không đủ bộ nhớ",
-     "Đóng bớt trò chơi hoặc trình duyệt đang mở nhiều video. Hoặc đổi Nhạc "
+     ("Đóng bớt trò chơi hoặc trình duyệt đang mở nhiều video. Hoặc đổi Nhạc "
      "nền sang Giảm nhỏ tiếng gốc cho nhẹ hơn, rồi chạy tiếp thư mục dự án "
-     "đang dở."),
+     "đang dở.")),
     ("Video không phát được trong Trình chỉnh sửa",
-     "Máy chưa có bộ giải mã cho định dạng đó. Bạn vẫn mở được bằng trình "
-     "phát ngoài, và việc xuất video không bị ảnh hưởng."),
+     ("Máy chưa có bộ giải mã cho định dạng đó. Bạn vẫn mở được bằng trình "
+     "phát ngoài, và việc xuất video không bị ảnh hưởng.")),
     ("Phụ đề hiện thành ô vuông",
-     "Phông chữ đang chọn không có dấu tiếng Việt. Vào Cài đặt, thẻ Phụ đề, "
-     "chọn một phông không có ghi chú cảnh báo."),
+     ("Phông chữ đang chọn không có dấu tiếng Việt. Vào Cài đặt, thẻ Phụ đề, "
+     "chọn một phông không có ghi chú cảnh báo.")),
 )
 
 
@@ -362,7 +362,7 @@ class HelpPage(BasePage):
     def _safe_settings(self):
         try:
             return self._settings_provider()
-        except Exception:  # noqa: BLE001 — cấu hình hỏng thì vẫn mở được trang
+        except Exception:
             return None
 
     @staticmethod
@@ -376,12 +376,12 @@ class HelpPage(BasePage):
                 from autodub.speech.tts import voice_library
                 total, todo = voice_library.summary(settings)
                 return bool(total) and not todo
-            except Exception:  # noqa: BLE001 — chưa có thư mục thì coi như chưa
+            except Exception:
                 return False
         method = getattr(settings, checker, None)
         try:
             return bool(method()) if callable(method) else False
-        except Exception:  # noqa: BLE001 — không kiểm tra được thì coi là chưa cài
+        except Exception:
             return False
 
     def _start_install(self, checker: str) -> None:

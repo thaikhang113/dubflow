@@ -16,12 +16,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from autodub.config import Settings
 from autodub.media.bilibili import has_login_cookies, save_netscape_cookies
 from autodub.media.douyin_cookies import (
     save_douyin_cookies,
     validate_douyin_cookies,
 )
-from autodub.config import Settings
 from autodub.utils import app_root
 from autodub_gui import icons, tokens
 from autodub_gui.env_store import read_env, write_env
@@ -424,7 +424,7 @@ class DownloadPage(BasePage):
         if not self._confirm_disclaimer():
             return
         self._urls = urls
-        self._status = {url: ("waiting", "") for url in urls}
+        self._status = dict.fromkeys(urls, ("waiting", ""))
         self._refresh_table()
         self.log.reset_log()
         self._set_running(True)

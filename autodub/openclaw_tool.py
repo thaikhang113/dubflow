@@ -56,7 +56,7 @@ def _links(payload: dict) -> list[str]:
     elif isinstance(raw, list):
         items = parse_lines("\n".join(str(value) for value in raw))
     else:
-        raise ValueError("links hoặc text phải là chuỗi hoặc danh sách")
+        raise TypeError("links hoặc text phải là chuỗi hoặc danh sách")
     links = [item.url for item in items if item.url]
     if not links:
         raise ValueError("Không tìm thấy link video http(s)")
@@ -68,13 +68,13 @@ def _links(payload: dict) -> list[str]:
 def _options(payload: dict) -> dict:
     options = payload.get("options", {})
     if not isinstance(options, dict):
-        raise ValueError("options phải là object")
+        raise TypeError("options phải là object")
     unknown = set(options) - _OPTION_KEYS
     if unknown:
         raise ValueError(f"options không hợp lệ: {sorted(unknown)}")
     branding = options.get("branding", {})
     if not isinstance(branding, dict):
-        raise ValueError("branding phải là object")
+        raise TypeError("branding phải là object")
     return dict(options)
 
 
@@ -314,7 +314,7 @@ def _retry_failed(payload: dict, queue_root: str) -> dict:
 def handle(payload: dict, *, queue_root: str = "remote_queue",
            settings: Settings | None = None) -> dict:
     if not isinstance(payload, dict):
-        raise ValueError("Request phải là object")
+        raise TypeError("Request phải là object")
     action = payload.get("action")
     settings = settings or Settings.load()
     if action == "prepare":

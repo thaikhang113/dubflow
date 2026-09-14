@@ -203,7 +203,7 @@ def test_download_stream_aborts_and_removes_partial_file(monkeypatch, tmp_path):
     partial = tmp_path / "video.mp4.part"
 
     class Response:
-        headers = {"Content-Length": "100", "Content-Type": "video/mp4"}
+        headers = {"Content-Length": "100", "Content-Type": "video/mp4"}  # noqa: RUF012
 
         def __enter__(self):
             return self

@@ -341,9 +341,9 @@ class EditorPage(VoiceAndExportMixin, BasePage):
         from autodub.editor import EditorError, load_work_dir
         from autodub_gui.projects import load_project
 
-        if self._work_dir and self.has_unsaved_changes():
-            if not confirm_discard(self, "Dự án đang mở"):
-                return
+        if (self._work_dir and self.has_unsaved_changes()
+                and not confirm_discard(self, "Dự án đang mở")):
+            return
         self._flush_edits()
         self.player.release()
         try:
@@ -719,7 +719,7 @@ class EditorPage(VoiceAndExportMixin, BasePage):
                 self._subtitle_style = (settings.subtitle_style()
                                         if preset == settings.subtitle_preset
                                         else preset_style(preset))
-            except Exception:  # noqa: BLE001 — cấu hình hỏng thì dùng bộ sẵn
+            except Exception:
                 self._subtitle_style = preset_style(preset)
         self._save_render_opts()
         self._apply_style_to_player()
@@ -936,7 +936,7 @@ class EditorPage(VoiceAndExportMixin, BasePage):
             changed = set_segment_voice(
                 self._work_dir, seg_id, voice,
                 self.target_key())
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             from autodub_gui.ui.toast import TOASTS
             TOASTS.warn(f"Không lưu được giọng riêng: {e}")
             return

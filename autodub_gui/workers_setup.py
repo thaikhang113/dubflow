@@ -145,7 +145,9 @@ def _download_portable_python(log, progress) -> str:
             _PORTABLE_PYTHON_URL,
             headers={"User-Agent": "DubFlow-Setup/1.0"},
         )
-        with urllib.request.urlopen(request, timeout=120) as response:
+        with urllib.request.urlopen(  # nosec B310 — pinned release URL
+            request, timeout=120,
+        ) as response:
             total = int(response.headers.get("Content-Length") or 0)
             downloaded = 0
             with open(archive_path, "wb") as handle:
@@ -185,12 +187,12 @@ def _probe_python(cmd: list[str]) -> str:
     try:
         out = subprocess.run(
             [*cmd, "-c",
-             "import sys; "
+             ("import sys; "
              "print(sys.executable if (3, 10) <= sys.version_info[:2] <= "
-             "(3, 12) else '')"],
+             "(3, 12) else '')")],
             capture_output=True, text=True, timeout=15,
             creationflags=_NO_WINDOW,
-        )
+        check=False)
     except (OSError, subprocess.TimeoutExpired):
         return ""
     if out.returncode != 0:
@@ -221,7 +223,7 @@ def _find_python() -> str:
                          "Python", "Python312", "python.exe"),
             os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs",
                          "Python", "Python311", "python.exe"),
-            os.path.join(os.environ.get("ProgramFiles", ""), "Python312",
+            os.path.join(os.environ.get("PROGRAMFILES", ""), "Python312",
                          "python.exe"),
         )
         for candidate in candidates:
@@ -278,7 +280,7 @@ class PythonRuntimeWorker(QThread):
                     command, capture_output=True, text=True,
                     encoding="utf-8", errors="replace",
                     timeout=900, creationflags=_NO_WINDOW,
-                )
+                check=False)
                 if proc.returncode != 0:
                     tail = (proc.stderr or proc.stdout or "").strip()[-1200:]
                     raise RuntimeError(
@@ -294,7 +296,7 @@ class PythonRuntimeWorker(QThread):
             self.log.emit(f"{STATUS_OK} Python đã sẵn sàng: {python}")
             self.progress.emit(100)
             self.finished_ok.emit()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self.failed.emit(str(exc))
 
 
@@ -336,7 +338,9 @@ def _download_ffmpeg_archive(url: str, part_path: str, archive_name: str,
         try:
             request = urllib.request.Request(
                 url, headers={"User-Agent": "DubFlow-Setup/1.0"})
-            with urllib.request.urlopen(request, timeout=60) as resp:
+            with urllib.request.urlopen(  # nosec B310 — pinned release URL
+                request, timeout=60,
+            ) as resp:
                 total = int(resp.headers.get("Content-Length", 0))
                 downloaded = 0
                 with open(part_path, "wb") as archive_file:
@@ -352,7 +356,7 @@ def _download_ffmpeg_archive(url: str, part_path: str, archive_name: str,
                             log(f"Đang tải: {downloaded / 1_048_576:.1f} / "
                                 f"{total / 1_048_576:.0f} MB")
             return
-        except Exception as exc:  # noqa: BLE001 - network boundary
+        except Exception as exc:
             last_error = exc
             try:
                 os.remove(part_path)
@@ -387,7 +391,9 @@ def _verify_ffmpeg_archive(path: str, archive_name: str) -> None:
         _FFMPEG_CHECKSUMS_URL,
         headers={"User-Agent": "DubFlow-Setup/1.0"},
     )
-    with urllib.request.urlopen(request, timeout=60) as response:
+    with urllib.request.urlopen(  # nosec B310 — pinned checksum URL
+        request, timeout=60,
+    ) as response:
         checksums = response.read().decode("utf-8", errors="replace")
     expected = ""
     for line in checksums.splitlines():
@@ -475,10 +481,12 @@ class FFmpegDownloadWorker(QThread):
             self.progress.emit(76)
 
             # --- Giải nén chỉ lấy ffmpeg và ffprobe ---
+            # with bên dưới đóng cả hai loại nén; ruff chỉ nhìn thấy lời gọi mở
+            # nằm ngoài khối with nên báo từng dòng một.
             archive = (
-                zipfile.ZipFile(archive_path)
+                zipfile.ZipFile(archive_path)  # noqa: SIM115
                 if sys.platform == "win32"
-                else tarfile.open(archive_path, "r:xz")
+                else tarfile.open(archive_path, "r:xz")  # noqa: SIM115
             )
             with archive as zf:
                 extracted = 0
@@ -504,7 +512,8 @@ class FFmpegDownloadWorker(QThread):
                             with src, open(dest, "wb") as dst:
                                 shutil.copyfileobj(src, dst)
                         if sys.platform != "win32":
-                            os.chmod(dest, 0o755)
+                            os.chmod(dest, 0o755 if basename in (
+                                "ffmpeg", "ffprobe") else 0o644)
                         extracted += 1
                         self.log.emit(f"  Giải nén: {basename}")
                         self.progress.emit(76 + extracted * 10)
@@ -529,7 +538,7 @@ class FFmpegDownloadWorker(QThread):
             self.progress.emit(100)
             self.finished_ok.emit()
 
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self.failed.emit(str(exc))
 
 
@@ -626,7 +635,7 @@ class SetupScriptWorker(QThread):
                 self.failed.emit(format_setup_failure(
                     script_name, proc.returncode, tail))
 
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self.failed.emit(str(exc))
 
 
@@ -643,6 +652,6 @@ class DoctorWorker(QThread):
     def run(self) -> None:
         try:
             self.results.emit(run_doctor(self._settings))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self.failed.emit(str(exc))
 

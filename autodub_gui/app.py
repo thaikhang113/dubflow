@@ -34,7 +34,7 @@ from autodub_gui.ui.toast import TOASTS
 
 APP_NAME = "DubFlow"
 APP_TAGLINE = "Lồng tiếng video bằng AI"
-APP_VERSION = "3.0.21"
+APP_VERSION = "3.0.22"
 
 def _runtime_version() -> str:
     """Read release version written into frozen bundles."""
@@ -43,7 +43,8 @@ def _runtime_version() -> str:
     path = os.path.join(os.path.dirname(os.path.abspath(sys.executable)),
                         "VERSION")
     try:
-        value = open(path, encoding="utf-8").read().strip()
+        with open(path, encoding="utf-8") as handle:
+            value = handle.read().strip()
     except OSError:
         return APP_VERSION
     return value or APP_VERSION
@@ -266,8 +267,8 @@ class MainWindow(QMainWindow):
         self.header = AppHeader()
         self.header.notifications_clicked.connect(self._show_notifications)
         self.header.help_clicked.connect(lambda: self.switch_page(ROW_HELP))
-        # Huy hiệu Vox nằm cố định trên thanh tiêu đề (không phải nút của
-        # từng trang) — người dùng phải thấy tài nguyên của mình ở mọi trang.
+        # Thanh tiêu đề mang những gì phải thấy ở MỌI trang; chỗ gắn chúng là
+        # AppHeader.set_persistent(), tách khỏi các nút theo từng trang.
         layout.addWidget(self.header)
 
         self.pages = QStackedWidget()
@@ -435,9 +436,14 @@ class MainWindow(QMainWindow):
         """Mở một dự án trong Trình chỉnh sửa."""
         if not work_dir:
             return
-        self.switch_page(ROW_EDITOR)
+        current = self.pages.currentWidget()
         editor = self._ensure_page(ROW_EDITOR)
+        if current is not None and self._blocked_by_unsaved(current):
+            return
         editor.open_work_dir(work_dir)
+        # Chỉ mở editor khi dự án đã được nhận và giữ nguyên `_work_dir`.
+        if editor._work_dir:
+            self.switch_page(ROW_EDITOR)
         # Cập nhật launcher banner để hiện project đang mở
         launcher = self._page_widgets.get(ROW_EDITOR_LAUNCHER)
         if launcher and hasattr(launcher, "set_current_project"):

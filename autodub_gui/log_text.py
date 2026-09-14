@@ -184,36 +184,17 @@ _RAW_NOTICES: list[tuple[str, _Template, int]] = [
     # -- Dịch ---------------------------------------------------------------
     (r"Dùng lại bản dịch đã có",
      "Dùng lại bản dịch của lần chạy trước", logging.INFO),
-    (r"Dùng lại phân tích ngữ cảnh video",
-     "Dùng lại phần tìm hiểu nội dung video của lần chạy trước", logging.INFO),
     (r"Đang dịch (\d+) câu sang tiếng Việt",
      "Đang dịch {0} câu sang tiếng Việt", logging.INFO),
     (r"Đã dịch \d+/\d+ câu", None, logging.INFO),      # thanh tiến độ đã có
-    (r"Không đủ Vox|INSUFFICIENT_CREDIT",
-     "Hết tín dụng — mở trang Tài khoản để nạp thêm rồi chạy tiếp",
+    (r"Không kết nối được máy chủ|Failed to establish|Max retries",
+     "Không nối được tới endpoint dịch — kiểm tra mạng rồi chạy tiếp",
      logging.WARNING),
-    (r"Không kết nối được máy chủ",
-     "Mất kết nối tới máy chủ dịch — kiểm tra mạng rồi chạy tiếp",
-     logging.WARNING),
-    (r"Máy chủ đang bận",
-     "Máy chủ đang quá tải, chờ một chút rồi thử lại", logging.WARNING),
-    (r"Lượt dịch này tốn ([\d.,]+) Vox",
-     "Lượt dịch này tốn {0} tín dụng", logging.INFO),
-    (r"câu dịch còn lẫn tiếng Trung — dịch lại",
-     "Đang dịch lại vài câu còn lẫn tiếng Trung", logging.INFO),
-    (r"(\d+) câu vẫn còn lẫn tiếng Trung",
-     "Còn {0} câu chưa dịch sạch tiếng Trung — nên sửa tay trong Chỉnh sửa",
+    (r"Máy chủ đang bận|too many requests|429",
+     "Endpoint dịch đang quá tải, chờ một chút rồi thử lại",
      logging.WARNING),
     (r"[Dd]ịch tự động lỗi .* chuyển sang dịch tay",
      "Dịch tự động gặp lỗi — chuyển sang chờ bạn dịch tay", logging.WARNING),
-    (r"Rà soát bản dịch lỗi|Soát lại câu .* lỗi", None, logging.INFO),
-    (r"Soát lại bản dịch: mọi câu đều đạt",
-     "Đã soát lại bản dịch: mọi câu đều đạt", SUCCESS),
-    (r"Soát lại bản dịch: (\d+) câu cần sửa",
-     "Đang soát lại {0} câu dịch chưa ổn", logging.INFO),
-    (r"Soát lại bản dịch: đã sửa xong (\d+)/(\d+)",
-     "Đã soát và sửa {0}/{1} câu dịch", SUCCESS),
-    (r"Soát lại bản dịch: bản dịch lại không tốt hơn", None, logging.INFO),
     (r"Video đang chờ bản dịch",
      "Video đang chờ bản dịch — làm theo hướng dẫn ba bước hiện trên màn hình",
      logging.WARNING),
@@ -229,8 +210,8 @@ _RAW_NOTICES: list[tuple[str, _Template, int]] = [
     # -- Giọng đọc ----------------------------------------------------------
     (r"Bắt đầu tạo giọng đọc cho (\d+) câu",
      "Đang tạo giọng đọc cho {0} câu — đây là bước lâu nhất", logging.INFO),
-    (r"Giọng đọc: (\S+) \+ (\d+) giọng riêng.*?— (\d+)/(\d+) câu cần đọc"
-     r".*?chạy (\d+) luồng",
+    ((r"Giọng đọc: (\S+) \+ (\d+) giọng riêng.*?— (\d+)/(\d+) câu cần đọc"
+     r".*?chạy (\d+) luồng"),
      "Giọng «{0}» và {1} giọng riêng, {2}/{3} câu cần đọc, {4} luồng cùng lúc",
      logging.INFO),
     (r"Giọng đọc: (\S+) — (\d+)/(\d+) câu cần đọc.*?chạy (\d+) luồng",
@@ -294,16 +275,16 @@ _RAW_NOTICES: list[tuple[str, _Template, int]] = [
      "Không vẽ ảnh bìa (chưa bật trong Cài đặt)", logging.INFO),
     (r"Tạo ảnh bìa .* lỗi|Ảnh bìa .* không trả về ảnh",
      "Không vẽ được ảnh bìa (không ảnh hưởng video)", logging.WARNING),
-    (r"Tạo nội dung đăng bài lỗi|Viết nội dung bằng .* lỗi"
-     r"|Không đọc được nội dung đăng bài",
+    ((r"Tạo nội dung đăng bài lỗi|Viết nội dung bằng .* lỗi"
+     r"|Không đọc được nội dung đăng bài"),
      "Không viết được tiêu đề và mô tả (không ảnh hưởng video)",
      logging.WARNING),
     (r"Đã tải ảnh bìa gốc|Đã lấy khung hình tham chiếu", None, logging.INFO),
 
     # -- Kiểm tra chất lượng và tổng kết -----------------------------------
     (r"Kiểm tra chất lượng: (\d+)/(\d+) câu ổn — còn (\d+) câu chồng tiếng",
-     "Kiểm tra chất lượng: {0}/{1} câu tốt, {2} câu bị chồng tiếng nhẹ — "
-     "nghe thử trước khi đăng", logging.WARNING),
+     ("Kiểm tra chất lượng: {0}/{1} câu tốt, {2} câu bị chồng tiếng nhẹ — "
+     "nghe thử trước khi đăng"), logging.WARNING),
     (r"Kiểm tra chất lượng: (\d+)/(\d+) câu chuẩn",
      "Kiểm tra chất lượng: {0}/{1} câu chuẩn, số còn lại chỉ lệch nhẹ",
      logging.INFO),
@@ -336,7 +317,7 @@ _TECH_RE = re.compile(
     | ffmpeg | ffprobe | yt-dlp | ytdlp | demucs | whisper | paraformer
     | vieneu | sherpa | playwright | pydub | torch | pyinstaller
     | gemini | openai | openrouter | anthropic | deepseek | claude | gpt-
-    | fingerprint | idempotency | jobid | saas | bearer
+    | fingerprint | idempotency | jobid | saas | bearer
     | atempo | loudnorm | highpass | filtergraph | setpts | force_style
     | fontsdir | playres | lufs | \bcps\b | kv\s?cache | keep.?alive
     | \bcache\b | \bdebug\b | \bworker\b | \bthread\b | \bluồng\b
@@ -405,6 +386,6 @@ def error_line(message: str) -> tuple[str, int]:
     notice = notice_for(message or "", logging.ERROR)
     if notice is not None:
         return f"Dừng lại: {notice[0]}", logging.ERROR
-    return ("Dừng lại vì một lỗi ngoài dự tính — xem chi tiết ở hộp thoại "
-            "vừa hiện. Tiến độ đã lưu vẫn còn, bạn có thể chạy tiếp.",
+    return (("Dừng lại vì một lỗi ngoài dự tính — xem chi tiết ở hộp thoại "
+            "vừa hiện. Tiến độ đã lưu vẫn còn, bạn có thể chạy tiếp."),
             logging.ERROR)

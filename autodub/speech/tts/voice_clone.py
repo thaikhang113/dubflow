@@ -88,7 +88,7 @@ def prepare_reference_audio(
          "-i", source, "-t", f"{duration:.3f}", "-ar", "16000", "-ac", "1",
          "-sample_fmt", "s16", "-y", output],
         capture_output=True, text=True, timeout=120,
-    )
+    check=False)
     if proc.returncode != 0 or not os.path.isfile(output):
         raise RuntimeError(proc.stderr[-500:] or "Không chuẩn hóa được audio mẫu")
     actual = reference_duration_seconds(output)
@@ -130,7 +130,7 @@ def enroll_reference_audio(
     proc = run_registered(
         cmd, capture_output=True, text=True, encoding="utf-8",
         errors="replace", timeout=600,
-    )
+)
     responses = []
     for line in (proc.stdout or "").splitlines():
         try:
@@ -187,7 +187,7 @@ def enroll_reference_audio_batch(settings, items: list[dict]) -> dict[str, str]:
         proc = run_registered(
             cmd, capture_output=True, text=True, encoding="utf-8",
             errors="replace", timeout=600,
-        )
+)
         responses = []
         for line in (proc.stdout or "").splitlines():
             try:

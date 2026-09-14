@@ -627,7 +627,7 @@ class BatchPage(BasePage):
         style = self._shared_style or self._settings_provider().subtitle_style()
         try:
             dialog = StyleDialog(video, style, list(self._shared_regions), self)
-        except Exception as e:  # noqa: BLE001 — thường do thiếu ffmpeg
+        except Exception as e:
             ConfirmDialog.show_error(
                 self, "Không mở được khung xem trước",
                 "Ứng dụng cần một khung hình từ video để bạn canh chữ, nhưng "

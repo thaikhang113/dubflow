@@ -69,14 +69,14 @@ def main() -> int:
         log("Tạo .venv-ocr ...")
         subprocess.run([python, "-m", "venv", VENV], check=True)
     probe = subprocess.run([PYTHON, "-c", "import paddleocr"],
-                           capture_output=True)
+                           capture_output=True, check=False)
     gpu_available = _has_nvidia_gpu()
     cuda_probe = subprocess.run(
         [PYTHON, "-c",
          "import paddle; print(int(paddle.is_compiled_with_cuda()))"],
         capture_output=True,
         text=True,
-    )
+    check=False)
     paddle_has_cuda = cuda_probe.returncode == 0 and "1" in cuda_probe.stdout
     if probe.returncode != 0 or (gpu_available and not paddle_has_cuda):
         log("Cài PaddlePaddle + PaddleOCR ...")
@@ -110,8 +110,8 @@ def main() -> int:
             check=True,
         ), attempts=2)
     os.makedirs(MODEL_DIR, exist_ok=True)
-    subprocess.run([PYTHON, "-c", "from paddleocr import PaddleOCR; "
-                    "PaddleOCR(lang='ch')"], check=True, timeout=900)
+    subprocess.run([PYTHON, "-c", ("from paddleocr import PaddleOCR; "
+                    "PaddleOCR(lang='ch')")], check=True, timeout=900)
     with open(MARKER, "w", encoding="utf-8") as f:
         json.dump({"ok": True, "backend": "paddleocr"}, f, indent=2)
     log("Smoke test PASS")

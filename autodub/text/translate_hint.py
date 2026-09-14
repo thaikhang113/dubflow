@@ -307,20 +307,20 @@ If a segment fails any check, rewrite it into natural spoken Vietnamese before r
 
 
 def write_hint(work_dir: str, target: TargetLang, source_lang: str,
-               settings=None, refund_note: str = "") -> str:
+               settings=None, manual_reason: str = "") -> str:
     """Create ``<work_dir>/TRANSLATE_PENDING.txt`` and return its path.
 
     Viết cho NGƯỜI DÙNG PHỔ THÔNG: tiếng Việt, 3 bước, không thuật ngữ dev.
     Prompt gửi cho AI vẫn là tiếng Anh (chất lượng dịch tốt hơn) nhưng người
     dùng chỉ cần copy-paste nguyên khối, không cần hiểu.
 
-    ``settings`` (nếu có) đưa ngữ cảnh video vào prompt — kể cả ngữ cảnh do
-    lượt phân tích tự động đã lưu ở ``data/video_context.json``: dịch tay
-    phải nhận được ĐÚNG prompt như dịch tự động, không phải bản chay.
+    ``settings`` (nếu có) đưa ngữ cảnh video vào prompt — kể cả ngữ cảnh đã
+    lưu ở ``data/video_context.json``: bản hướng dẫn này phải mang đúng
+    lời nhắn mà dịch tự động đang dùng.
 
-    ``refund_note`` là dòng trấn an về tiền: giá của video đã chốt từ đầu nên
-    phần dịch tay không phát sinh thêm Vox. Thấy pipeline dừng giữa đường mà
-    không ai nói gì về Vox thì người dùng mặc định là mình vừa mất tiền.
+    ``manual_reason`` là lý do dịch tự động không xong (mất mạng, model trả
+    JSON hỏng...). Có thì nói thẳng vào đầu file hướng dẫn; không có thì coi
+    như người dùng chủ động tắt dịch tự động.
     """
     from autodub.workdir import data_dir
 
@@ -328,18 +328,16 @@ def write_hint(work_dir: str, target: TargetLang, source_lang: str,
     # Bố cục mới: transcript nằm trong data/ — hướng dẫn phải trỏ đúng chỗ.
     d_dir = data_dir(work_dir)
 
-    # Bơm ngữ cảnh phân tích (nếu lượt 0 đã chạy và lưu cache) vào settings,
-    # y hệt đường dịch tự động — ô nào người dùng điền tay vẫn thắng.
-    # File này có thể đang mã hóa (lượt chạy có hold): đọc bằng read_json_secure
-    # với khóa của hold, nếu không thì ngữ cảnh người dùng ĐÃ TRẢ Vox để có bị
-    # âm thầm bỏ qua và prompt dịch tay thành bản chay.
+    # Bơm ngữ cảnh đã phân tích (nếu có cache) vào settings — y hệt đường dịch
+    # tự động: ô nào người dùng điền tay vẫn thắng. Dịch tay phải nhận đúng
+    # prompt như dịch tự động, không phải bản chay.
     ctx_cache = os.path.join(d_dir, "video_context.json")
     if settings is not None and os.path.exists(ctx_cache):
         try:
             with open(ctx_cache, encoding="utf-8") as f:
                 analysis = json.load(f)
             if not isinstance(analysis, dict):
-                raise ValueError("video_context.json phải là object")
+                raise TypeError("video_context.json phải là object")
             glossary = analysis.get("glossary", "")
             if isinstance(glossary, list):
                 glossary = "\n".join(
@@ -360,7 +358,7 @@ def write_hint(work_dir: str, target: TargetLang, source_lang: str,
                     if value
                 },
             )
-        except Exception as e:  # noqa: BLE001 — thiếu ngữ cảnh không được chặn hướng dẫn
+        except Exception as e:
             logger.warning(f"Không đọc được ngữ cảnh video cho dịch tay: {e}")
 
     # Tiêu đề video gốc (downloader lưu) — dịch tay nhận đúng ngữ cảnh như
@@ -383,17 +381,20 @@ def write_hint(work_dir: str, target: TargetLang, source_lang: str,
         why = """Bạn đang để "Dịch tự động" TẮT trong Cài đặt, nên app nghe xong
 lời thoại rồi dừng lại chờ bản dịch của bạn. Cách làm ở dưới, khoảng 2-3 phút.
 
-MUỐN APP TỰ DỊCH: mở Cài đặt, bật "Dịch tự động" — app dịch giúp bạn toàn bộ
-lời thoại, tính thêm 2 Vox mỗi câu."""
+MUỐN APP TỰ DỊCH: mở Cài đặt, bật "Dịch tự động" và điền endpoint, API key,
+model ở trang Dịch thuật — app sẽ dùng model đó để dịch toàn bộ lời thoại.
+
+Chi phí model theo endpoint bạn chọn (Ollama tự chạy trên máy là miễn phí).
+DubFlow không thu phí."""
     else:
-        why = """App đã nghe xong lời thoại nhưng máy chủ dịch đang gặp sự cố.
-Không sao — bạn nhờ một AI miễn phí (ChatGPT, Gemini...) dịch giúp theo 3
-bước dưới đây, mất khoảng 2-3 phút.
+        reason = (f"Lỗi vừa gặp: {manual_reason}\n"
+                  if manual_reason else "")
+        why = f"""App đã nghe xong lời thoại nhưng dịch tự động không xong.
+{reason}Không sao — bạn nhờ một AI miễn phí (ChatGPT, Gemini...) dịch giúp
+theo 3 bước dưới đây, mất khoảng 2-3 phút.
 
-HOẶC: đợi một lúc rồi chạy lại video này. Phần đã nghe-chép được dùng lại
-nên không mất công, và phần nào đã dịch rồi cũng không bị tính Vox lần hai."""
-
-    money = f"\n{refund_note}\n" if refund_note else ""
+HOẶC: sửa cấu hình endpoint ở trang Dịch thuật rồi chạy lại video này.
+Phần đã nghe-chép và đã dịch được giữ nguyên nên không phải làm lại từ đầu."""
 
     hint_path = os.path.join(work_dir, "TRANSLATE_PENDING.txt")
     with open(hint_path, "w", encoding="utf-8") as f:
@@ -402,7 +403,6 @@ nên không mất công, và phần nào đã dịch rồi cũng không bị tí
 =======================
 
 {why}
-{money}
 
 BƯỚC 1 — COPY NỘI DUNG CẦN DỊCH
 --------------------------------

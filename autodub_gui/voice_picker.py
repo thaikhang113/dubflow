@@ -368,7 +368,7 @@ class VoicePicker(QWidget):
 
         try:
             self._voices = self._catalog.catalog(settings or Settings.load())
-        except Exception:  # noqa: BLE001 — thiếu tệp thì để catalog rỗng
+        except Exception:
             self._voices = []
         if not self._current or all(
                 v.name != self._current for v in self._voices):

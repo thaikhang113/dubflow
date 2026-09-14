@@ -85,9 +85,9 @@ class VoiceCard(QFrame):
             GENDERS,
             STYLES,
         )
-        gender_label = dict((k, v) for v, k in GENDERS)
-        country_label = dict((k, v) for v, k in COUNTRIES)
-        style_label = dict((k, v) for v, k in STYLES)
+        gender_label = {k: v for v, k in GENDERS}
+        country_label = {k: v for v, k in COUNTRIES}
+        style_label = {k: v for v, k in STYLES}
 
         root = QVBoxLayout(self)
         root.setContentsMargins(tokens.SP_4, tokens.SP_4,

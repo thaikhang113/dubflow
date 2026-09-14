@@ -98,7 +98,7 @@ class NewProjectPage(BasePage):
         self._subtitle_style: dict | None = None
         # Dự án đang làm dở của phiên này: thư mục + lý do dừng. Được lưu vào
         # bản nháp để lần mở app sau vẫn mời chạy tiếp thay vì tạo dự án mới
-        # (dự án mới = job_id mới = trừ Vox lần nữa).
+        # (dự án mới là một thư mục mới, làm lại từ đầu).
         self._active_work_dir: str = ""
         self._active_status: str = ""
         self._resume_request_snapshot: dict = {}
@@ -434,24 +434,25 @@ class NewProjectPage(BasePage):
             ("Độ chính xác khi nghe",
              label_of(consts.WHISPER_MODELS, data["whisper_model"])),
             ("Cách dịch",
-            "tự động (12 tín dụng/câu)" if data["auto_translate"]
-            else "dịch tay có hướng dẫn (10 tín dụng/câu)"),
+             "tự động (qua endpoint dịch)" if data["auto_translate"]
+             else "dịch tay có hướng dẫn 3 bước"),
             ("Phong cách dịch",
              label_of([(a, b) for a, b, _c in consts.TRANSLATE_STYLES],
                       data["translate_style"])
              if data["auto_translate"] else "—"),
             ("Tiêu đề + mô tả đăng bài",
-            "có (+20 tín dụng)" if data["generate_metadata"] else "không"),
+             "có (youtube/youtube_post.txt)" if data["generate_metadata"]
+             else "không (bạn tự viết)"),
             ("Giọng đọc",
-             f"{data['voice'] or 'theo cài đặt chung'} · "
-            f"tốc độ {data['voice_speed']:.2f}x"),
+             (f"{data['voice'] or 'theo cài đặt chung'} · "
+            f"tốc độ {data['voice_speed']:.2f}x")),
             ("Clone giọng",
              ("bật, " + ("từ file mẫu" if data["clone_source"] == "file"
                           else "từ video"))
              if data["clone_voice"] else "tắt"),
             ("Phụ đề",
-             f"{label_of(consts.SUBTITLE_MODES, data['subtitle_mode'])} · "
-             f"kiểu {label_of(PRESET_CHOICES, data['subtitle_preset'])}"),
+             (f"{label_of(consts.SUBTITLE_MODES, data['subtitle_mode'])} · "
+             f"kiểu {label_of(PRESET_CHOICES, data['subtitle_preset'])}")),
             ("Lật ngang video", "có" if data["mirror"] else "không"),
             ("OCR làm mờ chữ Trung", "có" if data["ocr_enabled"] else "không"),
             ("Nhạc nền", label_of(consts.BG_MODES, data["bg_mode"])),
@@ -545,10 +546,10 @@ class NewProjectPage(BasePage):
     def _restore_active_session(self, data: dict) -> None:
         """Nhớ lại dự án dở dang của phiên trước (nếu thư mục còn trên đĩa).
 
-        Phiên trước dừng giữa chừng — lỗi, hết tín dụng, chờ dịch tay hay app bị
+        Phiên trước dừng giữa chừng — lỗi dịch tự động, chờ dịch tay hay app bị
         tắt đột ngột — thì phiên này chuyển thẳng bước 1 sang «Tiếp tục dang
         dở» trỏ vào đúng thư mục cũ, để bấm chạy là đi tiếp chứ không tạo
-        dự án mới (dự án mới = trừ tín dụng lần nữa).
+        dự án mới.
         """
         work_dir = str(data.get("active_work_dir") or "")
         status = str(data.get("active_status") or "")
@@ -572,7 +573,7 @@ class NewProjectPage(BasePage):
             self._resume_settings_snapshot = (
                 settings.get("runtime") if isinstance(settings, dict)
                 else {}) or {}
-        except Exception:  # noqa: BLE001 — manifest hỏng không chặn mở app
+        except Exception:
             self._resume_request_snapshot = {}
             self._resume_settings_snapshot = {}
         hints = {
@@ -603,7 +604,7 @@ class NewProjectPage(BasePage):
         """Lần đầu mở thì lấy giá trị mặc định từ tệp cấu hình."""
         try:
             settings = self._settings_provider()
-        except Exception:  # noqa: BLE001 — cấu hình hỏng thì dùng mặc định sẵn
+        except Exception:
             return
         self.step_recognize.engine.set_key(settings.asr_engine)
         self.step_recognize.model.set_key(settings.whisper_model)
@@ -697,7 +698,7 @@ class NewProjectPage(BasePage):
     def _preview_voice(self, voice: str) -> None:
         try:
             settings = self._settings_provider()
-        except Exception as e:  # noqa: BLE001 — báo lên giao diện
+        except Exception as e:
             self.step_voice.set_status(f"Không đọc được cấu hình: {e}")
             return
         self._preview.play(settings, voice)
@@ -715,7 +716,7 @@ class NewProjectPage(BasePage):
             settings = self._settings_provider()
             if preset == settings.subtitle_preset:
                 return settings.subtitle_style()
-        except Exception:  # noqa: BLE001 — cấu hình hỏng thì dùng bộ sẵn
+        except Exception:
             pass
         return preset_style(preset)
 
@@ -737,7 +738,7 @@ class NewProjectPage(BasePage):
                 logo_scale=self.step_video.logo_scale.value(),
                 ocr_y_min=self.step_video.ocr_y_min.value(),
                 ocr_enabled=self.step_video.ocr_enabled.isChecked())
-        except Exception as e:  # noqa: BLE001 — thường do thiếu ffmpeg
+        except Exception as e:
             ConfirmDialog.show_error(
                 self, "Không mở được khung xem trước",
                 "Ứng dụng cần lấy một khung hình từ video để bạn canh chữ, "
@@ -1043,8 +1044,8 @@ class NewProjectPage(BasePage):
     def _on_progress_event(self, event) -> None:
         """Ghi nhớ thư mục dự án ngay khi pipeline vừa tạo/chọn xong.
 
-        Pipeline nhét work_dir vào ``detail`` của sự kiện «acquire/start» —
-        nhờ đó nếu lượt chạy đổ giữa chừng (lỗi, hết tín dụng, chờ dịch tay) thì
+        Pipeline nhét work_dir vào ``detail`` của sự kiện «acquire/start» — nhờ
+        đó nếu lượt chạy đổ giữa chừng (lỗi dịch, chờ dịch tay, bấm dừng) thì
         trang này vẫn biết dự án nằm đâu để mời chạy TIẾP đúng dự án cũ.
         Lưu luôn vào bản nháp: app có sập thì mở lại vẫn nhớ.
         """
@@ -1069,8 +1070,8 @@ class NewProjectPage(BasePage):
         worker = None
         if self._worker is not None and self._worker.isRunning():
             worker = self._worker
-            # Dừng giữa chừng thì phần AI đã chạy không hoàn Vox — nói rõ
-            # trước khi dừng để người dùng không bất ngờ.
+            # Giữ tham chiếu trước khi tắt: phần đã làm (nghe-chép, dịch, giọng
+            # đọc) vẫn nằm trên đĩa và lượt sau dùng lại, không làm lại từ đầu.
         if worker is None:
             return
         worker.cancel()
@@ -1114,8 +1115,8 @@ class NewProjectPage(BasePage):
         """Lượt chạy dừng giữa chừng: nhớ dự án + trỏ bước 1 vào «Tiếp tục».
 
         Nhờ vậy nút chạy tiếp theo đi TIẾP đúng dự án cũ — không tạo thư mục
-        mới, không nghe-chép lại từ đầu, không bị trừ tín dụng lần nữa. Trạng
-        thái được lưu vào bản nháp để tắt app mở lại vẫn nhớ.
+        mới và không nghe-chép lại từ đầu. Trạng thái được lưu vào bản nháp để
+        tắt app mở lại vẫn nhớ.
         """
         if work_dir:
             self._active_work_dir = work_dir
@@ -1225,8 +1226,8 @@ class NewProjectPage(BasePage):
         self.log.append_log("Đã dừng theo yêu cầu của bạn.", _log.WARNING)
         REGISTRY.add_activity(LEVEL_INFO, "Đã dừng việc lồng tiếng theo yêu cầu")
         REGISTRY.finish_job(False, "bạn đã bấm dừng")
-        # Dừng tay cũng là dở dang: trỏ bước 1 vào dự án này để chạy tiếp
-        # dùng lại phần đã làm (đã dịch rồi thì không trừ Vox lần nữa).
+        # Dừng tay cũng là dở dang: trỏ bước 1 vào dự án này để chạy tiếp dùng
+        # lại phần đã làm (đã dịch rồi thì không dịch lại lần hai).
         self._mark_interrupted("cancelled")
 
     def _on_progress_log(self, event) -> None:

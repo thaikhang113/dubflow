@@ -1,12 +1,12 @@
 ﻿"""Batch dubbing: process a list of videos typed one per line, with crash-safe
 status tracking.
 
-The user pastes URLs â€” one per line â€” and the batch runner does the rest. An
+The user pastes URLs — one per line — and the batch runner does the rest. An
 optional voice name may follow the URL after ``|``, ``,`` or a tab::
 
     https://youtu.be/aaa
-    https://youtu.be/bbb | TrÃºc Ly
-    https://youtu.be/ccc | Pháº¡m TuyÃªn
+    https://youtu.be/bbb | Trúc Ly
+    https://youtu.be/ccc | Phạm Tuyên
 
 Progress is persisted to ``batch_state.json`` inside the output directory after
 every video, so an interrupted batch can be resumed by pasting the same list
@@ -32,9 +32,9 @@ logger = setup_logging("autodub.batch")
 
 STATE_FILENAME = "batch_state.json"
 
-# TÃ¡ch má»™t dÃ²ng thÃ nh liÃªn káº¿t + TÃŠN GIá»ŒNG tÃ¹y chá»n. Chá»‰ tÃ¡ch á»Ÿ cÃ¡c dáº¥u rÃµ
-# rÃ ng (| , ; tab, hoáº·c tá»« hai khoáº£ng tráº¯ng trá»Ÿ lÃªn) vÃ¬ tÃªn giá»ng tiáº¿ng Viá»‡t
-# cÃ³ khoáº£ng tráº¯ng bÃªn trong â€” tÃ¡ch á»Ÿ má»™t dáº¥u cÃ¡ch sáº½ cáº¯t Ä‘Ã´i Â«TrÃºc LyÂ».
+# Tách một dòng thành liên kết + TÊN GIỌNG tùy chọn. Chỉ tách ở các dấu rõ
+# ràng (| , ; tab, hoặc từ hai khoảng trắng trở lên) vì tên giọng tiếng Việt
+# có khoảng trắng bên trong — tách ở một dấu cách sẽ cắt đôi «Trúc Ly».
 _SPLIT_RE = re.compile(r"[|,;\t]|\s{2,}")
 _URL_RE = re.compile(r"https?://[^\s<>\[\]{}]+", re.IGNORECASE)
 
@@ -116,16 +116,16 @@ def validate_batch_report(report: dict, *, skip_video: bool = False) -> str:
 
 
 class _Prefetcher:
-    """Táº£i trÆ°á»›c video Káº¾ TIáº¾P trong khi video hiá»‡n táº¡i Ä‘ang xá»­ lÃ½.
+    """Tải trước video KẾ TIẾP trong khi video hiện tại đang xử lý.
 
-    Táº£i máº¡ng hoÃ n toÃ n Ä‘á»™c láº­p vá»›i cÃ¡c bÆ°á»›c GPU/CPU cá»§a video Ä‘ang cháº¡y â€”
-    chá»“ng láº¥n hai viá»‡c lÃ  thá»i gian táº£i gáº§n nhÆ° miá»…n phÃ­. Má»—i lÃºc chá»‰ táº£i
-    trÆ°á»›c má»™t video (khÃ´ng táº£i cáº£ danh sÃ¡ch: tá»‘n Ä‘Ä©a vÃ  bÄƒng thÃ´ng vÃ´ Ã­ch
-    khi ngÆ°á»i dÃ¹ng há»§y giá»¯a chá»«ng).
+    Tải mạng hoàn toàn độc lập với các bước GPU/CPU của video đang chạy —
+    chồng lấn hai việc là thời gian tải gần như miễn phí. Mỗi lúc chỉ tải
+    trước một video (không tải cả danh sách: tốn đĩa và băng thông vô ích
+    khi người dùng hủy giữa chừng).
 
-    File táº£i trÆ°á»›c náº±m á»Ÿ ``<output_dir>/_prefetch/<n>/``; khi video cháº¡y
-    xong thÃ nh cÃ´ng, file Ä‘Æ°á»£c dá»n vÃ o work_dir cá»§a chÃ­nh video Ä‘Ã³ (resume
-    tá»± tÃ¬m tháº¥y nhÆ° video táº£i bÃ¬nh thÆ°á»ng).
+    File tải trước nằm ở ``<output_dir>/_prefetch/<n>/``; khi video chạy
+    xong thành công, file được dọn vào work_dir của chính video đó (resume
+    tự tìm thấy như video tải bình thường).
     """
 
     def __init__(
@@ -139,7 +139,7 @@ class _Prefetcher:
         self._fragment_workers = max(1, min(16, int(fragment_workers)))
 
     def start(self, index: int, item: BatchItem) -> None:
-        """Báº¯t Ä‘áº§u táº£i ná»n cho ``item`` (bá» qua náº¿u lÃ  file local)."""
+        """Bắt đầu tải nền cho ``item`` (bỏ qua nếu là file local)."""
         if not item.url or item.file_path:
             return
         dest = os.path.join(self._root, str(index))
@@ -150,28 +150,28 @@ class _Prefetcher:
                 result["path"] = download_video(
                     item.url, dest, fragment_workers=self._fragment_workers)
             except Exception as e:
-                logger.warning(f"Táº£i trÆ°á»›c tháº¥t báº¡i ({item.label}): {e}")
+                logger.warning(f"Tải trước thất bại ({item.label}): {e}")
                 result["error"] = str(e)
             return result
 
-        logger.info(f"Táº£i trÆ°á»›c video: {item.label}")
+        logger.info(f"Tải trước video: {item.label}")
         self._futures[index] = self._executor.submit(_download)
 
     def take(self, index: int, timeout: float = 3600.0) -> str | None:
-        """Chá» lÆ°á»£t táº£i ná»n xong; tráº£ vá» Ä‘Æ°á»ng dáº«n file hoáº·c None."""
+        """Chờ lượt tải nền xong; trả về đường dẫn file hoặc None."""
         future = self._futures.pop(index, None)
         if future is None:
             return None
         try:
             result = future.result(timeout=timeout)
         except TimeoutError:
-            logger.warning("Táº£i trÆ°á»›c quÃ¡ lÃ¢u â€” video sáº½ tá»± táº£i láº¡i")
+            logger.warning("Tải trước quá lâu — video sẽ tự tải lại")
             return None
         return result.get("path")
 
     @staticmethod
     def adopt(prefetched: str, work_dir: str) -> None:
-        """Dá»n file Ä‘Ã£ táº£i trÆ°á»›c vÃ o work_dir cá»§a video (best-effort)."""
+        """Dọn file đã tải trước vào work_dir của video (best-effort)."""
         try:
             if os.path.isfile(prefetched) and os.path.isdir(work_dir):
                 target = os.path.join(work_dir,
@@ -179,8 +179,8 @@ class _Prefetcher:
                 if not os.path.exists(target):
                     shutil.move(prefetched, target)
                 parent = os.path.dirname(prefetched)
-                # video_meta.json (title) Ä‘i kÃ¨m video â€” dá»n vÃ o data/ cá»§a
-                # work_dir Ä‘á»ƒ cÃ¡c bÆ°á»›c dá»‹ch/metadata Ä‘á»c Ä‘Æ°á»£c.
+                # video_meta.json (title) đi kèm video — dọn vào data/ của
+                # work_dir để các bước dịch/metadata đọc được.
                 meta = os.path.join(parent, "data", "video_meta.json")
                 if os.path.isfile(meta):
                     from autodub.workdir import data_path
@@ -189,17 +189,17 @@ class _Prefetcher:
                     if not os.path.exists(meta_target):
                         shutil.move(meta, meta_target)
                     else:
-                        os.remove(meta)  # _resolve_video Ä‘Ã£ chÃ©p sáºµn
+                        os.remove(meta)  # _resolve_video đã chép sẵn
                     meta_dir = os.path.dirname(meta)
                     if os.path.isdir(meta_dir) and not os.listdir(meta_dir):
                         os.rmdir(meta_dir)
                 if os.path.isdir(parent) and not os.listdir(parent):
                     os.rmdir(parent)
         except OSError as e:
-            logger.warning(f"KhÃ´ng dá»n Ä‘Æ°á»£c file táº£i trÆ°á»›c: {e}")
+            logger.warning(f"Không dọn được file tải trước: {e}")
 
     def cleanup(self) -> None:
-        """XoÃ¡ cÃ¡c file táº£i trÆ°á»›c cÃ²n sÃ³t (video lá»—i giá»¯ nguyÃªn Ä‘á»ƒ resume)."""
+        """Xoá các file tải trước còn sót (video lỗi giữ nguyên để resume)."""
         for future in self._futures.values():
             future.cancel()
         self._futures.clear()
@@ -214,10 +214,10 @@ class _Prefetcher:
 def parse_lines(text: str | Iterable[str]) -> list[BatchItem]:
     """Turn pasted text (or a list of lines) into batch items.
 
-    DÃ²ng trá»‘ng vÃ  dÃ²ng báº¯t Ä‘áº§u báº±ng ``#`` bá»‹ bá» qua, liÃªn káº¿t trÃ¹ng chá»‰ láº¥y
-    láº§n Ä‘áº§u. TÃªn giá»ng Ä‘Æ°á»£c giá»¯ nguyÃªn nhÆ° ngÆ°á»i dÃ¹ng gÃµ; giá»ng khÃ´ng cÃ³
-    trong danh má»¥c sáº½ tá»± rÆ¡i vá» giá»ng máº·c Ä‘á»‹nh lÃºc cháº¡y chá»© khÃ´ng lÃ m há»ng
-    cáº£ danh sÃ¡ch."""
+    Dòng trống và dòng bắt đầu bằng ``#`` bị bỏ qua, liên kết trùng chỉ lấy
+    lần đầu. Tên giọng được giữ nguyên như người dùng gõ; giọng không có
+    trong danh mục sẽ tự rơi về giọng mặc định lúc chạy chứ không làm hỏng
+    cả danh sách."""
     lines = text.splitlines() if isinstance(text, str) else list(text)
     items: list[BatchItem] = []
     seen: set[str] = set()
@@ -263,11 +263,11 @@ def _run_items(
     """Process items sequentially; call ``on_result(item, report, error)`` after
     each one (report on success, error message on failure) so the caller can
     persist status crash-safely. ``observer`` (if given) receives display-only
-    per-item events â€” used by the GUI. A :class:`PipelineCancelled` from the
+    per-item events — used by the GUI. A :class:`PipelineCancelled` from the
     pipeline aborts the whole batch (it is not recorded as a failure)."""
     summary = BatchSummary(total=len(items))
-    # req_template.output_dir cÃ³ thá»ƒ None â€” dÃ¹ng default cá»§a pipeline Ä‘á»ƒ
-    # thÆ° má»¥c _prefetch náº±m cáº¡nh cÃ¡c work_dir.
+    # req_template.output_dir có thể None — dùng default của pipeline để
+    # thư mục _prefetch nằm cạnh các work_dir.
     from autodub.languages import get_target
     prefetch_root = (req_template.output_dir
                      or pipeline.default_output_dir(get_target(req_template.target)))
@@ -286,14 +286,14 @@ def _run_items(
             on_start(item)
         if observer:
             observer(i, len(items), item, "start", "")
-        # Video nÃ y Ä‘Ã£ Ä‘Æ°á»£c táº£i trÆ°á»›c trong lÃºc video trÆ°á»›c xá»­ lÃ½?
+        # Video này đã được tải trước trong lúc video trước xử lý?
         prefetched = prefetcher.take(i)
-        # Báº¯t Ä‘áº§u táº£i ná»n video Káº¾ TIáº¾P ngay khi video nÃ y khá»Ÿi Ä‘á»™ng.
+        # Bắt đầu tải nền video KẾ TIẾP ngay khi video này khởi động.
         prefetch_count = prefetch_workers
         for next_index in range(i + 1, min(len(items), i + 1 + prefetch_count)):
             prefetcher.start(next_index, items[next_index])
         try:
-            # má»¥c cÅ©: pháº§n Ä‘Ã£ táº£i/nghe-chÃ©p/dá»‹ch Ä‘Æ°á»£c dÃ¹ng láº¡i, khÃ´ng táº¡o
+            # mục cũ: phần đã tải/nghe-chép/dịch được dùng lại, không tạo
             resume_dir = None
             if isinstance(item.ref, dict):
                 prev_dir = item.ref.get("work_dir") or ""
@@ -333,17 +333,17 @@ def _run_items(
                 # the user's log, not just the console.
                 reasons = {
                     "translate_pending": (
-                        "Video chá» báº£n dá»‹ch tay â€” má»Ÿ video nÃ y á»Ÿ trang Táº¡o "
-                        "dá»± Ã¡n Ä‘á»ƒ dá»‹ch rá»“i cháº¡y tiáº¿p."),
+                        "Video chờ bản dịch tay — mở video này ở trang Tạo "
+                        "dự án để dịch rồi chạy tiếp."),
                 }
                 raise RuntimeError(reasons.get(
                     result.status,
-                    f"Pipeline dá»«ng á»Ÿ tráº¡ng thÃ¡i {result.status} "
+                    f"Pipeline dừng ở trạng thái {result.status} "
                     f"(work_dir={result.work_dir})."))
             output_dir = validate_batch_report(
                 result.report, skip_video=req_template.skip_video)
             if prefetched:
-                # Dá»n file táº£i trÆ°á»›c vÃ o work_dir Ä‘á»ƒ resume tá»± tÃ¬m tháº¥y.
+                # Dọn file tải trước vào work_dir để resume tự tìm thấy.
                 _Prefetcher.adopt(prefetched, output_dir)
             on_result(item, result.report, None)
             summary.success += 1
@@ -352,7 +352,7 @@ def _run_items(
                 observer(i, len(items), item, "success", output_dir)
         except PipelineCancelled:
             logger.info("Batch cancelled by user")
-            # Nhá»› thÆ° má»¥c dá»Ÿ dang Ä‘á»ƒ láº§n cháº¡y láº¡i Ä‘i tiáº¿p tá»« chá»— dá»«ng.
+            # Nhớ thư mục dở dang để lần chạy lại đi tiếp từ chỗ dừng.
             if isinstance(item.ref, dict) and getattr(pipeline, "last_work_dir", ""):
                 item.ref["work_dir"] = pipeline.last_work_dir
             prefetcher.cleanup()
@@ -361,8 +361,8 @@ def _run_items(
             summary.failed += 1
             error_msg = str(e)[:200]
             logger.error(f"[{i + 1}/{len(items)}] FAILED: {error_msg}")
-            # Ghi láº¡i thÆ° má»¥c cá»§a lÆ°á»£t cháº¡y há»ng â€” cháº¡y láº¡i sáº½ resume Ä‘Ãºng
-            # thÆ° má»¥c nÃ y thay vÃ¬ táº£i + nghe-chÃ©p láº¡i tá»« Ä‘áº§u.
+            # Ghi lại thư mục của lượt chạy hỏng — chạy lại sẽ resume đúng
+            # thư mục này thay vì tải + nghe-chép lại từ đầu.
             if isinstance(item.ref, dict) and getattr(pipeline, "last_work_dir", ""):
                 item.ref["work_dir"] = pipeline.last_work_dir
             on_result(item, None, error_msg)
@@ -414,7 +414,7 @@ def run_batch(
     """Dub every video in the batch.
 
     ``lines`` is either pasted text/lines of URLs (one per line, optional
-    ``| voice`` suffix) or a ready list of :class:`BatchItem` â€” the GUI's
+    ``| voice`` suffix) or a ready list of :class:`BatchItem` — the GUI's
     upload table passes items directly, with per-video blur regions and
     subtitle modes.
 
@@ -423,7 +423,7 @@ def run_batch(
     crashed or cancelled batch resumes cleanly from the same list.
 
     ``reuse_tts`` keeps one warmed TTS model alive across all videos instead
-    of reloading it per video (10-60 s each) â€” only applies when no custom
+    of reloading it per video (10-60 s each) — only applies when no custom
     ``pipeline`` is injected.
 
     ``pipeline`` lets a frontend inject a DubPipeline wired with its own
@@ -525,13 +525,13 @@ def run_batch(
             from autodub.speech.tts import SynthCache
             synth_cache = SynthCache()
         if len(pending) > 1:
-            # Worker chá»‰ thá»±c sá»± khá»Ÿi Ä‘á»™ng á»Ÿ video Ä‘áº§u tiÃªn cáº§n Demucs â€”
-            # táº¡o object á»Ÿ Ä‘Ã¢y lÃ  miá»…n phÃ­, gating (venv GPU, RAM) náº±m trong
+            # Worker chỉ thực sự khởi động ở video đầu tiên cần Demucs —
+            # tạo object ở đây là miễn phí, gating (venv GPU, RAM) nằm trong
             # DemucsCache._ensure().
             from autodub.media.vocal_separator import DemucsCache
             demucs_cache = DemucsCache()
-            # TÆ°Æ¡ng tá»± cho Whisper: gating (CPU luÃ´n giá»¯, GPU cáº§n Ä‘á»§ VRAM)
-            # náº±m trong WhisperCache.get().
+            # Tương tự cho Whisper: gating (CPU luôn giữ, GPU cần đủ VRAM)
+            # nằm trong WhisperCache.get().
             from autodub.speech.transcriber import WhisperCache
             whisper_cache = WhisperCache()
         pipeline = DubPipeline(settings, synth_cache=synth_cache,
@@ -542,8 +542,8 @@ def run_batch(
                              on_pending=on_pending,
                              on_start=on_start, observer=observer)
     finally:
-        # LÆ°u láº§n cuá»‘i: báº¥m Dá»«ng giá»¯a chá»«ng thÃ¬ work_dir dá»Ÿ dang vá»«a Ä‘Æ°á»£c
-        # ghi vÃ o item.ref cÅ©ng xuá»‘ng Ä‘Ä©a, láº§n cháº¡y láº¡i má»›i resume Ä‘Æ°á»£c.
+        # Lưu lần cuối: bấm Dừng giữa chừng thì work_dir dở dang vừa được
+        # ghi vào item.ref cũng xuống đĩa, lần chạy lại mới resume được.
         flush()
         if synth_cache is not None:
             synth_cache.close()
@@ -579,4 +579,3 @@ async def run_batch_async(
         retry_done,
         reuse_tts,
     )
-

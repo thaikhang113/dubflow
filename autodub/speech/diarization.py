@@ -69,7 +69,7 @@ def assign_speakers(
     if len(segments) != len(labels):
         raise ValueError("segments and speaker labels must have equal length")
     result = []
-    for segment, label in zip(segments, labels):
+    for segment, label in zip(segments, labels, strict=True):
         _check_cancelled(cancel_event)
         item = dict(segment)
         item["speaker_id"] = f"speaker_{int(label) + 1:02d}"

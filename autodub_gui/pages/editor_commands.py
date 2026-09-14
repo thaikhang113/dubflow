@@ -50,7 +50,7 @@ class _SegmentCommand(QUndoCommand):
                     if self.releases_video else None)
         try:
             self._apply()
-        except Exception as e:  # noqa: BLE001 — hiện thành thông báo thân thiện
+        except Exception as e:
             self._failed = True
             self._page.report_error(str(e))
             self._page.restore_video(position)

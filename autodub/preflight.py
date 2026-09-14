@@ -62,7 +62,7 @@ def run_preflight(settings: Settings | None = None) -> list[CheckResult]:
     for check in checks:
         try:
             results.append(check(settings))
-        except Exception as e:  # noqa: BLE001 — một mục hỏng không chặn các mục khác
+        except Exception as e:
             results.append(CheckResult(
                 key="internal", title="Kiểm tra hệ thống", level="warn",
                 message=f"Một mục kiểm tra bị lỗi: {e}",
@@ -111,7 +111,7 @@ def _check_ffmpeg(settings: Settings) -> CheckResult:
     try:
         out = subprocess.run(
             [ffmpeg_cmd, "-hide_banner", "-filters"],
-            capture_output=True, text=True, timeout=_SUBPROCESS_TIMEOUT,
+            capture_output=True, text=True, timeout=_SUBPROCESS_TIMEOUT, check=False,
         ).stdout
     except (OSError, subprocess.TimeoutExpired):
         out = ""

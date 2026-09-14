@@ -163,10 +163,8 @@ def escape_subtitles_path(path: str) -> str:
     đơn của ffmpeg thì dấu ``\\`` là ký tự thường — viết ``\\'`` sẽ KHÔNG
     thoát được dấu nháy và đường dẫn kiểu ``O'Brien`` làm hỏng cả filtergraph.
     """
-    escaped = path.replace("\\", "/")
-    escaped = escaped.replace(":", "\\:")
-    escaped = escaped.replace("'", r"'\''")
-    return escaped
+    escaped = path.replace("\\", "/").replace(":", "\\:")
+    return escaped.replace("'", r"'\''")
 
 
 def build_force_style(style: dict | None = None) -> str:
@@ -203,10 +201,10 @@ def _to_pixels(region: dict, video_w: int, video_h: int) -> tuple[int, int, int,
 
     Chiều rộng và cao chẵn để phép cắt còn hợp lệ với yuv420p.
     """
-    x = int(round(float(region["x"]) * video_w))
-    y = int(round(float(region["y"]) * video_h))
-    w = int(round(float(region["w"]) * video_w))
-    h = int(round(float(region["h"]) * video_h))
+    x = round(float(region["x"]) * video_w)
+    y = round(float(region["y"]) * video_h)
+    w = round(float(region["w"]) * video_w)
+    h = round(float(region["h"]) * video_h)
 
     x = max(0, min(x, video_w - 2))
     y = max(0, min(y, video_h - 2))
@@ -489,10 +487,10 @@ def build_filter_complex(
     if logo_region is not None:
         from autodub.media.video import branding_region
         logo = branding_region(logo_region)
-        x = int(round(logo["x"] * video_w))
-        y = int(round(logo["y"] * video_h))
-        w = max(2, int(round(logo["w"] * video_w)))
-        h = max(2, int(round(logo["h"] * video_h)))
+        x = round(logo["x"] * video_w)
+        y = round(logo["y"] * video_h)
+        w = max(2, round(logo["w"] * video_w))
+        h = max(2, round(logo["h"] * video_h))
         opacity = max(0.0, min(1.0, float(logo_opacity)))
         parts.append(
             f"[2:v]format=rgba,colorchannelmixer=aa={opacity:.3f},"

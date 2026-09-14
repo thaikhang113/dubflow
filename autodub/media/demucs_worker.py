@@ -228,7 +228,7 @@ def _separate_chunked(input_path, vocals_path, no_vocals_path, model,
 
             last = ci == len(ranges) - 1
             keep = vocals.shape[1] if last else (
-                vocals.shape[1] - int(round(OVERLAP_S * src_sr * ratio)))
+                vocals.shape[1] - round(OVERLAP_S * src_sr * ratio))
             _append_stem(f_v, vocals[:, :keep], np)
             _append_stem(f_nv, no_vocals[:, :keep], np)
             tails = None if last else (vocals[:, keep:].copy(),
@@ -259,7 +259,7 @@ def serve() -> int:
 
     try:
         model, device = load_model()
-    except Exception as e:  # noqa: BLE001 — report everything to the parent
+    except Exception as e:
         print(json.dumps({"ready": False,
                           "error": f"{type(e).__name__}: {e}"}), flush=True)
         return 1
@@ -278,7 +278,7 @@ def serve() -> int:
                                  model=model)
             resp = {"ok": True, "device": used,
                     "backend": runtime_backend(torch)}
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             resp = {"ok": False, "error": f"{type(e).__name__}: {e}"}
         finally:
             # Trả VRAM ngay cả khi lỗi — video sau còn cần GPU cho Whisper.
@@ -315,7 +315,7 @@ def main() -> int:
         print(json.dumps({"ok": True, "device": device,
                           "backend": runtime_backend(torch)}), flush=True)
         return 0
-    except Exception as e:  # noqa: BLE001 — report everything to the parent
+    except Exception as e:
         print(json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"}),
               flush=True)
         return 1

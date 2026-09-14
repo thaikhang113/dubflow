@@ -46,7 +46,7 @@ def step_venv() -> None:
 
 def step_install() -> None:
     probe = subprocess.run([VENV_PY, "-c", "import vieneu"],
-                           capture_output=True)
+                           capture_output=True, check=False)
     if probe.returncode == 0:
         log("package vieneu đã cài — bỏ qua")
         return

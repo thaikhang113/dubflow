@@ -475,7 +475,7 @@ class DubPipeline:
         rep.check_cancelled()
         # detail = work_dir: báo sớm cho GUI biết thư mục dự án của lượt chạy
         # này — lỡ có lỗi giữa chừng thì trang Tạo dự án còn biết chỗ mà mời
-        # người dùng chạy tiếp (tránh tạo dự án mới, tránh trừ Vox hai lần).
+        # người dùng chạy tiếp, thay vì tạo một dự án mới từ đầu.
         rep.emit("acquire", "start", detail=work_dir)
         logger.info("=" * 60)
         logger.info("STEP 1: Acquiring video")
@@ -707,12 +707,10 @@ class DubPipeline:
         from autodub.text.translate_hint import annotate_slots
         annotate_slots(segments)
 
-        # --- Giữ chỗ Vox — sau ASR là lúc biết chính xác số câu và thời
-        # lượng. MỌI lượt chạy đều giữ chỗ (wizard lẫn batch) nên giá luôn là
-        # công thức đóng trên số segment. Thiếu Vox thì chặn NGAY TẠI ĐÂY,
-        # trước khi máy chủ tốn một đồng phí AI nào. Khác biệt duy nhất giữa
-        # hai luồng là THỜI ĐIỂM chốt: wizard dừng chờ bấm Xuất video, còn
-        # batch/legacy chốt ngay sau khi xuất xong (xem cuối hàm).
+        # --- Giá thể bước TTS — sau ASR là lúc biết chính xác số câu.
+        # Việc nhận diện giọng nhân vật và tạo hồ sơ voice clone cần số đó để
+        # quyết định số giọng phải nạp; không có clone thì đoạn này chỉ là
+        # vài dòng gắn nhãn voice vào segment.
         effective_voice = req.voice
         clone_report: dict = {}
         clone_enabled = bool(req.clone_voice or settings.vieneu_clone_enabled)
@@ -805,19 +803,19 @@ class DubPipeline:
                 os.remove(hint_leftover)
             rep.emit("translate", "done", detail=transcript_dub_path)
         else:
-            translated = self._auto_translate(segments, target,
-                                              req.source_lang,
-                                              work_dir=work_dir)
+            # Dịch tự động là bước duy nhất cần máy khác; hỏng ở đây thì lùi
+            # sang dịch tay thay vì xóa bỏ phần nghe-chép đã mất vài phút.
+            translated, translate_error = self._try_auto_translate(
+                segments, target, req, work_dir)
             if translated is None:
-                # Rẽ sang dịch tay. Hold GIỮ NGUYÊN: giá đã chốt và trừ đủ từ
-                # lúc giữ chỗ nên không có gì để hoàn, còn giữ hold thì lượt
-                # chạy lại nhận lại đúng khóa để mở file đã mã hóa. Hướng dẫn
-                # chỉ cần nói rõ là không phát sinh thêm Vox.
-                refund_note = ""
+                # Rẽ sang dịch tay: pipeline dừng ở đây và trả
+                # status="translate_pending". Mọi kết quả đã làm (tải video, tách
+                # âm thanh, nghe-chép, tách nhạc nền) đều đã nằm trên đĩa nên lượt
+                # chạy sau chỉ việc đọc bản dịch rồi đi tiếp.
                 from autodub.text.translate_hint import write_hint
                 hint_path = write_hint(work_dir, target, req.source_lang,
                                        settings=self.settings,
-                                       refund_note=refund_note)
+                                       manual_reason=translate_error)
                 # Dòng info tiếng Anh cho console/dev; warning tiếng Việt là
                 # dòng người dùng thấy trong Nhật ký.
                 logger.info("Translation pending — see TRANSLATE_PENDING.txt in work dir")
@@ -833,6 +831,11 @@ class DubPipeline:
                 if (self._synth_cache is None and tts_synth is not None
                         and hasattr(tts_synth, "close")):
                     tts_synth.close()
+                state = load_pipeline_state(work_dir)
+                state["pipeline"]["status"] = "translate_pending"
+                state["pipeline"]["current_step"] = "translate"
+                state["steps"]["translate"]["status"] = "pending"
+                save_pipeline_state(work_dir, state)
                 return DubResult(status="translate_pending", work_dir=work_dir)
 
             # Persist before validating so the file is editable and the next
@@ -842,6 +845,10 @@ class DubPipeline:
             segments = self._load_translation(transcript_dub_path, segments, target)
             _refresh_subs(segments, work_dir, target, subtitle_style)
             rep.emit("translate", "done", detail=transcript_dub_path)
+        from autodub.text.translate_common import TranslateCheckpoint
+        TranslateCheckpoint(
+            data_path(work_dir, "translate_checkpoint.json"), target.text_field,
+        ).discard()
         _tick("translate")
 
         # --- Step 5: TTS ---
@@ -980,9 +987,9 @@ class DubPipeline:
         rep.emit("merge_audio", "done", detail=merged_audio_path)
         _tick("merge_audio")
 
-        # Mọi thứ phase Xuất video cần, gói làm một: luồng batch/legacy dùng
-        # ngay tại chỗ; luồng wizard ghi xuống đĩa (mã hóa) rồi DỪNG — bấm
-        # Xuất video mới commit hold và chạy nốt.
+        # Mọi thứ phase Xuất video cần, gói làm một để ghép âm thanh xong là
+        # đi tiếp sang được; tiếng lồng và phụ đề cùng dùng đúng một bộ segment
+        # cuối cùng.
         export_state = {
             "video_path": video_path,
             "merged_audio_path": merged_audio_path,
@@ -1028,10 +1035,9 @@ class DubPipeline:
                       target: TargetLang) -> DubResult:
         """Phase Xuất video: ghép video, nội dung đăng bài, báo cáo.
 
-        Luồng batch/legacy chạy inline ngay sau ghép audio (hold được chốt
-        ngay sau đó qua :meth:`_settle_hold_inline`); luồng wizard chạy qua
-        phase xuất video ngay sau khi ghép audio
-        (hold đã commit, file đã giải mã).
+        Chạy nông ngay sau bước ghép âm thanh cho mọi đường (wizard, hàng loất,
+        chạy lại). Tất cả thông tin cần thiết đi qua ``state``, nên phase này
+        có thể gọi lại từ trạng thái đã lưu trên đĩa mà không chạy lại ASR/TTS.
         """
         settings, rep = self.settings, self._reporter
         phase_start = time.time()
@@ -1303,22 +1309,52 @@ class DubPipeline:
     def default_output_dir(self, target: TargetLang) -> str:
         return self.settings.vi_output_dir()
 
+    def _try_auto_translate(
+        self, segments: list[dict], target: TargetLang,
+        req: DubRequest, work_dir: str,
+    ) -> tuple[list[dict] | None, str]:
+        """Dịch tự động, nhưng lỗi endpoint không được giết cả lần chạy.
+
+        Trả ``(None, "")`` khi người dùng chủ động tắt dịch tự động và
+        ``(None, lý do)`` khi endpoint không dịch được xong - hai chuyện đó đi
+        chung một nhánh dừng nhưng file hướng dẫn phải nói khác nhau. Mất mạng
+        hay model trả JSON hỏng chỉ đủ để lùi sang dịch tay: phần nghe-chép đã
+        mất vài phút vẫn còn nguyên trên đĩa.
+
+        Hai trường hợp NÉM lên trên: người dùng bấm Hủy, và thiếu hẳn cấu hình
+        dịch (một nút "Lưu" ở trang Dịch thuật là xong). Im lặng lùi sang dịch
+        tay trong hai chuyện đó chỉ khiến người dùng không hiểu điều gì vừa
+        xảy ra với video của mình.
+        """
+        from autodub.config import ConfigError
+        from autodub.providers.openai_compatible import OpenAICompatibleError
+        from autodub.text.translate_common import TranslateError
+
+        try:
+            return self._auto_translate(segments, target, req.source_lang,
+                                        work_dir=work_dir), ""
+        except (PipelineCancelled, ConfigError):
+            raise
+        except (OpenAICompatibleError, TranslateError) as exc:
+            reason = str(exc) or type(exc).__name__
+            logger.warning(
+                f"Dịch tự động lỗi ({reason[:200]}) — chuyển sang dịch tay")
+            return None, reason
+
     def _auto_translate(
         self, segments: list[dict], target: TargetLang,
         source_lang: str, work_dir: str | None = None,
     ) -> list[dict] | None:
-        """Dịch qua máy chủ VoxDub, hoặc trả về None để chuyển sang dịch tay.
+        """Dịch sang tiếng Việt, hoặc trả None để chuyển sang dịch tay.
 
-        Trả về None khi người dùng tắt dịch tự động, hoặc khi máy chủ không
-        dịch được vì lý do không phải lỗi của người dùng. Hết Vox và thiết bị
-        bị khóa thì NÉM lỗi lên trên: đó là những việc người dùng phải xử lý
-        (nạp thêm, liên hệ hỗ trợ), lặng lẽ chuyển sang dịch tay chỉ khiến họ
-        không hiểu chuyện gì vừa xảy ra.
+        Trả về None khi người dùng tắt dịch tự động — đó đường dành cho máy
+        không có kết nối, không phải lỗi. Thiếu endpoint hoặc model thì ném
+        :class:`ConfigError`. API key là tùy chọn vì endpoint local có thể
+        không yêu cầu xác thực.
 
-        Dịch ba lượt: lượt 0 phân tích lời thoại rồi bơm ngữ cảnh (tóm tắt,
-        xưng hô, thuật ngữ) vào lời nhắc của MỌI lô; lượt chính chia lô gửi
-        lên máy chủ; lượt rà soát soát lại các câu nghi vấn. Cả ba đều có bộ
-        nhớ đệm — chạy lại không tốn Vox cho phần đã xong.
+        Việc thực tế ở :meth:`_auto_translate_openai`: chia lô, gửi lên
+        endpoint OpenAI-compatible, gộp kết quả vào đúng câu gốc, lưu số tạm
+        theo từng lô để chạy lại không dịch lại phần đã xong.
         """
         settings = self.settings
         if resolve_source_lang(source_lang).casefold() == target.code.casefold():
@@ -1332,7 +1368,6 @@ class DubPipeline:
         missing = [
             label for value, label in (
                 (settings.translation_endpoint, "endpoint"),
-                (settings.translation_api_key, "API key"),
                 (settings.translation_model, "model"),
             ) if not str(value or "").strip()
         ]
@@ -1352,6 +1387,7 @@ class DubPipeline:
     ) -> list[dict]:
         from autodub.text.translate_common import (
             TranslateCheckpoint,
+            TranslateError,
             merge_translations,
         )
         from autodub.text.translate_hint import effective_cps
@@ -1383,6 +1419,7 @@ class DubPipeline:
                 return cached
             report_state("running", f"{len(batch)} câu")
             from autodub.providers.openai_compatible import (
+                OpenAICompatibleError,
                 OpenAICompatibleProvider,
             )
             batch_provider = OpenAICompatibleProvider(
@@ -1400,7 +1437,7 @@ class DubPipeline:
                         request, context, previous)
                     merged = merge_translations(
                         items, returned, target.text_field)
-                except Exception as exc:
+                except (OpenAICompatibleError, TranslateError) as exc:
                     if len(items) <= 1:
                         raise
                     midpoint = max(1, len(items) // 2)
@@ -1442,7 +1479,6 @@ class DubPipeline:
             ).run()
             for item in batch
         ]
-        checkpoint.discard()
         logger.info(
             f"Đã dịch {len(output)} câu bằng {settings.translation_model}"
         )
@@ -1999,7 +2035,8 @@ class DubPipeline:
                 finally:
                     if hasattr(group_synth, "close"):
                         group_synth.close()
-                for index, result in zip(indexes, group_results):
+                for index, result in zip(indexes, group_results,
+                                         strict=True):
                     results[index] = result
             return [result for result in results if result is not None]
 
@@ -2170,8 +2207,9 @@ class DubPipeline:
     ) -> dict:
         """Bước 8: tiêu đề, mô tả và hashtag cho mạng xã hội.
 
-        Bước phụ — hỏng thì video vẫn xong. Riêng hết Vox thì ném lên trên để
-        giao diện mời người dùng nạp thêm, vì đó không phải lỗi kỹ thuật.
+        Bước phụ — hỏng thì video vẫn xong, chỉ thiếu phần đăng bài, nên mọi lỗi ở
+        đây được nuốt và ghi log. Hàm luôn trả về để báo cáo không phải xử lý nhánh
+        riêng; ``post_file`` rống có nghĩa là chưa có endpoint để viết phần đăng bài.
         """
         del target, video_path
         rep = self._reporter
@@ -2197,12 +2235,15 @@ class DubPipeline:
                 output_dir=youtube_dir(work_dir, create=True),
                 settings=settings,
                 video_title=str(load_video_meta(work_dir).get("title", "")),
-                # Cùng transcript ⇒ cùng job_id ⇒ chạy lại không tính phí lần hai.
                 job_id="post-local",
             )
-            logger.info("Đã viết xong phần đăng bài "
-                        "(xem thư mục youtube trong dự án)")
-            rep.emit("content", "done")
+            if content_result.get("metadata"):
+                logger.info("Đã viết xong phần đăng bài "
+                            "(xem thư mục youtube trong dự án)")
+                rep.emit("content", "done")
+            else:
+                logger.info("Đã lưu lời thoại; bỏ qua tiêu đề và mô tả")
+                rep.emit("content", "skip")
         except Exception as e:
             logger.error(f"Tạo nội dung đăng bài lỗi (không ảnh hưởng video): {e}")
             rep.emit("content", "error", detail=str(e))
@@ -2352,7 +2393,9 @@ class DubPipeline:
         }
 
         need_edit = 0
-        for seg, tts in zip(segments, tts_results):
+        # Dự án chạy lại từ cache có thể ít bản ghi TTS hơn số câu: báo cáo
+        # chất lượng chỉ nói về phần đã biết.
+        for seg, tts in zip(segments, tts_results, strict=False):
             diff = round(tts["actual_duration"] - seg["duration"], 2)
 
             # OK if dub audio within ±30% of original duration

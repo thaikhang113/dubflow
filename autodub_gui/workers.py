@@ -95,7 +95,7 @@ class DubWorker(QThread):
             self.finished_ok.emit(result)
         except PipelineCancelled:
             self.cancelled.emit()
-        except Exception as e:  # noqa: BLE001 — surfaced to the user verbatim
+        except Exception as e:
             self.failed.emit(str(e))
         finally:
             detach_gui_logging(handler)
@@ -127,7 +127,7 @@ class OCRRefreshWorker(QThread):
                 source_logo_auto=self._settings.branding_vision_enabled,
             )
             self.finished_ok.emit(regions)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self.failed.emit(str(exc))
 
 
@@ -188,7 +188,7 @@ class SaveAllWorker(QThread):
             self.finished_ok.emit(changed)
         except PipelineCancelled:
             self.cancelled.emit()
-        except Exception as e:  # noqa: BLE001 — surfaced to the user verbatim
+        except Exception as e:
             self.failed.emit(str(e))
         finally:
             detach_gui_logging(handler)
@@ -231,7 +231,7 @@ class QualityRepairWorker(QThread):
             self.finished_ok.emit(result)
         except PipelineCancelled:
             self.cancelled.emit()
-        except Exception as e:  # noqa: BLE001 — surfaced to the user
+        except Exception as e:
             self.failed.emit(str(e))
         finally:
             detach_gui_logging(handler)
@@ -279,7 +279,7 @@ class RebuildWorker(QThread):
             self.finished_ok.emit(out)
         except PipelineCancelled:
             self.cancelled.emit()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             self.failed.emit(str(e))
         finally:
             detach_gui_logging(handler)
@@ -327,7 +327,7 @@ class SubtitleWorker(QThread):
             self.finished_ok.emit(out)
         except PipelineCancelled:
             self.cancelled.emit()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             self.failed.emit(str(e))
         finally:
             detach_gui_logging(handler)
@@ -374,7 +374,7 @@ class SegmentPreviewWorker(QThread):
                 self._subtitle_mode, self._subtitle_style)
             if not self._cancel_event.is_set():
                 self.finished_ok.emit(out)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             if not self._cancel_event.is_set():
                 self.failed.emit(str(e))
         finally:
@@ -443,7 +443,7 @@ class BatchWorker(QThread):
             self.finished_ok.emit(summary)
         except PipelineCancelled:
             self.cancelled.emit()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             self.failed.emit(str(e))
         finally:
             if synth_cache is not None:
@@ -475,7 +475,7 @@ class ProjectScanWorker(QThread):
 
         try:
             self.ready.emit(scan(self._output_dir, self._running_dir))
-        except Exception as e:  # noqa: BLE001 — hiện thành màn hình lỗi
+        except Exception as e:
             self.failed.emit(str(e))
 
 
@@ -496,7 +496,7 @@ class ThumbnailWorker(QRunnable):
 
         try:
             path = ensure_thumbnail(self._project)
-        except Exception:  # noqa: BLE001 — thiếu ảnh thì dùng ô giữ chỗ
+        except Exception:
             path = ""
         if path:
             self.signals.ready.emit(self._project.key, path)
@@ -524,7 +524,7 @@ class WaveformWorker(QThread):
         try:
             self.ready.emit(peaks(self._path, self._buckets or DEFAULT_BUCKETS,
                                   cache_name=self._cache_name))
-        except Exception:  # noqa: BLE001 — không vẽ được thì hiện dải phẳng
+        except Exception:
             self.ready.emit([])
 
 
@@ -542,7 +542,7 @@ class PreflightWorker(QThread):
 
         try:
             results = run_preflight(Settings.load(override=True))
-        except Exception:  # noqa: BLE001 — không được làm sập giao diện
+        except Exception:
             results = []
         self.ready.emit(results)
 
@@ -566,7 +566,7 @@ class UpdateCheckWorker(QThread):
 
         try:
             info = check_for_update(self._repo, self._current)
-        except Exception:  # noqa: BLE001 — lỗi mạng thì coi như không có bản mới
+        except Exception:
             return
         if info is not None:
             self.found.emit(info)
@@ -591,7 +591,7 @@ class SystemStatusWorker(QThread):
             result["translate"] = self._translate_status(settings)
             ok = bool(shutil.which("ffmpeg"))
             result["ffmpeg"] = ("sẵn sàng" if ok else "chưa cài", ok)
-        except Exception as e:  # noqa: BLE001 — không được làm sập giao diện
+        except Exception as e:
             result = {"voice": ("không đọc được", False),
                       "translate": ("không đọc được", False),
                       "ffmpeg": (str(e)[:40], False)}
@@ -603,7 +603,7 @@ class SystemStatusWorker(QThread):
         try:
             from autodub.speech.tts.voices import catalog
             count = len(catalog(settings))
-        except Exception:  # noqa: BLE001 — không được làm sập giao diện
+        except Exception:
             return ("không đọc được", False)
         if not count:
             return ("chưa có giọng nào", False)
@@ -613,10 +613,10 @@ class SystemStatusWorker(QThread):
 
     @staticmethod
     def _translate_status(settings: Settings) -> tuple[str, bool | None]:
-        """Kết nối tới máy chủ dịch, và số Vox còn lại.
+        """Trạng thái bước dịch: đang tắt / dịch tay / sẵn sàng qua endpoint.
 
-        Chạy trong luồng nền của trang Trợ giúp nên được phép gọi mạng; mất
-        mạng thì báo đúng như vậy chứ không treo giao diện.
+        Chỉ đọc cấu hình, không gọi mạng — phép thử kết nối thật nằm ở nút
+        "Kiểm tra API dịch" trong trang Dịch thuật.
         """
         if not settings.translate_enabled:
             return ("đang tắt", None)
@@ -757,7 +757,7 @@ class DownloadWorker(QThread):
             finally:
                 executor.shutdown(wait=True, cancel_futures=True)
             self.finished_ok.emit(success, failed)
-        except Exception as e:  # noqa: BLE001 — e.g. thư mục lưu không tạo được
+        except Exception as e:
             self.failed.emit(str(e))
         finally:
             detach_gui_logging(handler)
@@ -815,8 +815,8 @@ class TimelineThumbnailWorker(QThread):
                     "ffmpeg", "-v", "error",
                     "-ss", f"{t:.3f}", "-i", self._video,
                     "-frames:v", "1", "-q:v", "5",
-                    "-vf", f"scale={self._THUMB_W}:{self._THUMB_H}:force_original_aspect_ratio=decrease,"
-                           f"pad={self._THUMB_W}:{self._THUMB_H}:(ow-iw)/2:(oh-ih)/2",
+                    "-vf", (f"scale={self._THUMB_W}:{self._THUMB_H}:force_original_aspect_ratio=decrease,"
+                           f"pad={self._THUMB_W}:{self._THUMB_H}:(ow-iw)/2:(oh-ih)/2"),
                     "-y", dst,
                 ]
                 flags = (subprocess.CREATE_NO_WINDOW
@@ -827,7 +827,7 @@ class TimelineThumbnailWorker(QThread):
                     results.append((t, dst))
             if results and not self._cancel_event.is_set():
                 self.ready.emit(results)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             if not self._cancel_event.is_set():
                 self.failed.emit(str(e))
 
@@ -890,7 +890,7 @@ class ExportAudioWorker(QThread):
                     f"ffmpeg trả về lỗi:\n{result.stderr[-800:]}")
                 return
             self.finished_ok.emit(self._output_path)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             if not self._cancel_event.is_set():
                 self.failed.emit(str(e))
         finally:
@@ -932,7 +932,7 @@ class PrefetchWorker(QThread):
             )
             if not self._cancel_event.is_set():
                 self.finished_ok.emit(path)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             if not self._cancel_event.is_set():
                 self.failed.emit(str(e))
 
@@ -983,7 +983,7 @@ class ExportSubsFileWorker(QThread):
                                     self._text_field, self._style)
             if not self._cancel_event.is_set():
                 self.finished_ok.emit(self._output_path)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             if not self._cancel_event.is_set():
                 self.failed.emit(str(e))
         finally:

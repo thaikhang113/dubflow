@@ -28,8 +28,7 @@ DEFAULT_CAPCUT_VOICE = "Minh Trang"
 def _gender_of(voice_type: str) -> str:
     """Suy giới tính từ ``voice_type``; giọng hiệu ứng dựng trên nền nam."""
     vt = voice_type.lower()
-    if "female" in vt or vt.startswith("bv421") or vt.startswith("bv074") \
-            or vt.startswith("bv562"):
+    if "female" in vt or vt.startswith(("bv421", "bv074", "bv562")):
         return "female"
     return "male"
 
@@ -141,7 +140,7 @@ def device_profile() -> dict:
         pass
     try:
         seed = get_fingerprint()
-    except Exception:  # noqa: BLE001 — không đọc được vân tay thì lấy ngẫu nhiên
+    except Exception:
         seed = None
     return _write_profile(_fresh_ids(seed))
 

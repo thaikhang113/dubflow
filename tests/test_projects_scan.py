@@ -158,10 +158,41 @@ def test_status_pending_when_marker_present(tmp_path) -> None:
     assert project.status_label == "Chờ dịch"
 
 
-def test_status_failed_when_error_file_present(tmp_path) -> None:
-    work = _make_work_dir(tmp_path)
-    (work / "error.txt").write_text("hỏng", encoding="utf-8")
+def test_status_failed_when_run_marked_failed(tmp_path) -> None:
+    """Lần chạy chết giữa đường chỉ để lại dấu vết trong pipeline_state.json.
+
+    Bản cũ suy ra "Lỗi" từ các tệp ``error.txt`` mà không đoạn code nào viết
+    ra, nên dự án fail luôn bị báo là chưa bắt đầu.
+    """
+    work = _make_work_dir(tmp_path, report={})
+    (work / "data" / "pipeline_state.json").write_text(
+        json.dumps({"pipeline": {"status": "failed",
+                                 "last_error": "ffmpeg died"}}),
+        encoding="utf-8")
+    project = load_project(str(work))
+    assert project.status == STATUS_FAILED
+    assert project.status_label == "Lỗi"
+
+
+def test_status_failed_when_run_cancelled(tmp_path) -> None:
+    work = _make_work_dir(tmp_path, report={})
+    (work / "data" / "pipeline_state.json").write_text(
+        json.dumps({"pipeline": {"status": "cancelled"}}), encoding="utf-8")
     assert load_project(str(work)).status == STATUS_FAILED
+
+
+def test_status_processing_while_state_says_running(tmp_path) -> None:
+    work = _make_work_dir(tmp_path, report={})
+    (work / "data" / "pipeline_state.json").write_text(
+        json.dumps({"pipeline": {"status": "running"}}), encoding="utf-8")
+    assert load_project(str(work)).status == STATUS_PROCESSING
+
+
+def test_corrupt_pipeline_state_does_not_break_scan(tmp_path) -> None:
+    work = _make_work_dir(tmp_path, report={})
+    (work / "data" / "pipeline_state.json").write_text("{ hỏng",
+                                                       encoding="utf-8")
+    assert load_project(str(work)).status == STATUS_QUEUED
 
 
 def test_status_processing_when_running(tmp_path) -> None:
@@ -171,7 +202,7 @@ def test_status_processing_when_running(tmp_path) -> None:
 
 
 def test_status_processing_when_segments_started(tmp_path) -> None:
-    work = _make_work_dir(tmp_path)
+    work = _make_work_dir(tmp_path, report={})
     seg = work / "data" / "segments"
     seg.mkdir()
     (seg / "0001.wav").write_bytes(b"x")
@@ -179,8 +210,20 @@ def test_status_processing_when_segments_started(tmp_path) -> None:
 
 
 def test_status_queued_when_nothing_started(tmp_path) -> None:
-    work = _make_work_dir(tmp_path)
+    # report.json là dấu hiệu đã chạy xong nên fixture phải vắng mặt thật sự.
+    work = _make_work_dir(tmp_path, report={})
     assert load_project(str(work)).status == STATUS_QUEUED
+
+
+def test_finished_run_without_video_counts_as_completed(tmp_path) -> None:
+    """Dự án xuất chỉ âm thanh: không có dubbed_video.mp4 nhưng đã chạy xong."""
+    work = _make_work_dir(tmp_path)
+    (work / "data" / "audio_vi_full.wav").write_bytes(b"completed audio")
+    (work / "data" / "pipeline_state.json").write_text(
+        json.dumps({"pipeline": {"status": "completed"}}), encoding="utf-8")
+    project = load_project(str(work))
+    assert project.status == STATUS_COMPLETED
+    assert not project.has_output
 
 
 # -- Quét cả thư mục ---------------------------------------------------
@@ -205,13 +248,15 @@ def test_scan_missing_directory_returns_empty(tmp_path) -> None:
     assert scan(str(tmp_path / "không có")) == []
 
 
-def test_scan_writes_and_reuses_cache(tmp_path) -> None:
+def test_scan_writes_and_reuses_cache(tmp_path, monkeypatch) -> None:
     """Lần quét thứ hai đọc từ bộ nhớ đệm chứ không đọc lại toàn bộ tệp."""
-    work = _make_work_dir(tmp_path)
+    _make_work_dir(tmp_path)
     first = scan(str(tmp_path))
     assert (tmp_path / projects.INDEX_FILE).is_file()
-    # Xóa bản tóm tắt: nếu vẫn ra đúng tên thì tức là đã dùng bộ nhớ đệm.
-    (work / "data" / "report.json").unlink()
+    def unexpected_reload(*_args, **_kwargs):
+        raise AssertionError("Unchanged project should use the cache")
+
+    monkeypatch.setattr(projects, "load_project", unexpected_reload)
     second = scan(str(tmp_path))
     assert second[0].segments == first[0].segments == 57
 

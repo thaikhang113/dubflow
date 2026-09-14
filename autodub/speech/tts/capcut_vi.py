@@ -201,7 +201,7 @@ class CapCutSynthesizer:
                      output_path],
                     capture_output=True, encoding="utf-8", errors="replace",
                     timeout=FFMPEG_TIMEOUT_S,
-                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), check=False)
             if result.returncode != 0 or not os.path.isfile(output_path):
                 raise RuntimeError("ffmpeg không chuyển được audio CapCut "
                                    f"sang WAV: {(result.stderr or '')[-300:]}")

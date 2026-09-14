@@ -131,8 +131,9 @@ def extract_audio(video_path: str, output_path: str, sample_rate: int = 16000,
         result = run_registered(cmd, capture_output=True, text=True,
                                 timeout=ffmpeg_timeout_s(
                                     probe_duration_s(video_path)), check=False)
-    except subprocess.TimeoutExpired:
-        raise RuntimeError(f"FFmpeg treo khi tách audio từ {video_path}")
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"FFmpeg treo khi tách audio từ {video_path}") from exc
     if result.returncode != 0:
         raise RuntimeError(f"FFmpeg failed: {result.stderr}")
 
@@ -503,7 +504,8 @@ def merge_segments(
         except subprocess.TimeoutExpired:
             ok, err = False, "ffmpeg treo khi chuẩn hóa nhạc nền"
         if ok:
-            bg_wave = wave.open(bg_tmp, "rb")
+            # bg_wave đóng ở finally cuối hàm, kèm xóa tệp tạm.
+            bg_wave = wave.open(bg_tmp, "rb")  # noqa: SIM115
             ch = bg_wave.getnchannels()
         else:
             logger.warning(f"Background normalise failed, using silent base: "
@@ -532,10 +534,7 @@ def merge_segments(
                       if (duck_voice_db and duck_voice_db < 0
                           and bg_wave is not None) else [])
 
-    out = wave.open(output_path, "wb")
-    out.setnchannels(ch)
-    out.setsampwidth(2)
-    out.setframerate(rate)
+    out = None
 
     # Segment vắt qua N block bị decode N lần — cache mảng đã decode theo
     # id, xóa ngay khi block đã đi qua hết segment (RAM giữ tối đa vài
@@ -543,6 +542,12 @@ def merge_segments(
     seg_cache: dict = {}
 
     try:
+        # Mở tệp bên trong try: lỗi giữa chừng vẫn đóng tệp và xóa tệp tạm
+        # ở finally, để ngoài thì WAV dở dang bị khóa ngăng.
+        out = wave.open(output_path, "wb")  # noqa: SIM115
+        out.setnchannels(ch)
+        out.setsampwidth(2)
+        out.setframerate(rate)
         for b0 in range(0, total_frames, block_frames):
             b1 = min(b0 + block_frames, total_frames)
             n = b1 - b0
@@ -588,7 +593,8 @@ def merge_segments(
                 np.clip(_soft_limit(block), -32768, 32767)
                 .astype(np.int16).tobytes())
     finally:
-        out.close()
+        if out is not None:
+            out.close()
         if bg_wave is not None:
             bg_wave.close()
         if os.path.exists(bg_tmp):

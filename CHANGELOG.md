@@ -1,5 +1,72 @@
 # Changelog
 
+## 3.0.22 - 2026-09-14
+
+### Fixed
+
+- **Tiếng Việt bị mã hóa hai lần trong `autodub/batch.py` và `.env.example`.**
+  Toàn bộ chú thích/docstring của luồng chạy hàng loạt và mọi dòng giải thích
+  trong tệp cấu hình mẫu lưu ở dạng "T\xe1\xba\xa3i tr\xc6\xb0..." (UTF-8 bị encode
+  thêm một lượt CP1252). Hệ quả nhìn thấy được: nhật ký "Tải trước thất bại",
+  dòng trạng thái batch "Video chờ bản dịch tay..." và cả tệp `.env` người dùng
+  copy từ mẫu ra đều hiện chữ vỡ. Đã sửa bằng `ftfy` với rào chắn: chỉ nhận
+  dòng mà ký tự mất đi nằm trong bảng CP1252 và ký tự thêm vào là chữ tiếng
+  Việt, nên bộ dấu câu Trung Quốc toàn góc trong `rstrip(".,!?;:，。！？；：）)]}")`
+  (không phải lỗi) được giữ nguyên. Một dòng thông báo lỗi cũng vỡ tương tự
+  trong trang Dự án đã được sửa.
+- **Wizard không còn chào cài VSR ~700 MB khi đã tắt "AI xóa phụ đề".**
+  `hardware.select_backends()` chỉ nhìn RAM và đĩa, không đọc `VSR_ENABLED`, nên
+  máy đủ khoẻ luôn nhận kế hoạch `video-subtitle-remover` và được mời tải thêm
+  ~700 MB. Kế hoạch phần cứng giờ tính
+  lại mỗi lần bật/tắt lựa chọn này.
+- **Dự án lỗi hoặc bị dừng giờ hiện đúng trạng thái.** Trang Dự án suy ra "Lỗi"
+  từ các tệp `error.txt` mà không đoạn code nào từng viết ra, nên mọi lần chạy
+  chết giữa đường đều hiện "Đang chờ". Trạng thái giờ đọc từ
+  `data/pipeline_state.json` (`mark_interrupted` đã ghi sẵn), và dự án xuất
+  chỉ-âm-thanh không còn bị báo là chưa làm gì.
+- **Lỗi endpoint dịch chuyển sang chờ dịch thủ công.** Pipeline giữ phần
+  nghe-chép và ghi lý do vào `TRANSLATE_PENDING.txt`, thay vì kết thúc bằng
+  lỗi. Trạng thái chờ được lưu trên đĩa; hủy, thiếu cấu hình và lỗi lập trình
+  vẫn được báo riêng. Endpoint local không bắt buộc API key.
+- **Giữ checkpoint khi lưu transcript thất bại.** Chỉ xóa checkpoint sau khi
+  bản dịch đã lưu và kiểm tra hợp lệ, giúp tiếp tục mà không dịch lại lô đã xong.
+- **Trạng thái chạy lại và cache dự án.** Video cũ không che khuất lượt chạy
+  đang hoạt động hoặc đã lỗi; quét lại nhận biết thay đổi trong `data/`.
+  Báo cáo hỏng hoặc thiếu đầu ra không còn được tính là hoàn thành.
+- **OpenClaw trả HTTP 400 cho JSON sai kiểu**, thay vì lỗi máy chủ 500.
+- **Khôi phục đọc thời lượng Douyin bằng FFprobe.**
+- **Bảo trì bản cài đặt sử dụng thư mục dữ liệu người dùng** để mở cấu hình,
+  model và ghi nhật ký chẩn đoán.
+- **Lần đầu mở Trình chỉnh sửa hiển thị đúng dự án.** Trước đây app chuyển tới
+  trang launcher rồi mới nạp dự án, nên người dùng vẫn kẹt ở trang trung gian.
+  Trang chỉnh sửa giờ chỉ được mở sau khi dự án đã nạp; nếu trình chỉnh sửa từ
+  chối dự án lỗi, giao diện giữ nguyên trang hiện tại.
+- **Tệp đăng bài không còn rỗng.** `youtube_post.txt` và `youtube_metadata.json`
+  được ghi ra với tiêu đề trống vì phần viết tự động mất máy chủ từ bản di trú.
+  Bước này giờ chạy bằng đúng endpoint OpenAI-compatible ở trang Dịch thuật;
+  chưa cấu hình endpoint thì hai tệp đó vắng mặt có chủ đích, thư mục `youtube`
+  vẫn có lời thoại thuần chữ và ảnh bìa gốc.
+  Loại bỏ trường sai kiểu và file đăng bài cũ khi tạo lại trả về rỗng.
+- **Bảng tổng kết và nhãn người dùng không còn nói về tín dụng.** App mã nguồn
+  mở không thu phí, nhưng giao diện vẫn hẹn "thêm 20 tín dụng", "10 tín
+  dụng/câu", một ô "Vox tạm tính" với đồng hồ chạy mỗi giây, và lời dẫn tới
+  trang "Tài khoản" không tồn tại. Tất cả đã được viết lại đúng điều app thật
+  sự làm.
+
+### Changed
+
+- Nhãn bước "Tạo tiêu đề + mô tả đăng bài" nói rõ kết quả nằm ở đâu và cần gì;
+  nhật ký chẩn đoán đổi tên tệp thành `dubflow_diagnostics.txt` và kèm mã máy
+  (hữu ích khi giọng CapCut chặn định danh thiết bị).
+- Trạng thái "Chờ xuất video" bị loại khỏi trang Dự án: bản desktop xuất video
+  tự động ngay sau bước ghép âm thanh, không còn bước "bấm Xuất video" nào để chờ.
+- Thêm cấu hình `ruff` vào `pyproject.toml` và bước Lint trong CI/release. Các phát
+  hiện được xử lý: import chết, `zip()` không khai báo `strict`, lỗi ném trong
+  `except` mất chuỗi nguyên nhân, và hai chỗ mở tệp WAV có thể rò tay cầm nếu
+  lỗi giữa chừng.
+- Tạo metadata dùng endpoint đã cấu hình và có thể phát sinh phí provider,
+  kể cả khi chạy lại. Có thể tắt bằng `GENERATE_METADATA=false`.
+
 ## 3.0.21 - 2026-09-08
 
 ### Fixed

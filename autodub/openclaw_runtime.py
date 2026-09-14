@@ -62,7 +62,7 @@ class _Handler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length)
         payload = json.loads(raw.decode("utf-8"))
         if not isinstance(payload, dict):
-            raise ValueError("Request phải là object JSON")
+            raise TypeError("Request phải là object JSON")
         return payload
 
     def _dispatch(self, method: str) -> None:
@@ -109,9 +109,9 @@ class _Handler(BaseHTTPRequestHandler):
                 return
 
             self._reply(404, {"ok": False, "error": "Route không tồn tại"})
-        except (ValueError, FileNotFoundError) as exc:
+        except (TypeError, ValueError, FileNotFoundError) as exc:
             self._reply(400, {"ok": False, "error": str(exc)})
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._reply(500, {"ok": False, "error": f"{type(exc).__name__}: {exc}"})
 
     def do_GET(self) -> None:
@@ -303,7 +303,9 @@ Sau khi gọi /health thành công, báo người dùng rằng DubFlow đã sẵ
             headers={"Authorization": f"Bearer {self.token}"},
         )
         try:
-            with urlopen(request, timeout=3) as response:
+            with urlopen(  # nosec B310 — loopback self-test
+                request, timeout=3,
+            ) as response:
                 if response.status == 200:
                     return True, "DubFlow API phản hồi /health."
                 return False, f"DubFlow trả về HTTP {response.status}."

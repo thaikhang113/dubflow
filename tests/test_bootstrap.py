@@ -139,3 +139,89 @@ def test_linux_bootstrap_does_not_offer_ffmpeg_download(monkeypatch):
     monkeypatch.setattr(bootstrap.sys, "platform", "linux")
 
     assert "ffmpeg" not in [step.key for step in bootstrap.steps()]
+
+
+def _big_machine_profile():
+    from autodub.hardware import HardwareProfile
+
+    return HardwareProfile(
+        platform="linux",
+        machine="x86_64",
+        python="3.12",
+        ram_gb=16,
+        disk_free_gb=20,
+    )
+
+
+def test_disabling_vsr_rewrites_plan_and_drops_step(monkeypatch, tmp_path):
+    """Người dùng tắt "AI xóa phụ đề" trên máy đủ khoẻ: kế hoạch cũ phải bị thay
+    và wizard không còn bước vsr. Đây là phần còn dở của qa/REVIEW.md mục A."""
+    profile = _big_machine_profile()
+    monkeypatch.setattr(bootstrap, "data_root", lambda: str(tmp_path))
+    monkeypatch.setattr(bootstrap, "detect_hardware",
+                        lambda disk_path: profile)
+    monkeypatch.setattr(bootstrap, "_vsr_enabled", lambda: True)
+    (tmp_path / bootstrap.PLAN_NAME).write_text(
+        json.dumps({
+            "hardware": profile.as_dict(),
+            "ocr_backend": "paddleocr",
+            "vsr_backend": "video-subtitle-remover",
+            "reasons": [],
+        }),
+        encoding="utf-8",
+    )
+    assert "vsr" in [step.key for step in bootstrap.steps()]
+
+    monkeypatch.setattr(bootstrap, "_vsr_enabled", lambda: False)
+
+    assert bootstrap.ensure_hardware_plan().vsr_backend == "fallback"
+    stored = json.loads(
+        (tmp_path / bootstrap.PLAN_NAME).read_text(encoding="utf-8"))
+    assert stored["vsr_backend"] == "fallback"
+    assert "vsr" not in [step.key for step in bootstrap.steps()]
+
+
+def test_enabling_vsr_rewrites_plan_on_capable_machine(monkeypatch, tmp_path):
+    profile = _big_machine_profile()
+    monkeypatch.setattr(bootstrap, "data_root", lambda: str(tmp_path))
+    monkeypatch.setattr(bootstrap, "detect_hardware",
+                        lambda disk_path: profile)
+    monkeypatch.setattr(bootstrap, "_vsr_enabled", lambda: False)
+    (tmp_path / bootstrap.PLAN_NAME).write_text(
+        json.dumps({
+            "hardware": profile.as_dict(),
+            "ocr_backend": "paddleocr",
+            "vsr_backend": "fallback",
+            "reasons": [],
+        }),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(bootstrap, "_vsr_enabled", lambda: True)
+
+    assert (bootstrap.ensure_hardware_plan().vsr_backend
+            == "video-subtitle-remover")
+
+
+def test_hardware_plan_is_reused_without_rewriting(monkeypatch, tmp_path):
+    profile = _big_machine_profile()
+    monkeypatch.setattr(bootstrap, "data_root", lambda: str(tmp_path))
+    monkeypatch.setattr(bootstrap, "detect_hardware",
+                        lambda disk_path: profile)
+    monkeypatch.setattr(bootstrap, "_vsr_enabled", lambda: True)
+    plan_path = tmp_path / bootstrap.PLAN_NAME
+    plan_path.write_text(
+        json.dumps({
+            "hardware": profile.as_dict(),
+            "ocr_backend": "paddleocr",
+            "vsr_backend": "video-subtitle-remover",
+            "reasons": ["stale wording"],
+        }),
+        encoding="utf-8",
+    )
+    before = plan_path.stat().st_mtime_ns
+
+    plan = bootstrap.ensure_hardware_plan()
+
+    assert plan.reasons == ("stale wording",)
+    assert plan_path.stat().st_mtime_ns == before

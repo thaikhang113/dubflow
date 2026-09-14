@@ -1,6 +1,8 @@
 """Các loại thẻ dùng ở Trang chủ và trang Dự án của tôi."""
 from __future__ import annotations
 
+from types import MappingProxyType
+
 from PySide6.QtCore import QRect, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import (
@@ -482,7 +484,7 @@ class SystemStatusCard(QFrame):
     clicked = Signal()
 
     ROWS = ("voice", "translate", "ffmpeg")
-    LABELS = {"voice": "Giọng đọc", "translate": "Dịch", "ffmpeg": "FFmpeg"}
+    LABELS = MappingProxyType({"voice": "Giọng đọc", "translate": "Dịch", "ffmpeg": "FFmpeg"})
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)

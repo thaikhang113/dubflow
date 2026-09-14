@@ -70,7 +70,7 @@ def main() -> None:
             _die(proto_out, f"missing model file: {p}")
 
     try:
-        import numpy as np  # noqa: F401 — fail early with a clear message
+        import numpy as np  # noqa: F401
         import sherpa_onnx
     except ImportError as e:
         _die(proto_out, f"missing package in .venv-asr: {e}")

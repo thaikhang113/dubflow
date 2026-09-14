@@ -634,7 +634,7 @@ def _refresh_ocr_regions(
         opts["blur_regions"] = refreshed
         save_render_opts(work_dir, opts)
         return refreshed
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("Không refresh được OCR khi xuất lại: %s", exc)
         # Keep previous OCR boxes when OCR is unavailable, so an export
         # remains usable after an installation/network/model failure.
@@ -1013,7 +1013,7 @@ def render_segment_preview(
             ["ffmpeg", "-y", "-ss", f"{w0:.3f}", "-to", f"{w1:.3f}",
              "-i", background_path, "-acodec", "pcm_s16le", bg_cut],
             capture_output=True, text=True,
-            timeout=ffmpeg_timeout_s(w1 - w0))
+            timeout=ffmpeg_timeout_s(w1 - w0), check=False)
         if result.returncode != 0 or not os.path.getsize(bg_cut):
             logger.warning("Không cắt được nhạc nền cho đoạn xem thử — "
                            "dùng nền im lặng")
@@ -1135,7 +1135,8 @@ def _renumber_and_rename(work_dir: str, segments: list[dict],
     """
     seg_dir = _segments_dir(work_dir)
     renames: list[tuple[str, str]] = []
-    for position, (segment, old_id) in enumerate(zip(segments, old_ids), start=1):
+    for position, (segment, old_id) in enumerate(
+            zip(segments, old_ids, strict=True), start=1):
         segment["id"] = position
         if old_id < 0 or old_id == position or not os.path.isdir(seg_dir):
             continue

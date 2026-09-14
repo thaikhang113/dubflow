@@ -28,7 +28,7 @@ class UpdateDownloadWorker(QThread):
 
         try:
             path = download_verified(self.info, progress=self.progress.emit)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self.failed.emit(str(exc))
             return
         self.completed.emit(path)

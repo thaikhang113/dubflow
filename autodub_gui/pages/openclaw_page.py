@@ -198,7 +198,7 @@ class OpenClawPage(BasePage):
         action = "cancel" if operation == "cancel" else "retry_failed"
         try:
             self.runtime.handle({"action": action, "batch_id": batch_id})
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             TOASTS.error("Không cập nhật được batch.", detail=str(exc))
         self.refresh()
 

@@ -354,7 +354,7 @@ def _run_demucs(input_wav: str, vocals_out: str, no_vocals_out: str,
             cmd, env=env, capture_output=True, encoding="utf-8",
             errors="replace", text=True,
             timeout=demucs_timeout_s(_probe_duration_s(input_wav)),
-        )
+        check=False)
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError("Demucs CPU worker timed out") from exc
     lines = [line.strip() for line in (result.stdout or "").splitlines()
@@ -389,7 +389,7 @@ def _normalize(src: str, dst: str, sample_rate: str, channels: int = 1) -> None:
         result = subprocess.run(
             cmd, capture_output=True, encoding="utf-8", errors="replace",
             timeout=ffmpeg_timeout_s(_probe_duration_s(src)),
-        )
+        check=False)
     except subprocess.TimeoutExpired as exc:
         # Cùng dạng lỗi với nhánh thất bại bên dưới nên caller ở :204 vẫn rơi
         # đúng vào fallback "nền im lặng".
@@ -405,5 +405,5 @@ def _probe_duration_s(path: str) -> float | None:
         from autodub.media.audio import wav_duration_s
 
         return wav_duration_s(path)
-    except Exception:  # noqa: BLE001 — chỉ để tính timeout, không đáng làm hỏng
+    except Exception:
         return None

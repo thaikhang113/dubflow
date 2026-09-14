@@ -15,7 +15,11 @@ faster-whisper>=1.0.0,<2.0
 yt-dlp>=2024.0.0
 playwright>=1.50.0         # Douyin extractor (run: playwright install chromium)
 
-# --- BGM separation (bg-mode demucs) ---
+# --- Nhạc nền: Demucs (tùy chọn, chạy ở venv riêng) ---
+# App chính không bao giờ import demucs/torch: tách giọng chạy trong
+# .venv-demucs do scripts/setup_demucs.py tạo (bản CUDA), thiếu thì pipeline
+# tự lùi sang "giảm tiếng giọng gốc". Giữ các dòng này cho người cài từ mã
+# nguồn muốn có sẵn Demucs ở môi trường chính; bản đóng gói không mang theo.
 demucs>=4.0.0,<5.0
 soundfile>=0.13.0,<0.14
 torch>=2.0

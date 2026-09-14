@@ -270,7 +270,7 @@ class LabeledSlider(_Field):
         self.changed.emit(value)
 
     def _from_spin(self, value: float) -> None:
-        raw = int(round(value * _SLIDER_SCALE))
+        raw = round(value * _SLIDER_SCALE)
         if raw != self.slider.value():
             self.slider.blockSignals(True)
             self.slider.setValue(raw)

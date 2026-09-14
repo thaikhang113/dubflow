@@ -76,15 +76,21 @@ def _digit_by_digit(s: str) -> str:
     return " ".join(_DIGITS[int(c)] for c in s)
 
 
+def _looks_like_model_code(num: str) -> bool:
+    """Mã sản phẩm: 4-5 chữ số, có số 0 ở giữa, không phải số tròn.
+
+    5060, 1080, 4070 đọc từng chữ số thì tự nhiên; nhưng 2000/1500 là GIÁ TRỊ
+    - đọc rời sẽ thành "hai không không không".
+    """
+    return (len(num) >= 4 and num[0] != "0" and "0" in num[1:]
+            and len(num) <= 5 and not num.endswith("00"))
+
+
 def _read_number(num: str) -> str:
     """Một cụm số thành chữ: mã 4+ chữ số bắt đầu bằng đầu số 'model' phổ biến
     đọc từng chữ số (5060 → năm không sáu không), còn lại đọc giá trị."""
-    if len(num) >= 4 and num[0] != "0" and ("0" in num[1:]):
-        # Heuristic mã sản phẩm: 4-5 chữ số chứa số 0 ở giữa (5060, 1080,
-        # 4070) — nhưng số tròn trăm/nghìn (2000, 1500 → "00") là GIÁ TRỊ,
-        # đọc từng chữ số sẽ sai ("hai không không không").
-        if len(num) <= 5 and not num.endswith("00"):
-            return _digit_by_digit(num)
+    if _looks_like_model_code(num):
+        return _digit_by_digit(num)
     if num.startswith("0"):          # 090..., 007 — luôn đọc từng số
         return _digit_by_digit(num)
     return number_to_words(int(num))

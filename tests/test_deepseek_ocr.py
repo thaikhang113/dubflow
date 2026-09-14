@@ -84,12 +84,12 @@ def test_installer_log_survives_windows_cp1252_console():
         [
             sys.executable,
             "-c",
-            "from scripts import setup_deepseek_ocr; "
-            "setup_deepseek_ocr.log('Tạo môi trường')",
+            ("from scripts import setup_deepseek_ocr; "
+            "setup_deepseek_ocr.log('Tạo môi trường')"),
         ],
         capture_output=True,
         env=env,
-    )
+    check=False)
 
     assert result.returncode == 0
     assert "Tạo môi trường" in result.stdout.decode("utf-8")

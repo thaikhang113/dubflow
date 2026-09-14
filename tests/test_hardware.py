@@ -50,6 +50,36 @@ def test_select_backends_falls_back_on_small_machine():
     assert plan.vsr_backend == "fallback"
 
 
+def test_select_backends_respects_disabled_vsr():
+    """Máy đủ điều kiện nhưng người dùng đã tắt "AI xóa phụ đề" thì không được
+    chọn VSR — wizard sẽ không còn chào bước tải ~700 MB nữa."""
+    plan = select_backends(HardwareProfile(
+        platform="linux",
+        machine="x86_64",
+        python="3.12",
+        ram_gb=16,
+        disk_free_gb=20,
+        gpu_vendor="nvidia",
+        gpu_name="RTX 3050",
+        nvidia=True,
+    ), vsr_enabled=False)
+
+    assert plan.vsr_backend == "fallback"
+    assert plan.ocr_backend == "paddleocr"
+
+
+def test_select_backends_keeps_vsr_when_enabled():
+    plan = select_backends(HardwareProfile(
+        platform="linux",
+        machine="x86_64",
+        python="3.12",
+        ram_gb=16,
+        disk_free_gb=20,
+    ), vsr_enabled=True)
+
+    assert plan.vsr_backend == "video-subtitle-remover"
+
+
 def test_detect_hardware_reads_linux_gpu_probes(monkeypatch, tmp_path):
     commands = []
 

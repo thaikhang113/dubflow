@@ -1,4 +1,5 @@
 """Toán chia khúc + crossfade của demucs_worker — thuần numpy, không cần torch."""
+import itertools
 import json
 import sys
 from unittest import mock
@@ -23,7 +24,7 @@ def test_chunks_cover_everything_with_exact_overlap():
     assert ranges[0][0] == 0
     assert ranges[-1][1] == 2000
     # Hai khoảng kề nhau chồng lấn đúng `overlap` khung
-    for (s1, e1), (s2, e2) in zip(ranges, ranges[1:]):
+    for (s1, e1), (s2, _e2) in itertools.pairwise(ranges):
         assert e1 - s2 == overlap
         assert s2 > s1
     # Khoảng cuối luôn dài hơn phần chồng lấn (đủ dữ liệu để crossfade)

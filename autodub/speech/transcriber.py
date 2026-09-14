@@ -350,11 +350,11 @@ def _transcribe_whisper_subprocess(
     ready_line = proc.stdout.readline().strip()
     try:
         ready = json.loads(ready_line)
-    except (json.JSONDecodeError, ValueError):
+    except (json.JSONDecodeError, ValueError) as exc:
         proc.kill()
         raise RuntimeError(
             f"Whisper worker không phản hồi ready: {ready_line!r}\n"
-            + "\n".join(stderr_tail))
+            + "\n".join(stderr_tail)) from exc
     if not ready.get("ready"):
         proc.kill()
         raise RuntimeError(

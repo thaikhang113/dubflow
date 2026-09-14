@@ -69,44 +69,47 @@ MODEL_SIZES: dict[str, str] = {
 # Mỗi mục gồm: chuỗi nhận dạng, tiêu đề ngắn, việc cần làm.
 FRIENDLY_ERRORS: list[tuple[str, str, str]] = [
     ("Video cũ đang được ứng dụng khác mở", "Video cũ đang bị khóa",
-     "Đóng video trong DubFlow hoặc trình phát ngoài rồi bấm Xuất video lại. "
-     "File export tạm vẫn được giữ nếu đã mã hóa xong."),
+     ("Đóng video trong DubFlow hoặc trình phát ngoài rồi bấm Xuất video "
+     "lại. Bản đã mã hóa vẫn nằm nguyên trong thư mục dự án.")),
     ("timeout after", "FFmpeg quá thời gian",
-     "FFmpeg đã chạy quá lâu và bị dừng. Kiểm tra file nguồn, driver GPU, "
-     "hoặc thử lại bằng CPU nếu NVENC tiếp tục lỗi."),
+     ("FFmpeg đã chạy quá lâu và bị dừng. Kiểm tra file nguồn, driver GPU, "
+     "hoặc thử lại bằng CPU nếu NVENC tiếp tục lỗi.")),
     ("Thiếu cấu hình bắt buộc", "Thiếu cấu hình",
      "Mở trang Cài đặt và điền các mục còn trống, rồi chạy lại."),
-    ("Không đủ Vox", "Hết tín dụng",
-     "Mở trang Tài khoản để nạp thêm, rồi chạy tiếp thư mục dự án đang dở. "
-     "Phần đã dịch xong vẫn được giữ nguyên, không phải trả tiền lần nữa."),
-    ("Không kết nối được máy chủ", "Mất kết nối máy chủ",
-     "Kiểm tra mạng rồi chạy tiếp thư mục dự án đang dở. Phần đã dịch xong "
-     "vẫn được giữ nguyên."),
+    ("Không đủ Vox", "Máy chủ dịch báo hết hạn mức",
+     ("DubFlow không thu phí - lời này đến từ endpoint dịch bạn tự cấu "
+     "hình. Kiểm tra hạn mức ở dịch vụ đó rồi chạy tiếp thư mục dự án "
+     "đang dở; phần đã dịch xong vẫn được giữ.")),
+    ("Không kết nối được máy chủ", "Không nối được endpoint dịch",
+     ("Kiểm tra mạng và cấu hình ở trang Dịch thuật, rồi chạy tiếp thư mục "
+     "dự án đang dở. Phần đã dịch xong vẫn được giữ nguyên.")),
     ("đang bảo trì", "Máy chủ đang bảo trì",
-     "Thử lại sau ít phút. Các bước chạy trên máy (nghe chép, giọng đọc, "
-     "xuất video) vẫn dùng bình thường."),
-    ("Thiết bị này đã bị khóa", "Thiết bị bị khóa",
-     "Liên hệ hỗ trợ kèm mã máy hiện ở trang Tài khoản."),
-    ("Máy chủ đang bận", "Máy chủ đang quá tải",
+     ("Thử lại sau ít phút. Các bước chạy trên máy (nghe chép, giọng đọc, "
+     "xuất video) vẫn dùng bình thường.")),
+    ("Thiết bị này đã bị khóa", "Dịch vụ giọng đọc chặn thiết bị",
+     ("Giọng CapCut chặn định danh máy này. Chọn một giọng VieNeu (chạy "
+     "ngay trên máy, không qua mạng) rồi làm lại; mã máy nằm trong tệp "
+     "nhật ký chẩn đoán ở trang Cài đặt.")),
+    ("Máy chủ đang bận", "Endpoint dịch đang quá tải",
      "Chờ một chút rồi chạy tiếp thư mục dự án đang dở."),
     ("CUDA out of memory", "Card đồ họa không đủ bộ nhớ",
-     "Đóng bớt ứng dụng đang dùng card đồ họa như trò chơi hoặc trình duyệt "
+     ("Đóng bớt ứng dụng đang dùng card đồ họa như trò chơi hoặc trình duyệt "
      "mở nhiều video, hoặc đổi Nhạc nền sang Giảm nhỏ tiếng gốc cho nhẹ hơn, "
-     "rồi chạy tiếp thư mục dự án đang dở."),
+     "rồi chạy tiếp thư mục dự án đang dở.")),
     ("Máy chưa có FFmpeg", "Máy chưa có FFmpeg",
      "Cài FFmpeg rồi thêm vào đường dẫn hệ thống, sau đó mở lại ứng dụng."),
     ("VieNeu worker", "Bộ giọng đọc gặp sự cố",
-     "Chọn chạy tiếp thư mục dự án đang dở để tiếp tục từ chỗ dừng. Nếu vẫn "
-     "lỗi, cài lại một lần: py scripts/setup_vieneu.py"),
+     ("Chọn chạy tiếp thư mục dự án đang dở để tiếp tục từ chỗ dừng. Nếu vẫn "
+     "lỗi, cài lại một lần: py scripts/setup_vieneu.py")),
     ("Chưa cài bộ giọng VieNeu", "Chưa cài bộ giọng",
      "Chạy một lần: py scripts/setup_vieneu.py — sau đó mở lại ứng dụng."),
     ("Không tìm thấy video gốc", "Không tìm thấy video gốc",
-     "Thư mục này không còn video gốc, có thể video nằm ở nơi khác hoặc đã bị "
+     ("Thư mục này không còn video gốc, có thể video nằm ở nơi khác hoặc đã bị "
      "xóa. Chọn lại tệp video rồi bấm chạy — ứng dụng sẽ tiếp tục từ chỗ dừng "
-     "và ghi nhớ vị trí video cho lần sau."),
+     "và ghi nhớ vị trí video cho lần sau.")),
     ("chưa có bản âm thanh đã ghép", "Chưa xuất video lần nào",
-     "Bấm Xuất video một lần để tạo bản âm thanh, sau đó mới ghi riêng phụ "
-     "đề được."),
+     ("Bấm Xuất video một lần để tạo bản âm thanh, sau đó mới ghi riêng phụ "
+     "đề được.")),
 ]
 
 

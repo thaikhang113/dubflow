@@ -1,4 +1,4 @@
-"""Định danh máy — mã thiết bị dùng để gắn ví Vox.
+"""Định danh máy — mã băm ổn định để dịch vụ bên ngoài biết là máy nào.
 
 Không có tài khoản người dùng: chính chiếc máy này LÀ danh tính. Mã thiết bị
 được băm từ ba thứ gắn với phần cứng và hệ điều hành, không phải từ thứ gì
@@ -53,17 +53,13 @@ def get_fingerprint() -> str:
     if _cached_fingerprint is not None:
         return _cached_fingerprint
 
-    raw = "|".join((
-        _machine_guid(),
-        platform.node(),
-        platform.machine(),
-    ))
+    raw = f"{_machine_guid()}|{platform.node()}|{platform.machine()}"
     _cached_fingerprint = hashlib.sha256(raw.encode("utf-8")).hexdigest()
     return _cached_fingerprint
 
 
 def get_device_name() -> str:
-    """Tên máy hiển thị trong trang quản trị, vd "DESKTOP-ABC (Windows 10.0.26200)"."""
+    """Tên máy dễ đọc, vd "DESKTOP-ABC (Windows 10.0.26200)"."""
     node = platform.node() or "Máy không tên"
     system = platform.system() or "?"
     release = platform.version() or platform.release() or ""
@@ -71,5 +67,5 @@ def get_device_name() -> str:
 
 
 def short_id() -> str:
-    """8 ký tự đầu của mã thiết bị — đủ để đọc cho bộ phận hỗ trợ."""
+    """8 ký tự đầu của mã thiết bị, ghi vào nhật ký chẩn đoán."""
     return get_fingerprint()[:8].upper()

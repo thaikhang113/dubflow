@@ -35,7 +35,6 @@ _STATUS_FILTERS = [
     ("Hoàn thành", projects_mod.STATUS_COMPLETED),
     ("Đang xử lý", projects_mod.STATUS_PROCESSING),
     ("Chờ dịch", projects_mod.STATUS_PENDING),
-    ("Chờ xuất video", projects_mod.STATUS_LOCKED),
     ("Lỗi", projects_mod.STATUS_FAILED),
 ]
 
@@ -157,7 +156,7 @@ class ProjectsPage(BasePage):
             return
         try:
             output_dir = self._settings_provider().output_dir
-        except Exception as e:  # noqa: BLE001 — tệp cấu hình hỏng
+        except Exception as e:
             self._show_error(str(e))
             return
         self.stack.setCurrentWidget(self.loading)
@@ -268,7 +267,7 @@ class ProjectsPage(BasePage):
             return
         output_dir = self._settings_provider().output_dir
         if not projects_mod.is_within_directory(project.work_dir, output_dir):
-            TOASTS.error("Project náº±m ngoÃ i thÆ° má»¥c output, khÃ´ng xÃ³a.")
+            TOASTS.error("Project nằm ngoài thư mục output, không xóa.")
             return
         try:
             shutil.rmtree(project.work_dir)

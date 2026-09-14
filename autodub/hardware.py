@@ -152,7 +152,9 @@ def detect_hardware(
 
 
 def select_backends(
-    profile: HardwareProfile, deepseek_ocr_enabled: bool | None = None
+    profile: HardwareProfile,
+    deepseek_ocr_enabled: bool | None = None,
+    vsr_enabled: bool = True,
 ) -> BackendPlan:
     reasons: list[str] = []
     if deepseek_ocr_enabled is None:
@@ -174,7 +176,13 @@ def select_backends(
         ocr = "paddleocr"
         reasons.append("Dùng PaddleOCR CPU tương thích rộng.")
 
-    if enough_ram and profile.disk_free_gb >= 4:
+    # ``vsr_enabled`` là lựa chọn của người dùng trong Cài đặt. Bỏ qua nó sẽ biến
+    # một tính năng tăng cường thành thứ mà wizard bắt máy đủ khoẻ phải tải thêm
+    # ~700 MB (qa/REVIEW.md, mục A).
+    if not vsr_enabled:
+        vsr = "fallback"
+        reasons.append("Đã tắt 'AI xóa phụ đề' — dùng blur/box fallback.")
+    elif enough_ram and profile.disk_free_gb >= 4:
         vsr = "video-subtitle-remover"
         reasons.append("RAM và disk đủ cho VSR.")
     else:

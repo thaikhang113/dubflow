@@ -195,11 +195,12 @@ class _VieNeuWorker:
         """
         try:
             line = self._resp_queue.get(timeout=timeout)
-        except queue.Empty:
+        except queue.Empty as exc:
             if self._proc is not None:
                 self._proc.kill()
             raise RuntimeError(
-                f"VieNeu worker timed out after {timeout}s\n{self._tail()}")
+                f"VieNeu worker timed out after {timeout}s\n"
+                f"{self._tail()}") from exc
         if line is None:
             raise RuntimeError(
                 f"VieNeu worker stream closed unexpectedly\n{self._tail()}")
@@ -346,10 +347,10 @@ class VieNeuSynthesizer:
         # fail loudly instead of hanging the whole run on an empty queue.
         try:
             w = self._free.get(timeout=SYNTH_TIMEOUT + 60)
-        except queue.Empty:
+        except queue.Empty as exc:
             raise RuntimeError(
                 "Không còn luồng VieNeu nào rảnh (worker chết hoặc kẹt) — "
-                "thử chạy lại; nếu lặp lại, giảm VIENEU_MAX_WORKERS")
+                "thử chạy lại; nếu lặp lại, giảm VIENEU_MAX_WORKERS") from exc
         try:
             return w.render(text, output_path)
         finally:

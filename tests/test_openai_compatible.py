@@ -144,14 +144,14 @@ def test_translate_retries_rate_limit_with_retry_after(monkeypatch):
 
     class Response:
         status_code = 429
-        headers = {"Retry-After": "7"}
+        headers = {"Retry-After": "7"}  # noqa: RUF012
 
         def raise_for_status(self):
             raise RuntimeError("429 Client Error")
 
     class Success:
         status_code = 200
-        headers = {}
+        headers = {}  # noqa: RUF012
 
         def raise_for_status(self):
             pass

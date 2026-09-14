@@ -212,7 +212,7 @@ def test_cli_emits_utf8_json_on_windows(tmp_path):
         ).encode("utf-8"),
         capture_output=True,
         cwd=str(Path(__file__).resolve().parents[1]),
-    )
+    check=False)
 
     assert result.returncode == 0
     payload = json.loads(result.stdout.decode("utf-8"))

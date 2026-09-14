@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import os
 
-import pytest
 
 from autodub.batch import BatchItem, _Prefetcher
 from autodub.workdir import data_path

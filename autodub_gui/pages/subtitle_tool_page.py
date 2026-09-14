@@ -16,6 +16,6 @@ class SubtitleToolPage(ToolPage):
     TITLE = "Phụ đề"
     SUBTITLE = ("Tùy chỉnh kiểu chữ, màu sắc, vị trí và cách hiển thị phụ đề "
                 "trên video.")
-    EXPANDED = {"Mặc định", "Kiểu chữ"}
+    EXPANDED = frozenset({"Mặc định", "Kiểu chữ"})
     SAVE_LABEL = "Lưu cấu hình phụ đề"
     SAVED_TOAST = "Đã lưu cấu hình phụ đề."

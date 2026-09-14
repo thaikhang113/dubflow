@@ -23,7 +23,6 @@ from autodub.workdir import data_path
 STATUS_COMPLETED = "completed"
 STATUS_PROCESSING = "processing"
 STATUS_PENDING = "pending"
-STATUS_LOCKED = "locked"          # đã lồng tiếng xong, chờ bấm Xuất video
 STATUS_FAILED = "failed"
 STATUS_QUEUED = "queued"
 
@@ -31,7 +30,6 @@ STATUS_LABELS: dict[str, str] = {
     STATUS_COMPLETED: "Hoàn thành",
     STATUS_PROCESSING: "Đang xử lý",
     STATUS_PENDING: "Chờ dịch",
-    STATUS_LOCKED: "Chờ xuất video",
     STATUS_FAILED: "Lỗi",
     STATUS_QUEUED: "Đang chờ",
 }
@@ -46,7 +44,7 @@ PENDING_MARKER = "TRANSLATE_PENDING.txt"
 _DERIVED_PREFIXES = ("dubbed_", "retimed_", "slowed_")
 _VIDEO_EXTS = (".mp4", ".mkv", ".mov", ".avi", ".webm")
 _WORK_DIR_SUFFIX = "*_vi"
-_INDEX_VERSION = 3         # bump khi đổi cách suy trạng thái (thêm "locked")
+_INDEX_VERSION = 5         # bump khi đổi cách suy trạng thái
 _THUMB_WIDTH = 480
 _THUMB_SEEK_S = 1
 _FFMPEG_TIMEOUT_S = 20
@@ -158,32 +156,57 @@ def _segments_of(work_dir: str, report: dict) -> int:
     return 0
 
 
-def _has_error_marker(work_dir: str) -> bool:
-    """Thư mục có dấu vết của một lần chạy hỏng không."""
+def _last_run_status(work_dir: str) -> str:
+    """Trạng thái lần chạy cuối từ ``data/pipeline_state.json``.
+
+    Lõi pipeline ghi tệp này mỗi bước và gọi ``mark_interrupted`` khi lỗi hoặc
+    bị dừng, nên đây là dấu vết duy nhất cho thấy một dự án đã chết giữa
+    đường. Trước đây dự án fail bị suy ra từ những tệp ``*.error`` mà không ai
+    viết ra, vì thế trang Dự án luôn báo "Đang chờ" cho một lần chạy hỏng.
+    """
     try:
-        for name in os.listdir(work_dir):
-            lower = name.lower()
-            if lower.endswith(".error") or (lower.startswith("error")
-                                            and lower.endswith(".txt")):
-                return True
+        with open(data_path(work_dir, "pipeline_state.json"),
+                  encoding="utf-8") as handle:
+            state = json.load(handle)
+    except (OSError, ValueError):
+        return ""
+    pipeline = state.get("pipeline") if isinstance(state, dict) else None
+    if not isinstance(pipeline, dict):
+        return ""
+    status = str(pipeline.get("status") or "")
+    if status in ("failed", "cancelled"):
+        return STATUS_FAILED
+    if status == "running":
+        return STATUS_PROCESSING
+    return ""
+
+
+def _finished_run(work_dir: str) -> bool:
+    """Lần chạy này đã đi hết đường chưa (``report.json`` chỉ ghi ở bước chót).
+
+    Dự án xuất-chỉ-âm-thanh không có ``dubbed_video.mp4`` nên cần dấu hiệu
+    riêng; nếu không nó bị báo là chưa làm gì.
+    """
+    audio = data_path(work_dir, "audio_vi_full.wav")
+    try:
+        return bool(read_report(work_dir)) and os.path.getsize(audio) > 0
     except OSError:
         return False
-    return False
 
 
 def _status_of(work_dir: str, running_dir: str) -> str:
     """Suy ra trạng thái hiện tại của dự án từ những tệp có trong thư mục."""
-    if os.path.isfile(os.path.join(work_dir, OUTPUT_VIDEO)):
-        return STATUS_COMPLETED
-    if os.path.isfile(os.path.join(work_dir, PENDING_MARKER)):
-        return STATUS_PENDING
     if running_dir and os.path.normpath(running_dir) == os.path.normpath(work_dir):
         return STATUS_PROCESSING
-    if _has_error_marker(work_dir):
-        return STATUS_FAILED
-    # Đã lồng tiếng xong nhưng chưa bấm Xuất video — dữ liệu còn khóa.
-    if os.path.isfile(data_path(work_dir, "voxdub_lock.json")):
-        return STATUS_LOCKED
+    if os.path.isfile(os.path.join(work_dir, PENDING_MARKER)):
+        return STATUS_PENDING
+    last_run = _last_run_status(work_dir)
+    if last_run:
+        return last_run
+    if os.path.isfile(os.path.join(work_dir, OUTPUT_VIDEO)):
+        return STATUS_COMPLETED
+    if _finished_run(work_dir):
+        return STATUS_COMPLETED
     segments_dir = data_path(work_dir, "segments")
     if os.path.isdir(segments_dir) and os.listdir(segments_dir):
         return STATUS_PROCESSING
@@ -265,6 +288,29 @@ def _to_dict(project: Project) -> dict:
     return {k: v for k, v in vars(project).items() if k != "extra"}
 
 
+def _cache_signature(work_dir: str) -> list:
+    """Watch listing inputs without walking every cached audio segment."""
+    paths = [
+        work_dir,
+        *(os.path.join(work_dir, name) for name in (
+            OUTPUT_VIDEO, PENDING_MARKER, "dub_report.json",
+        )),
+        *(data_path(work_dir, name) for name in (
+            "", "pipeline_state.json", "report.json", "quality_report.json",
+            "source_video.json", "transcript_vi.json", "audio_vi_full.wav",
+            "segments", THUMB_FILE,
+        )),
+    ]
+    signature = []
+    for path in paths:
+        try:
+            stat = os.stat(path)
+            signature.append([stat.st_mtime_ns, stat.st_size])
+        except OSError:
+            signature.append(None)
+    return signature
+
+
 def scan(output_dir: str, running_dir: str = "",
          use_cache: bool = True) -> list[Project]:
     """Liệt kê mọi dự án trong thư mục kết quả, mới nhất đứng đầu.
@@ -284,20 +330,21 @@ def scan(output_dir: str, running_dir: str = "",
         if not path.is_dir():
             continue
         work_dir = str(path)
-        try:
-            mtime = os.path.getmtime(work_dir)
-        except OSError:
-            continue
+        signature = _cache_signature(work_dir)
         entry = cached.get(work_dir)
         # Thư mục đang chạy luôn phải đọc lại vì trạng thái đổi liên tục.
         is_running = bool(running_dir) and os.path.normpath(
             running_dir) == os.path.normpath(work_dir)
-        if entry and entry.get("mtime") == mtime and not is_running:
+        if (entry and entry.get("signature") == signature
+                and not is_running and not entry.get("running")):
             project = Project(**entry["project"])
         else:
             project = load_project(work_dir, running_dir)
         projects.append(project)
-        fresh[work_dir] = {"mtime": mtime, "project": _to_dict(project)}
+        fresh[work_dir] = {
+            "signature": signature, "running": is_running,
+            "project": _to_dict(project),
+        }
 
     projects.sort(key=lambda p: p.created_at, reverse=True)
     if use_cache:
@@ -346,7 +393,7 @@ def ensure_thumbnail(project: Project) -> str:
     try:
         flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         subprocess.run(command, capture_output=True,
-                       timeout=_FFMPEG_TIMEOUT_S, creationflags=flags)
+                       timeout=_FFMPEG_TIMEOUT_S, creationflags=flags, check=False)
     except (OSError, subprocess.SubprocessError):
         return ""
     return target if os.path.isfile(target) else ""

@@ -55,7 +55,7 @@ def _library_wav(voice: str) -> str:
 
         name = (voice or "").strip()
         return next((v.wav for v in scan() if v.name == name), "")
-    except Exception:  # noqa: BLE001 — thư viện hỏng thì rơi về tổng hợp
+    except Exception:
         return ""
 
 
@@ -88,7 +88,7 @@ class _Synthesizer(QThread):
                     self._cache[self._voice] = synth
             os.makedirs(os.path.dirname(self._out), exist_ok=True)
             synth.synthesize(PREVIEW_TEXT, self._out)
-        except Exception as e:  # noqa: BLE001 — hiện nguyên nhân cho người dùng
+        except Exception as e:
             self.error = f"{type(e).__name__}: {e}"
 
 
@@ -226,5 +226,5 @@ class VoicePreview(QObject):
             if close is not None:
                 try:
                     close()
-                except Exception:  # noqa: BLE001 — đang thoát, bỏ qua lỗi dọn dẹp
+                except Exception:
                     pass

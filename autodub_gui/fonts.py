@@ -62,7 +62,7 @@ def supports_vietnamese(family: str) -> bool:
     """
     try:
         return QFontDatabase.Vietnamese in QFontDatabase.writingSystems(family)
-    except Exception:  # noqa: BLE001 — không xác định được thì đừng dọa người dùng
+    except Exception:
         return True
 
 

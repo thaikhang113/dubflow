@@ -43,7 +43,7 @@ def format_date(ts) -> str:
     """Đổi dấu thời gian thành 'dd/mm/YYYY HH:MM'."""
     if isinstance(ts, (int, float)):
         try:
-            return datetime.datetime.fromtimestamp(ts).strftime("%d/%m/%Y %H:%M")
+            return datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc).astimezone().strftime("%d/%m/%Y %H:%M")
         except (OSError, OverflowError, ValueError):
             return _UNKNOWN
     return str(ts)[:16]
@@ -92,7 +92,7 @@ def format_eta(seconds) -> str:
     if total < _SEC_PER_MIN:
         return f"khoảng {int(total)} giây"
     if total < _SEC_PER_HOUR:
-        return f"khoảng {int(round(total / _SEC_PER_MIN))} phút"
+        return f"khoảng {round(total / _SEC_PER_MIN)} phút"
     hours = int(total // _SEC_PER_HOUR)
     minutes = int((total % _SEC_PER_HOUR) // _SEC_PER_MIN)
     if minutes:
@@ -103,7 +103,7 @@ def format_eta(seconds) -> str:
 def format_relative(ts, now: float | None = None) -> str:
     """Thời điểm tương đối: 'vừa xong', '3 phút trước', '2 ngày trước'."""
     if now is None:
-        now = datetime.datetime.now().timestamp()
+        now = datetime.datetime.now(tz=datetime.timezone.utc).timestamp()
     try:
         delta = float(now) - float(ts)
     except (TypeError, ValueError):

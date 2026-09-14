@@ -382,7 +382,7 @@ def test_ffmpeg_archive_download_retries_and_cleans_partial_file(
     calls = []
 
     class Response:
-        headers = {"Content-Length": "4"}
+        headers = {"Content-Length": "4"}  # noqa: RUF012
 
         def __enter__(self):
             return self

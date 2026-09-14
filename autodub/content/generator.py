@@ -1,13 +1,14 @@
-"""Sinh nội dung đăng bài: tiêu đề, mô tả, hashtag cho từng nền tảng.
+"""Nội dung đăng bài: xuất lời thoại local, metadata qua endpoint tùy chọn.
 
-Mỗi dự án nhận hai nhóm tệp, mỗi tệp một việc:
+Mỗi dự án nhận:
 
-- ``youtube_post.txt`` — nội dung đăng bài (YouTube, TikTok, Facebook).
-- ``script_original.txt`` / ``script_vi.txt`` — lời thoại thuần chữ.
-
-Phần chữ do máy chủ VoxDub viết (app không giữ API Key nào). Ảnh bìa AI đã bỏ
-hẳn khỏi sản phẩm — ảnh bìa gốc của video vẫn được tải về làm tham chiếu nếu
-người dùng muốn tự thiết kế.
+- ``script_original.txt`` / ``script_vi.txt`` — lời thoại thuần chữ, dán được
+  vào ô mô tả của YouTube/TikTok/Facebook.
+- ``thumbnail_original.jpg`` — ảnh bìa gốc của video YouTube (nếu nguồn là
+  YouTube), để người dùng tự thiết kế lại.
+- ``youtube_post.txt`` / ``youtube_metadata.json`` — bộ tiêu đề + mô tả + hashtag
+  do mô hình ở endpoint dịch viết. Yêu cầu này có thể phát sinh phí provider.
+  Hai tệp chỉ xuất hiện khi có nội dung thật.
 """
 import json
 import os
@@ -75,17 +76,108 @@ def extract_script_text(segments: list[dict], text_field: str,
 
 # ------------------------------------------------------- nội dung đăng bài -- #
 
-def generate_social_metadata(script_original: str, script_translated: str,
-                             video_title: str = "", job_id: str = "") -> dict:
-    """Nhờ máy chủ viết tiêu đề, mô tả và hashtag.
+#: Ký tự lời thoại tối đa đưa vào một lượt hỏi.
+_SCRIPT_PROMPT_LIMIT = 6000
 
-    Đây là bước phụ: hỏng thì video vẫn xong, chỉ thiếu phần đăng bài. Vì vậy
-    mọi lỗi đều được nuốt và ghi log, trừ khi hết Vox — trường hợp đó lớp
-    trên cần biết để hiện lời mời nạp thêm.
+#: Lời nhắn. Giữ nguyên dạng ghép chuỗi: lời nhắn có chứa ngoặc nhọn của JSON
+#: nên ``str.format`` sẽ hiểu nhầm đó là chỗ cần điền.
+_POST_RULES = (
+    "Bạn là người viết mô tả video cho nhà sáng tạo Việt Nam. Đọc lời thoại đã "
+    "lồng tiếng rồi trả ĐÚNG JSON dạng "
+    '{"title":"...","description":"...","hashtags":["#..."],'
+    '"tiktok":{"title":"...","hashtags":["#..."]},'
+    '"facebook":{"description":"...","hashtags":["#..."]}}. '
+    "Quy tắc: title không quá 90 ký tự; description 2-4 câu dễ đọc; 5-8 hashtag "
+    "liên quan; mỗi nền tảng một bản riêng. Không bịa nội dung ngoài lời thoại, "
+    "không giải thích thêm.\n\n"
+)
+
+
+def _build_post_prompt(video_title: str, script: str) -> str:
+    return (f"{_POST_RULES}"
+            f"Tiêu đề gốc: {video_title}\n\n"
+            f"Lời thoại tiếng Việt: {script}")
+
+
+def _text_list(value) -> list[str]:
+    """Danh sách hashtag dạng chữ, bỏ phần tử không phải chuỗi và phần tử rỗng."""
+    if not isinstance(value, list):
+        return []
+    return [tag.strip() for tag in value if isinstance(tag, str) and tag.strip()]
+
+
+def _clean_metadata(reply: dict) -> dict:
+    """Giữ lại những phần mô hình trả về đúng kiểu, bỏ phần trống."""
+    meta: dict = {}
+    title = reply.get("title")
+    title = title.strip() if isinstance(title, str) else ""
+    description = reply.get("description")
+    description = description.strip() if isinstance(description, str) else ""
+    hashtags = _text_list(reply.get("hashtags"))
+    if title:
+        meta["title"] = title[:90]
+    if description:
+        meta["description"] = description[:2000]
+    if hashtags:
+        meta["hashtags"] = hashtags[:8]
+    for platform in ("tiktok", "facebook"):
+        block = reply.get(platform)
+        if not isinstance(block, dict):
+            continue
+        cleaned: dict = {}
+        for key in ("title", "description"):
+            value = block.get(key)
+            if isinstance(value, str) and (value := value.strip()):
+                cleaned[key] = value[:200] if key == "title" else value[:2000]
+        tags = _text_list(block.get("hashtags"))
+        if tags:
+            cleaned["hashtags"] = tags[:8]
+        if cleaned:
+            meta[platform] = cleaned
+    return meta
+
+
+def generate_social_metadata(script_original: str, script_translated: str,
+                             video_title: str = "", job_id: str = "",
+                             settings=None) -> dict:
+    """Viết tiêu đề, mô tả và hashtag bằng endpoint người dùng đã cấu hình.
+
+    App desktop không có máy chủ riêng và không giữ API Key nào, nên bước này
+    đi đúng endpoint OpenAI-compatible mà trang Dịch thuật đã điền. Chưa cấu
+    hình thì coi như "người dùng tự viết": trả ``{}`` để :func:`generate_content`
+    bỏ qua tệp đăng bài thay vì ghi một khung toàn tiêu đề trống. Đây vẫn là
+    bước phụ - lỗi ở đây không làm hỏng video.
     """
-    del script_original, script_translated, video_title, job_id
-    logger.info("Bỏ qua tạo metadata AI trong chế độ desktop local")
-    return {}
+    del job_id          # giữ chữ ký cũ cho các lời gọi đang có
+    script = (script_translated or script_original or "").strip()
+    if not script:
+        logger.info("Bỏ qua tạo tiêu đề/mô tả: lời thoại rỗng")
+        return {}
+    endpoint = str(getattr(settings, "translation_endpoint", "") or "").strip()
+    model = str(getattr(settings, "translation_model", "") or "").strip()
+    if not endpoint or not model:
+        logger.info("Bỏ qua tạo tiêu đề/mô tả: chưa cấu hình endpoint dịch")
+        return {}
+
+    from autodub.providers.openai_compatible import OpenAICompatibleProvider
+
+    prompt = _build_post_prompt(
+        (video_title or "(không có tiêu đề)")[:200],
+        script[:_SCRIPT_PROMPT_LIMIT])
+    with requests.Session() as session:
+        provider = OpenAICompatibleProvider(
+            endpoint,
+            str(getattr(settings, "translation_api_key", "") or ""),
+            model,
+            session=session,
+        )
+        reply = provider.complete_object(prompt, temperature=0.5)
+    meta = _clean_metadata(reply if isinstance(reply, dict) else {})
+    if not meta:
+        logger.info("Bỏ qua tạo tiêu đề/mô tả: model trả về rỗng")
+    else:
+        logger.info(f"Đã viết tiêu đề, mô tả và hashtag cho {len(meta)} mục")
+    return meta
 
 
 # ------------------------------------------------------------- ghi ra tệp -- #
@@ -107,9 +199,11 @@ def _write_post_file(path: str, meta: dict) -> None:
     lines: list[str] = []
     lines += block("YOUTUBE", meta.get("title", ""),
                    meta.get("description", ""), meta.get("hashtags", []))
-    lines += block("TIKTOK", tiktok.get("title", ""), "",
+    lines += block("TIKTOK", tiktok.get("title", ""),
+                   tiktok.get("description", ""),
                    tiktok.get("hashtags", []))
-    lines += block("FACEBOOK", facebook.get("title", ""), "",
+    lines += block("FACEBOOK", facebook.get("title", ""),
+                   facebook.get("description", ""),
                    facebook.get("hashtags", []))
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
@@ -128,13 +222,15 @@ def generate_content(
 
     Các bước:
 
-    1. Rút lời thoại thuần chữ ra tệp (nhẹ, rẻ khi gửi lên máy chủ).
+    1. Rút lời thoại thuần chữ ra tệp (dán được vào ô mô tả ngay).
     2. Tải ảnh bìa gốc của video YouTube (nếu có) để người dùng tham chiếu.
-    3. Nhờ máy chủ viết tiêu đề / mô tả / hashtag rồi ghi ra ``youtube_post.txt``.
+    3. Nếu có endpoint dịch và mô hình viết ra tiêu đề / mô tả / hashtag thì mới
+       ghi ``youtube_metadata.json`` và ``youtube_post.txt``; không có thì hai
+       tệp này vắng mặt có chủ đích.
 
     Trả về dict có các khóa: metadata, metadata_file, post_file.
     """
-    del settings, video_path      # giữ chữ ký cũ cho các nơi gọi hiện có
+    del video_path      # giữ chữ ký cũ cho các nơi gọi hiện có
 
     result: dict = {"metadata": {}, "metadata_file": None}
 
@@ -148,7 +244,16 @@ def generate_content(
 
     result["metadata"] = generate_social_metadata(
         script_original, script_translated, video_title=video_title,
-        job_id=job_id)
+        job_id=job_id, settings=settings)
+
+    result["post_file"] = None
+    if not result["metadata"]:
+        for filename in ("youtube_metadata.json", "youtube_post.txt"):
+            try:
+                os.remove(os.path.join(output_dir, filename))
+            except FileNotFoundError:
+                pass
+        return result
 
     metadata_path = os.path.join(output_dir, "youtube_metadata.json")
     with open(metadata_path, "w", encoding="utf-8") as f:

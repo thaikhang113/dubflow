@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "autodub"
-version = "3.0.21"
+version = "3.0.22"
 description = "Automatic video dubbing into Vietnamese: download → ASR → translate → TTS → mix → export"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -23,8 +23,7 @@ dependencies = [
 
 [project.optional-dependencies]
 demucs = ["demucs>=4.0.0", "soundfile>=0.13.0"]
-content = ["google-genai>=1.0.0"]
-dev = ["pytest>=8.0.0"]
+dev = ["pytest>=8.0.0", "ruff>=0.6", "ftfy>=6.1"]
 
 [project.gui-scripts]
 autodub-gui = "autodub_gui.app:main"
@@ -34,3 +33,49 @@ include = ["autodub*", "autodub_gui*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+# Bộ kiểm tra mà dự án thật sự giữ sạch: pycodestyle (bỏ giới hạn độ dài dòng vì
+# chú thích tiếng Việt), pyflakes, bugbear, và các rule dọn code chết/import thừa.
+[tool.ruff]
+target-version = "py310"
+line-length = 79
+extend-exclude = [
+    "build", "dist", ".venv", ".venv-deepseek-ocr", "voices", "fonts",
+    "logs", "output", "test_ui_data", "qa/runs", "qa/work",
+    # Công cụ của agent, không phải mã ứng dụng.
+    ".agents", ".claude", ".codex", ".opencode", "skills", ".gitnexus",
+]
+
+[tool.ruff.lint]
+select = [
+    "E4", "E7", "E9",     # pycodestyle, không gồm E501 (độ dài dòng)
+    "F",                  # code chết do import/biến thừa
+    "B",                  # lỗi kinh điển kiểu Python
+    "C4",                 # comprehension không cần thiết
+    "SIM",                # đơn giản hóa điều kiện
+    "RET",                # đường return gọn
+    "PIE",
+    "PLR1704", "PLR0124", # so sánh vô nghĩa
+    "RUF013",
+]
+
+ignore = [
+    # Repo này cố tình viết ``try/except Exception: pass`` kèm chú thích lý do ở
+    # rất nhiều chỗ (mỗi lần lùi sang đường an toàn đều giải thích được), nên
+    # SIM105 chỉ tạo 53 chỗ thay đổi vô nghĩa.
+    "SIM105",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Worker chạy trong venv riêng: không được import autodub, và log của chúng có
+# chủ đích giữ biến thừa để dễ đọc lại traceback.
+"autodub/**/*_worker.py" = ["E402"]
+# SDK CapCut sao chép nguyên khối từ dự án bên ngoài: không sửa tay, không siết
+# chuẩn riêng của repo này vào đó.
+"autodub/speech/tts/capcut_api/*" = ["ALL"]
+# _frozen.init() phải chạy trước mọi import khác (PATH, PLAYWRIGHT_BROWSERS_PATH,
+# chdir) nên phần import phía sau nằm thấp hơn dòng 15.
+"autodub_gui/app.py" = ["E402"]
+"scripts/*" = ["E402", "ARG", "RET", "SIM"]
+"tests/*" = ["ARG", "B011", "E402", "RET", "SIM"]
+"qa/*" = ["E402", "ARG", "RET", "SIM", "B"]

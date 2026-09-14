@@ -375,8 +375,8 @@ FIELDS: tuple[Field, ...] = (
     # Dịch qua endpoint OpenAI-compatible do người dùng chọn.
     Field("TRANSLATE_ENABLED", CHECK, "Bật dịch tự động", TAB_TRANSLATE,
           "Dịch tự động", "true",
-    "Bật: máy chủ dịch toàn bộ, 12 tín dụng mỗi câu thoại. Tắt: ứng dụng "
-    "dừng ở bước dịch và hướng dẫn bạn dịch tay, còn 10 tín dụng mỗi câu."),
+          "Bật: model ở endpoint bạn cấu hình dịch toàn bộ lời thoại. Tắt: ứng "
+          "dụng dừng ở bước dịch và đưa ra hướng dẫn dịch tay ba bước."),
     Field("TRANSLATION_ENDPOINT", TEXT, "Endpoint dịch OpenAI-compatible",
           TAB_TRANSLATE, "Nhà cung cấp dịch", "",
           "Endpoint phải có /models và /chat/completions. Dùng endpoint do "
@@ -398,16 +398,18 @@ FIELDS: tuple[Field, ...] = (
            TAB_TRANSLATE, "Đăng nhập Douyin", "",
            "Đường dẫn tệp Netscape cookies.txt. Cookie được lưu cục bộ.",
            placeholder="C:\\Users\\...\\douyin-cookies.txt"),
+    # Lỗi cũ: ô này chỉ cho tới 10 trong khi lõi pipeline và thanh trượt ở
+    # wizard đều tính tới 40 - đặt 20 ở wizard thì về đây hiện lại 10.
     Field("TRANSLATE_BATCH_SIZE", NUMBER, "Số câu mỗi lượt gửi", TAB_TRANSLATE,
-          "Dịch tự động", "10",
+          "Dịch tự động", "20",
           "Lô nhỏ hơn thì chậm hơn một chút nhưng mạch dịch bám ngữ cảnh sát "
-    "hơn. Không ảnh hưởng số tín dụng — tính theo câu, không theo lượt gửi.",
-          minimum=1, maximum=10, step=1, decimals=0),
+          "hơn, và một lô nhỏ hỏng thì chỉ phải dịch lại chừng đó câu.",
+          minimum=1, maximum=40, step=1, decimals=0),
 
     Field("TRANSLATE_DOMAIN", TEXT, "Chủ đề video", TAB_TRANSLATE,
           "Ngữ cảnh video", "",
-          "Càng cụ thể thì bản dịch càng đúng ngữ cảnh. Để trống thì máy chủ "
-          "tự đoán từ lời thoại.",
+          "Càng cụ thể thì bản dịch càng đúng ngữ cảnh. Để trống thì model tự "
+          "đoán từ lời thoại.",
           placeholder="ví dụ: review công nghệ, phim cổ trang, vlog ẩm thực"),
     Field("TRANSLATE_CONTEXT", MULTILINE, "Ngữ cảnh", TAB_TRANSLATE,
           "Ngữ cảnh video", "",
@@ -430,8 +432,9 @@ FIELDS: tuple[Field, ...] = (
     Field("GENERATE_METADATA", CHECK,
           "Tạo tiêu đề, mô tả và thẻ cho mạng xã hội", TAB_TRANSLATE,
           "Nội dung đăng bài", "true",
-    "Kết quả lưu vào thư mục dự án, tệp youtube_post.txt. Thêm 20 tín dụng "
-          "mỗi video — tắt đi nếu bạn tự viết."),
+          "Viết bằng model ở endpoint dịch đã cấu hình, lưu vào tệp "
+          "youtube_post.txt trong thư mục dự án. Chưa cấu hình endpoint thì bỏ "
+          "qua bước này; thư mục youtube vẫn có lời thoại và ảnh bìa gốc."),
 )
 
 # Khóa do ứng dụng tự tính hoặc chỉ dùng nội bộ, không hiện thành ô nhập chữ.

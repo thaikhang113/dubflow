@@ -62,32 +62,51 @@ def load_plan() -> BackendPlan | None:
         return None
 
 def ensure_hardware_plan() -> BackendPlan:
+    """Deterministic backend plan for this machine, rewritten when stale.
+
+    So sánh trực tiếp kế hoạch vừa tính với kế hoạch đã lưu thay vì chỉ đoán
+    qua cờ môi trường: người dùng bật/tắt "AI xóa phụ đề" trong Cài đặt cũng
+    phải làm kế hoạch đổi, nếu không wizard tiếp tục chào bước cài VSR ~700 MB
+    mà họ đã tắt.
+    """
     profile = detect_hardware(disk_path=data_root())
     plan = load_plan()
     deepseek_enabled = os.environ.get(
         "DEEPSEEK_OCR_ENABLED", "false").strip().lower() in (
             "1", "true", "yes", "on")
+    fresh = select_backends(profile, deepseek_enabled, _vsr_enabled())
     try:
         with open(plan_path(), encoding="utf-8") as handle:
             stored = json.load(handle).get("hardware", {})
         current = profile.as_dict()
         comparable = set(current) - {"disk_free_gb"}
-        if plan is not None and all(
-            stored.get(key) == current[key] for key in comparable
-        ) and (deepseek_enabled or not plan.ocr_backend.startswith("deepseek")):
+        if (plan is not None
+                and all(stored.get(key) == current[key]
+                        for key in comparable)
+                and (plan.ocr_backend, plan.vsr_backend)
+                == (fresh.ocr_backend, fresh.vsr_backend)):
             os.environ["DUBFLOW_BACKEND_PLAN"] = plan_path()
             return plan
     except (OSError, TypeError, ValueError, json.JSONDecodeError):
         pass
-    plan = select_backends(profile, deepseek_enabled)
     ensure_dir(data_root())
     with open(plan_path(), "w", encoding="utf-8") as handle:
         json.dump({
             "hardware": profile.as_dict(),
-            **plan.as_dict(),
+            **fresh.as_dict(),
         }, handle, ensure_ascii=False, indent=2)
     os.environ["DUBFLOW_BACKEND_PLAN"] = plan_path()
-    return plan
+    return fresh
+
+
+def _vsr_enabled() -> bool:
+    """Đọc lựa chọn "AI xóa phụ đề" của người dùng; lỗi cấu hình thì mặc định bật."""
+    try:
+        from autodub.config import Settings
+
+        return bool(Settings.load().vsr_enabled)
+    except Exception:       # .env hỏng/thiếu cũng không được chặn màn hình setup
+        return True
 
 def steps(plan: BackendPlan | None = None) -> tuple[BootstrapStep, ...]:
     plan = plan or load_plan()

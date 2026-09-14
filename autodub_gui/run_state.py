@@ -70,7 +70,7 @@ def step_percent(done_steps, current_step: str = "",
     if weight and total > 0:
         ratio = max(0.0, min(1.0, current / total))
         percent += weight * ratio
-    return max(0, min(100, int(round(percent))))
+    return max(0, min(100, round(percent)))
 
 
 def estimate_eta(elapsed: float, current: int, total: int) -> float:

@@ -34,7 +34,7 @@ def _run(command: list[str]) -> tuple[int, str]:
             text=True,
             timeout=8,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
+        check=False)
     except (OSError, subprocess.SubprocessError):
         return 1, ""
     return result.returncode, result.stdout or ""
@@ -89,8 +89,8 @@ def detect_gpu(
         if vendor == "amd":
             dml_code, dml_output = run([
                 sys.executable, "-c",
-                "import onnxruntime as o; print('DmlExecutionProvider' "
-                "in o.get_available_providers())",
+                ("import onnxruntime as o; print('DmlExecutionProvider' "
+                "in o.get_available_providers())"),
             ])
             if dml_code == 0 and "true" in dml_output.lower():
                 return GPUInfo("amd", name, "directml", True, "DirectML ready")

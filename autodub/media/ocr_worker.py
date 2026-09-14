@@ -76,7 +76,10 @@ def _parse_result(result) -> list[dict]:
         scores = _value(item, "rec_scores")
         boxes = _value(item, "dt_polys")
         if texts is not None and boxes is not None:
-            for text, score, box in zip(texts, scores or [], boxes):
+            # PaddleOCR trả scores ngắn hơn texts khi thiếu độ tin cậy: ghép
+            # tới đâu đủ tới đó.
+            for text, score, box in zip(
+                    texts, scores or [], boxes, strict=False):
                 output.append({
                     "text": str(text),
                     "confidence": float(score),
@@ -112,7 +115,7 @@ def _frames(video: str, times: list[float], output_dir: str) -> list[str]:
          "-frames:v", str(len(times)), "-y", pattern],
         capture_output=True, text=True,
         timeout=ocr_frame_timeout_s(len(times)),
-    )
+    check=False)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr[-500:] or "OCR frame extraction failed")
     return [

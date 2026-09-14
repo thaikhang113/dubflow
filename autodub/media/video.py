@@ -21,7 +21,7 @@ def validate_export_part(path: str, expected_duration: float | None = None) -> d
         ["ffprobe", "-v", "error", "-show_entries",
          "format=duration:stream=codec_type", "-of", "json", path],
         capture_output=True, text=True, timeout=60,
-    )
+    check=False)
     if result.returncode != 0:
         raise RuntimeError(f"ffprobe khong xac nhan duoc file export: "
                            f"{result.stderr[-800:]}")
@@ -67,7 +67,7 @@ def probe_duration_s(video_path: str) -> float | None:
             ["ffprobe", "-v", "error", "-show_entries", "format=duration",
              "-of", "default=noprint_wrappers=1:nokey=1", video_path],
             capture_output=True, text=True, timeout=60,
-        )
+        check=False)
         return float(result.stdout.strip()) if result.returncode == 0 else None
     except (OSError, subprocess.TimeoutExpired, ValueError):
         return None
@@ -86,7 +86,7 @@ def _encoder_works(*args: str) -> bool:
             ["ffmpeg", "-v", "error", "-f", "lavfi",
              "-i", "color=black:s=256x256:d=0.1", *args, "-f", "null", "-"],
             capture_output=True, text=True, timeout=30,
-        )
+        check=False)
         return result.returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return False
@@ -177,7 +177,7 @@ def probe_dimensions(video_path: str) -> tuple[int, int]:
         "-of", "json",
         video_path,
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60, check=False)
     if result.returncode != 0:
         raise RuntimeError(f"ffprobe failed on {video_path}: {result.stderr}")
     try:
@@ -253,7 +253,7 @@ def compose_video(
     result = subprocess.run(
         cmd, capture_output=True, text=True,
         timeout=ffmpeg_timeout_s(sum(probe_duration_s(path) or 0 for path in parts)),
-    )
+    check=False)
     if result.returncode != 0:
         raise RuntimeError(f"FFmpeg concat failed: {(result.stderr or '')[-800:]}")
     validate_export_part(temp_output)
@@ -320,9 +320,10 @@ def render_preview_clip(
                 f"{output_path}")
     try:
         result = subprocess.run(cmd, capture_output=True, text=True,
-                                timeout=ffmpeg_timeout_s(end_s - start_s))
-    except subprocess.TimeoutExpired:
-        raise RuntimeError("FFmpeg treo khi dựng đoạn xem thử")
+                                timeout=ffmpeg_timeout_s(end_s - start_s), check=False)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            "FFmpeg treo khi dựng đoạn xem thử") from exc
     if result.returncode != 0:
         raise RuntimeError(f"FFmpeg preview failed: {result.stderr[:400]}")
     return output_path
@@ -527,7 +528,7 @@ def merge_video(
             elapsed = time.monotonic() - started
             return None, f"timeout after {timeout}s (elapsed={elapsed:.1f}s) {detail}".strip()
 
-    result, failure = _run(cmd)
+    _result, failure = _run(cmd)
     if failure and filter_complex and selected_encoder != "CPU (libx264)":
         logger.warning(
             f"{selected_encoder} failed during final render; retrying CPU "
@@ -538,7 +539,7 @@ def merge_video(
                 os.remove(temp_output)
         except OSError:
             pass
-        result, cpu_failure = _run(_cpu_command())
+        _result, cpu_failure = _run(_cpu_command())
         if cpu_failure:
             failure = f"hardware: {failure}; cpu: {cpu_failure}"
         else:

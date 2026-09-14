@@ -4,7 +4,6 @@ from __future__ import annotations
 from autodub.cancel import run_registered
 import os
 import shutil
-import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 

@@ -35,7 +35,7 @@ def _support_url() -> str:
         from autodub.config import Settings
 
         return Settings.load(override=True).support_url
-    except Exception:  # noqa: BLE001 — cấu hình hỏng thì đành bỏ nút gửi
+    except Exception:
         return ""
 
 

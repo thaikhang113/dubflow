@@ -53,7 +53,7 @@ def test_worker_loads_enrolled_custom_voice_embeddings(tmp_path):
     }), encoding="utf-8")
 
     class FakeTts:
-        _preset_voices = {}
+        _preset_voices = {}  # noqa: RUF012
 
     assert load_custom_voices(FakeTts(), str(path)) == 1
     assert "Clone" in FakeTts._preset_voices

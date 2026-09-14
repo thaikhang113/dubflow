@@ -187,7 +187,7 @@ def test_download_verified_writes_and_reports_progress(monkeypatch, tmp_path):
     )
 
     class StreamResponse:
-        headers = {"Content-Length": str(len(payload))}
+        headers = {"Content-Length": str(len(payload))}  # noqa: RUF012
 
         def __enter__(self):
             return self
@@ -233,7 +233,7 @@ def test_download_verified_deletes_checksum_mismatch(monkeypatch, tmp_path):
     )
 
     class StreamResponse:
-        headers = {"Content-Length": str(len(payload))}
+        headers = {"Content-Length": str(len(payload))}  # noqa: RUF012
 
         def __enter__(self):
             return self

@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import time
 
-from PySide6.QtCore import QSize, Qt, QTimer
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QColor, QPainter, QTextCursor
 from PySide6.QtWidgets import (
     QFrame,
@@ -278,10 +278,12 @@ class LogPanel(QPlainTextEdit):
 
 
 class RunStatsPanel(QFrame):
-    """Dải số liệu của lần chạy: số câu thoại và Vox tạm tính.
+    """Dải số liệu của lần chạy: số câu thoại đã nghe được.
 
-    Số câu lấy từ sự kiện ``asr done`` (detail "N segments"); Vox tích lũy
-    sau từng lô, nên khớp với thẻ tổng kết ở bước Xuất video.
+    Con số lấy từ sự kiện ``asr done`` (detail "N segments"), tức là ngay khi
+    pipeline biết chính xác video có bao nhiêu câu. Trước dải này còn một ô
+    "Vox tạm tính" với một QTimer chạy mỗi giây - thiết bị của máy chủ tính
+    phí cũ, không còn nguồn số liệu nào.
     """
 
     def __init__(self, parent=None):
@@ -294,20 +296,13 @@ class RunStatsPanel(QFrame):
         row.setContentsMargins(12, 8, 12, 8)
         row.setSpacing(18)
         self._sentences = QLabel("")
-        self._vox = QLabel("")
-        for label in (self._sentences, self._vox):
-            label.setStyleSheet(f"color: {theme.TEXT}; font-size: 13px;")
-            row.addWidget(label)
+        self._sentences.setStyleSheet(
+            f"color: {theme.TEXT}; font-size: 13px;")
+        row.addWidget(self._sentences)
         row.addStretch()
 
-        self._timer = QTimer(self)
-        self._timer.setInterval(1000)
-        self._timer.timeout.connect(self._poll)
-
     def reset(self) -> None:
-        self._timer.stop()
         self._sentences.setText("")
-        self._vox.setText("")
 
     def apply_event(self, ev: ProgressEvent) -> None:
         if ev.step == "asr" and ev.status in ("done", "skip"):
@@ -315,20 +310,6 @@ class RunStatsPanel(QFrame):
             head = str(ev.detail or "").split(" ", 1)[0]
             if head.isdigit():
                 self._sentences.setText(f"Số câu thoại: {int(head):,}")
-        elif ev.step == "translate" and ev.status in ("start", "progress"):
-            if not self._timer.isActive():
-                self._poll()
-                self._timer.start()
-        elif ev.step == "done" or ev.status == "error":
-            self._timer.stop()
-            self._poll()
-
-    def _poll(self) -> None:
-        self._vox.clear()
-
-    def hideEvent(self, event) -> None:
-        self._timer.stop()
-        super().hideEvent(event)
 
 
 class Banner(QFrame):

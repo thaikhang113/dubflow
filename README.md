@@ -6,8 +6,9 @@ DubFlow là ứng dụng desktop cho Windows và Linux. Dán link YouTube, TikTo
 Douyin hoặc Bilibili, hoặc chọn file video trên máy, chọn giọng đọc rồi xuất
 video lồng tiếng Việt với nhạc nền, phụ đề và trình chỉnh sửa từng câu.
 
-Nghe-chép, tách giọng, tạo giọng đọc, phụ đề và xuất video chạy cục bộ. Chỉ
-bước dịch tự động cần endpoint bên ngoài; bạn cũng có thể dịch thủ công.
+Nghe-chép, tách giọng, giọng VieNeu, phụ đề và xuất video chạy cục bộ.
+Dịch tự động và tạo metadata dùng endpoint đã cấu hình; giọng CapCut dùng API
+qua mạng. Bạn cũng có thể dịch thủ công và tắt tạo metadata.
 
 ```text
 Link / File video
@@ -166,7 +167,9 @@ Endpoint cần hỗ trợ:
 - `GET /models`
 - `POST /chat/completions`
 
-API key chỉ lưu cục bộ. Không commit `.env`, API key hoặc cookie vào Git.
+API key là tùy chọn đối với endpoint local không yêu cầu xác thực, và chỉ lưu
+cục bộ. Không commit `.env`, API key hoặc cookie vào Git. Dịch và tạo metadata
+có thể phát sinh phí provider; chạy lại không được bảo đảm miễn phí.
 
 ### Dịch sát ngữ cảnh hơn
 

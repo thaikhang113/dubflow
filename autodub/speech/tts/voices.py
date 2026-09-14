@@ -48,10 +48,10 @@ STYLES: tuple[tuple[str, str], ...] = (
     ("Kể chuyện", "doc_truyen"),
 )
 
-_GENDER_LABEL = dict((k, v) for v, k in GENDERS)
-_REGION_LABEL = dict((k, v) for v, k in REGIONS)
-_COUNTRY_LABEL = dict((k, v) for v, k in COUNTRIES)
-_STYLE_LABEL = dict((k, v) for v, k in STYLES)
+_GENDER_LABEL = {k: v for v, k in GENDERS}
+_REGION_LABEL = {k: v for v, k in REGIONS}
+_COUNTRY_LABEL = {k: v for v, k in COUNTRIES}
+_STYLE_LABEL = {k: v for v, k in STYLES}
 
 # Nhãn giọng của VieNeu viết vùng miền bằng tiếng Việt có dấu.
 _REGION_FROM_TEXT = {"bắc": "bac", "trung": "trung", "nam": "nam"}
@@ -112,9 +112,7 @@ class Voice:
             return False
         if style and self.style != style:
             return False
-        if query and query.strip().lower() not in self.label.lower():
-            return False
-        return True
+        return not (query and query.strip().lower() not in self.label.lower())
 
 
 # --- Không có giọng builtin — tất cả phải tải từ internet ---------------

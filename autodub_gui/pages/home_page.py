@@ -40,8 +40,8 @@ _PAGE_MARGIN = 28
 _STEPS_TEXT = (
     "1. Kéo một video vào ô bên trái, hoặc dán liên kết ở trang Tạo dự án.",
     "2. Chọn giọng đọc và kiểu phụ đề — mọi mục đều đã có sẵn giá trị hợp lý.",
-    "3. Bấm Bắt đầu lồng tiếng rồi chờ. Bạn có thể tắt máy giữa chừng, "
-    "lần sau chạy tiếp từ chỗ dừng.",
+    ("3. Bấm Bắt đầu lồng tiếng rồi chờ. Bạn có thể tắt máy giữa chừng, "
+    "lần sau chạy tiếp từ chỗ dừng."),
 )
 
 
@@ -223,7 +223,7 @@ class HomePage(BasePage):
             return
         try:
             output_dir = self._settings_provider().output_dir
-        except Exception:  # noqa: BLE001 — tệp cấu hình hỏng thì để trống
+        except Exception:
             output_dir = ""
         if not output_dir:
             self._apply([])

@@ -16,7 +16,7 @@ class CapCutSignError(CapCutError):
 class CapCutAPIError(CapCutError):
     """Raised when the API returns an error response or non-200 HTTP code."""
 
-    def __init__(self, message: str, status_code: int = 0, response_data: dict = None):
+    def __init__(self, message: str, status_code: int = 0, response_data: dict | None = None):
         super().__init__(message)
         self.status_code = status_code
         self.response_data = response_data or {}

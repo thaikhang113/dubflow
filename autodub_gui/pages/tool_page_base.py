@@ -70,7 +70,7 @@ class ToolPage(BasePage):
     TITLE: str = ""
     SUBTITLE: str = ""
     #: Những nhóm mở sẵn khi vào trang; còn lại gập cho gọn.
-    EXPANDED: set[str] = set()
+    EXPANDED: frozenset[str] = frozenset()
     SAVE_LABEL: str = "Lưu thay đổi"
     SAVED_TOAST: str = "Đã lưu thay đổi."
 

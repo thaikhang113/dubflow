@@ -40,7 +40,7 @@ def _frames(video: str, times: list[float], output_dir: str) -> list[str]:
          "-frames:v", str(len(times)), "-y", pattern],
         capture_output=True, text=True,
         timeout=ocr_frame_timeout_s(len(times)),
-    )
+    check=False)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr[-500:] or "OCR frame extraction failed")
     return [
@@ -155,13 +155,13 @@ def _load_model(model_dir: str):
         ),
     }
     try:
-        model = AutoModel.from_pretrained(  # noqa: B615
+        model = AutoModel.from_pretrained(  # nosec B615 — revision pinned in kwargs
             MODEL_NAME,
             **kwargs,
         )
     except Exception:
         kwargs["_attn_implementation"] = "eager"
-        model = AutoModel.from_pretrained(  # noqa: B615
+        model = AutoModel.from_pretrained(  # nosec B615 — revision pinned in kwargs
             MODEL_NAME,
             **kwargs,
         )

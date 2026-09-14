@@ -65,8 +65,8 @@ def test_windows_skips_virtual_display_adapter_when_real_gpu_is_present():
         command_runner=_runner({
             "powershell": (
                 0,
-                "DeskIn Virtual Display Adapter\n"
-                "NVIDIA GeForce RTX 3050 Ti Laptop GPU",
+                ("DeskIn Virtual Display Adapter\n"
+                "NVIDIA GeForce RTX 3050 Ti Laptop GPU"),
             ),
             "nvidia-smi": (0, "GPU 0: NVIDIA GeForce RTX 3050 Ti Laptop GPU"),
         }),

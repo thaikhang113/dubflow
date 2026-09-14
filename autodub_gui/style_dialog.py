@@ -81,11 +81,11 @@ def extract_frame(video_path: str, out_png: str, at_seconds: float = 1.0) -> str
         "-ss", str(at_seconds), "-i", video_path,
         "-frames:v", "1", "-y", out_png,
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False)
     if result.returncode != 0 or not os.path.exists(out_png):
         # Retry from the very start — the video may be shorter than at_seconds.
         cmd[cmd.index("-ss") + 1] = "0"
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False)
         if result.returncode != 0 or not os.path.exists(out_png):
             raise RuntimeError(f"Could not extract a frame: {result.stderr}")
     return out_png
@@ -108,7 +108,7 @@ class _FrameWorker(QThread):
         try:
             path = extract_frame(self._video, self._out, self._at)
             self.ready.emit(path)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             self.failed.emit(str(e))
 
 

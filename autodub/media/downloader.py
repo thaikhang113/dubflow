@@ -58,6 +58,9 @@ def _extract_info_with_retry(ydl, url: str, attempts: int = 3) -> dict:
                 f"after HTTP {transient.group(1)}; waiting {delay}s"
             )
             time.sleep(delay)
+    # Vòng lặp luôn return hoặc raise khi attempts >= 1; xuống tới đây nghĩa là
+    # gọi với attempts <= 0 - nói rõ thay vì trả None cho nơi cần dict.
+    raise RuntimeError(f"_extract_info_with_retry: attempts={attempts} vô nghĩa")
 
 
 def _save_meta(output_dir: str, title: str, uploader: str = "") -> None:

@@ -67,7 +67,7 @@ class TranslateCheckpoint:
                 if self._items:
                     logger.info(f"Đọc sổ dịch tạm: {len(self._items)} câu "
                                 "đã dịch từ lượt trước")
-        except Exception as e:  # noqa: BLE001 — sổ hỏng/sai khóa đều dịch lại
+        except Exception as e:
             logger.warning(f"Sổ dịch tạm hỏng ({e}) — dịch lại từ đầu")
             self._items = {}
 
@@ -206,6 +206,29 @@ def parse_response_segments(content: str) -> list[dict]:
     )
 
 
+def parse_response_object(content: str) -> dict:
+    """Đọc câu trả lời của mô hình thành một JSON object.
+
+    Bản sao của :func:`parse_response_segments` cho những bước không trả danh
+    sách câu (ví dụ tiêu đề + mô tả đăng bài): cùng chịu fence, câu dẫn thừa
+    và khối bị cắt giữa chừng, nhưng bắt buộc kết quả là ``dict``.
+    """
+    raw = strip_fences(content)
+    for candidate in (raw, _slice_to_payload(raw), repair_json(raw)):
+        if not candidate:
+            continue
+        try:
+            data = json.loads(candidate)
+        except (ValueError, TypeError):
+            continue
+        if isinstance(data, dict):
+            return data
+    raise TranslateError(
+        "Không đọc được kết quả (JSON hỏng): "
+        + raw[:200].replace("\n", " ")
+    )
+
+
 def merge_translations(batch: list[dict], returned: list[dict],
                        text_field: str) -> list[dict]:
     """Ghép bản dịch trả về vào đúng câu gốc, theo ``id``.
@@ -231,7 +254,7 @@ def merge_translations(batch: list[dict], returned: list[dict],
     # ghép theo vị trí, còn hơn ném đi cả một lô đã dịch xong.
     if not by_id and len(returned) == len(batch):
         by_id = {int(seg.get("id")): str(item.get(text_field, "") or "").strip()
-                 for seg, item in zip(batch, returned)
+                 for seg, item in zip(batch, returned, strict=True)
                  if str(item.get(text_field, "") or "").strip()}
 
     merged: list[dict] = []

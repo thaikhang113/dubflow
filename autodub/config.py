@@ -37,10 +37,8 @@ def _auto_vieneu_workers() -> int:
     # Công thức này giữ nguyên số luồng của máy 6-10 GB như trước, nhưng máy
     # khỏe (24-32 GB, nhiều nhân) không còn bị kẹp ở 3 nữa — TTS là bước lâu
     # nhất nên trần thấp làm mất phần lớn hiệu năng sẵn có.
-    if avail is None:          # không đọc được RAM — giữ mặc định an toàn
-        by_ram = 3
-    else:
-        by_ram = max(1, int((avail - 3.0) // 1.5))
+    # Không đọc được RAM thì giữ mặc định an toàn.
+    by_ram = 3 if avail is None else max(1, int((avail - 3.0) // 1.5))
 
     workers = max(1, min(_VIENEU_WORKER_CEILING, by_ram, by_cpu))
     if workers < _VIENEU_WORKER_CEILING:
@@ -238,12 +236,10 @@ class Settings:
     # prompt dịch/phân tích biết video nói về gì ngay từ tiêu đề.
     translate_video_title: str = ""
 
-    # --- Dịch hai lượt ----------------------------------------------------
-    # Lượt 0 "hiểu video": trước khi dịch, gửi toàn bộ lời thoại gốc để rút ra
-    # tóm tắt + nhân vật/xưng hô + thuật ngữ, rồi tự bơm vào ngữ cảnh dịch
-    # (mục người dùng điền tay luôn được ưu tiên hơn).
-    # Lượt rà soát: sau khi dịch, soát các câu nghi vấn (vượt ngân sách nhiều,
-    # còn ký tự CJK, quá ngắn so với câu gốc) rồi dịch lại đúng các câu đó.
+    # --- Ngữ cảnh dịch ----------------------------------------------------
+    # Năm ô dưới đây gửi kèm MỖI lô dịch; ô trống thì không gửi. Trình chỉnh
+    # sửa lưu bản đã sửa riêng cho từng video ở data/video_context.json, và
+    # bản đó thắng ngữ cảnh chung điền ở đây.
 
     # --- Chung ------------------------------------------------------------
     default_source_lang: str = "zh-CN"
@@ -262,16 +258,17 @@ class Settings:
     video_url: str = ""
 
     # --- Nội dung đăng bài ------------------------------------------------
-    # Tạo tiêu đề/mô tả/hashtag sau mỗi lần lồng tiếng (máy chủ viết).
-    # Tắt = bỏ hẳn bước này (và không tốn Vox).
+    # Tiêu đề/mô tả/hashtag do model ở endpoint dịch viết (autodub.content).
+    # Chưa cấu hình endpoint thì bỏ qua bước này; lời thoại và ảnh bìa gốc
+    # vẫn luôn được lưu vào thư mục youtube của dự án.
     generate_metadata: bool = True
 
     # --- Dịch tự động -----------------------------------------------------
-    # Mô hình, lời nhắc và API key đều nằm trên máy chủ VoxDub — app chỉ gửi
-    # câu thoại và ngữ cảnh. Hai nút vặn dưới đây là thứ duy nhất còn lại ở
-    # phía máy khách vì chúng quyết định cách CHIA VIỆC, không phải cách dịch.
+    # App gửi câu thoại + ngữ cảnh tới đúng endpoint OpenAI-compatible người
+    # dùng điền ở trang Dịch thuật (Ollama chạy trên máy cũng được). Hai nút
+    # vặn dưới đây quyết định cách CHIA VIỆC, không phải cách dịch.
     translate_enabled: bool = True
-    # Số câu mỗi lượt gửi lên máy chủ (trần cứng phía máy chủ là 120).
+    # Số câu mỗi lượt gửi lên endpoint (trần cứng của app là 40).
     translate_batch_size: int = 20
     translation_endpoint: str = ""
     translation_api_key: str = ""

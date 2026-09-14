@@ -170,7 +170,7 @@ def test_split_segment_divides_text_at_word_boundary(work_dir) -> None:
     left_text = segments[1][_TEXT_FIELD]
     right_text = segments[2][_TEXT_FIELD]
     assert left_text and right_text
-    assert " ".join((left_text, right_text)).split() == (
+    assert f"{left_text} {right_text}".split() == (
         ["Câu", "thoại", "số", "2", "bằng", "tiếng", "Việt"])
 
 
