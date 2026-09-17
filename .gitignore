@@ -40,6 +40,9 @@ qa/shots/
 qa/findings*.json
 qa/__pycache__/
 
+# Trang thai rieng cua tro ly AI (khong phai ma ung dung)
+.workbuddy-ai/
+
 # Models (nhieu GB; tai ve bang cac script trong scripts/)
 models/
 !control_server/src/models/
