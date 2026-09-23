@@ -520,7 +520,8 @@ class DownloadPage(BasePage):
     def _fill_status(self, url: str, row: int) -> None:
         status, detail = self._status.get(url, ("waiting", ""))
         label, kind = _STATUS_VIEW.get(status, _STATUS_VIEW["waiting"])
-        badge = StatusBadge(label, kind)
+        display_label = detail if (status == "start" and detail.startswith("[download]")) else label
+        badge = StatusBadge(display_label, kind)
         if detail:
             badge.setToolTip(detail)
         self.table.set_widget(row, 1, badge)

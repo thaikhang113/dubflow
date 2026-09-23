@@ -709,6 +709,11 @@ class DownloadWorker(QThread):
                 if gate:
                     gate.acquire()
                 try:
+                    def _on_prog(data: dict):
+                        from autodub.media.downloader import format_download_progress
+                        prog_str = format_download_progress(data)
+                        self.item_status.emit(i, total, url, "start", prog_str)
+
                     for attempt, delay in enumerate((0, 2, 5), start=1):
                         if delay and self._cancel_event.wait(delay):
                             return i, url, None, "cancelled"
@@ -719,7 +724,9 @@ class DownloadWorker(QThread):
                                 url, item_dir, self._cookies_browser,
                                 self._cookies_file,
                                 douyin_cookies_file=self._douyin_cookies_file,
-                                fragment_workers=self._fragment_workers)
+                                fragment_workers=self._fragment_workers,
+                                progress=_on_prog,
+                                cancel_event=self._cancel_event)
                             return i, url, entry, None
                         except Exception as e:
                             message = str(e)

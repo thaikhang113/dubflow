@@ -233,3 +233,39 @@ def test_download_stream_aborts_and_removes_partial_file(monkeypatch, tmp_path):
         )
 
     assert not partial.exists()
+
+def test_format_download_progress():
+    from autodub.media.downloader import format_download_progress
+
+    data = {
+        "percent": 35.4,
+        "total_bytes": int(2.8 * 1024**3),
+        "speed_bytes_s": 14.5 * 1024**2,
+        "eta_s": 128,
+    }
+    formatted = format_download_progress(data)
+    assert "[download]" in formatted
+    assert "35.4%" in formatted
+    assert "2.80GiB" in formatted
+    assert "14.5MiB/s" in formatted
+    assert "ETA 02:08" in formatted
+
+
+def test_narrator_acquire_progress():
+    from autodub.progress import ProgressEvent
+    from autodub_gui.log_text import Narrator
+
+    narrator = Narrator()
+    event = ProgressEvent(
+        step="acquire",
+        status="progress",
+        detail="[download]  35.4% of ~2.80GiB at 14.5MiB/s ETA 02:08",
+        current=35,
+        total=100,
+    )
+    result = narrator.narrate(event)
+    assert result is not None
+    text, level, is_progress = result
+    assert is_progress is True
+    assert "[download]  35.4% of ~2.80GiB" in text
+

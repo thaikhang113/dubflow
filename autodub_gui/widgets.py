@@ -180,6 +180,12 @@ class StepTracker(QWidget):
         status.setStyleSheet(f"color: {color}; font-size: 12px;")
 
         if ev.status == "progress" and ev.total:
+            if ev.step == "acquire":
+                status.setText(ev.detail or f"{ev.current}%")
+                self._bar.setVisible(True)
+                self._bar.setMaximum(100)
+                self._bar.setValue(int(ev.current))
+                return
             # Remaining-time estimate from this step's own throughput.
             t0 = self._t0.setdefault(ev.step, time.monotonic())
             text = f"{ev.current}/{ev.total}"
@@ -192,7 +198,7 @@ class StepTracker(QWidget):
                 self._bar.setVisible(True)
                 self._bar.setMaximum(ev.total)
                 self._bar.setValue(ev.current)
-        elif ev.step == "tts" and ev.status == "done":
+        elif ev.step in ("tts", "acquire") and ev.status in ("done", "skip"):
             self._bar.setVisible(False)
             status.setText("xong")
         elif ev.status == "error":

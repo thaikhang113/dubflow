@@ -30,4 +30,4 @@ __all__ = [
     "get_target",
 ]
 
-__version__ = "3.0.23"
+__version__ = "3.0.24"

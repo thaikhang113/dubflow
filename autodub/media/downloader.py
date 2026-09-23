@@ -15,6 +15,57 @@ logger = setup_logging("autodub.downloader")
 
 ProgressCallback = Callable[[dict], None]
 
+
+def format_download_progress(data: dict) -> str:
+    """Format download metrics into a compact human-readable progress string.
+
+    Example: '[download]  35.4% of ~2.80GiB at 14.5MiB/s ETA 02:08'
+    """
+    percent = data.get("percent")
+    pct_str = f"{percent:.1f}%" if isinstance(percent, (int, float)) else ""
+
+    total = data.get("total_bytes")
+    if total and total > 0:
+        if total >= 1024**3:
+            total_str = f"~{total / (1024**3):.2f}GiB"
+        else:
+            total_str = f"~{total / (1024**2):.1f}MiB"
+    else:
+        total_str = ""
+
+    speed = data.get("speed_bytes_s")
+    if speed and speed > 0:
+        if speed >= 1024**3:
+            speed_str = f"{speed / (1024**3):.2f}GiB/s"
+        elif speed >= 1024**2:
+            speed_str = f"{speed / (1024**2):.1f}MiB/s"
+        else:
+            speed_str = f"{speed / 1024:.1f}KiB/s"
+    else:
+        speed_str = ""
+
+    eta = data.get("eta_s")
+    if eta is not None and eta >= 0:
+        m, s = divmod(int(eta), 60)
+        h, m = divmod(m, 60)
+        eta_str = f"{h:02d}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
+    else:
+        eta_str = ""
+
+    parts = []
+    if pct_str:
+        if total_str:
+            parts.append(f"{pct_str} of {total_str}")
+        else:
+            parts.append(pct_str)
+    if speed_str:
+        parts.append(f"at {speed_str}")
+    if eta_str:
+        parts.append(f"ETA {eta_str}")
+
+    return f"[download]  {' '.join(parts)}" if parts else "[download]  đang tải..."
+
+
 def _emit_progress(
     callback: ProgressCallback | None,
     status: str,
@@ -27,9 +78,9 @@ def _emit_progress(
         return
     percent = None
     if total and total > 0:
-        percent = min(100, max(0, int(downloaded * 100 / total)))
+        percent = min(100.0, max(0.0, round(downloaded * 100.0 / total, 1)))
     if status == "finished":
-        percent = 100
+        percent = 100.0
     try:
         callback({
             "status": status,
@@ -273,6 +324,8 @@ def download_one(
     cookies_file: str | None = None,
     douyin_cookies_file: str | None = None,
     fragment_workers: int = 2,
+    progress: ProgressCallback | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> dict:
     """Download a single URL and return metadata + saved filepath.
 
@@ -280,11 +333,19 @@ def download_one(
     Playwright-based extractor because yt-dlp's Douyin path is broken upstream.
     All other sites continue through yt-dlp.
     """
+    if cancel_event is not None and cancel_event.is_set():
+        raise PipelineCancelled("Video download cancelled")
+
     from autodub.media.douyin import download_douyin, is_douyin_url
     if is_douyin_url(url):
         logger.info(f"Routing to Playwright Douyin extractor: {url}")
+        douyin_kwargs = {}
+        if progress is not None:
+            douyin_kwargs["progress"] = progress
+        if cancel_event is not None:
+            douyin_kwargs["cancel_event"] = cancel_event
         return download_douyin(
-            url, output_dir, cookies_file=douyin_cookies_file)
+            url, output_dir, cookies_file=douyin_cookies_file, **douyin_kwargs)
 
     from autodub.media.bilibili import canonical_url
     canonical = canonical_url(normalize_url(url))
@@ -293,6 +354,24 @@ def download_one(
 
     ydl_opts = build_ydl_opts(
         output_dir, cookies_from_browser, cookies_file, fragment_workers)
+
+    if progress is not None or cancel_event is not None:
+        def progress_hook(data: dict) -> None:
+            if cancel_event is not None and cancel_event.is_set():
+                raise PipelineCancelled("Video download cancelled")
+            status = data.get("status", "")
+            if status not in ("downloading", "finished"):
+                return
+            _emit_progress(
+                progress,
+                status,
+                downloaded=data.get("downloaded_bytes", 0),
+                total=(data.get("total_bytes")
+                       or data.get("total_bytes_estimate")),
+                speed=data.get("speed"),
+                eta=data.get("eta"),
+            )
+        ydl_opts["progress_hooks"] = [progress_hook]
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = _extract_info_with_retry(ydl, canonical)

@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.0.24 - 2026-09-23
+
+### Added
+
+- **Hiển thị tiến độ tải video thời gian thực chi tiết trên giao diện GUI.**
+  Định dạng chuẩn xác theo dữ liệu yt-dlp/Douyin: `[download]  35.4% of ~2.80GiB at 14.5MiB/s ETA 02:08`. Cập nhật đồng bộ trên thanh tiến trình StepTracker, khung Nhật ký (ghi đè dòng tiến độ tại chỗ) và bảng trạng thái Tải xuống (`DownloadPage`).
+
 ## 3.0.23 - 2026-09-23
 
 ### Fixed

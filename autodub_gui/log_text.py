@@ -97,6 +97,10 @@ class Narrator:
         if step == "done":
             return None            # dòng tổng kết đã có trong NOTICES
         if status == "progress":
+            if step == "acquire":
+                detail = getattr(event, "detail", "")
+                if detail:
+                    return detail, logging.INFO, True
             template = _STEP_PROGRESS.get(step)
             total = getattr(event, "total", 0)
             if not template or not total:

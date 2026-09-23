@@ -1619,12 +1619,26 @@ class DubPipeline:
             return remembered
 
         if url:
-            from autodub.media.downloader import download_video
+            from autodub.media.downloader import download_video, format_download_progress
+
+            def _on_download_progress(data: dict) -> None:
+                percent = data.get("percent")
+                detail = format_download_progress(data)
+                self._reporter.emit(
+                    "acquire",
+                    "progress",
+                    detail=detail,
+                    current=int(percent) if percent is not None else 0,
+                    total=100,
+                )
+
             return download_video(
                 url,
                 work_dir,
                 cookies_file=self.settings.bilibili_cookies_file,
                 douyin_cookies_file=self.settings.douyin_cookies_file,
+                progress=_on_download_progress,
+                cancel_event=self._reporter.cancel_event,
             )
 
         raise RuntimeError(
