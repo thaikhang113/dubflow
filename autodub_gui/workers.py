@@ -16,7 +16,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from PySide6.QtCore import QObject, QRunnable, QThread, Signal
 
-from autodub.cancel import cancel_processes, clear_cancel_request, run_registered
+from autodub.cancel import (
+    cancel_processes,
+    cancel_scope,
+    clear_cancel_request,
+    run_registered,
+)
 from autodub.config import Settings
 from autodub.pipeline import DubPipeline, DubRequest, DubResult
 from autodub.progress import PipelineCancelled
@@ -80,19 +85,20 @@ class DubWorker(QThread):
 
     def cancel(self) -> None:
         self._cancel_event.set()
-        cancel_processes()
+        cancel_processes(scope="gui")
 
     def run(self) -> None:
-        clear_cancel_request()
+        clear_cancel_request(scope="gui")
         handler = attach_gui_logging(self.log)
         try:
-            pipeline = DubPipeline(
-                self._settings,
-                progress=self.progress.emit,
-                cancel_event=self._cancel_event,
-            )
-            result: DubResult = pipeline.run(self._request)
-            self.finished_ok.emit(result)
+            with cancel_scope("gui"):
+                pipeline = DubPipeline(
+                    self._settings,
+                    progress=self.progress.emit,
+                    cancel_event=self._cancel_event,
+                )
+                result: DubResult = pipeline.run(self._request)
+                self.finished_ok.emit(result)
         except PipelineCancelled:
             self.cancelled.emit()
         except Exception as e:
@@ -404,12 +410,12 @@ class BatchWorker(QThread):
 
     def cancel(self) -> None:
         self._cancel_event.set()
-        cancel_processes()
+        cancel_processes(scope="gui")
 
     def run(self) -> None:
         from autodub.batch import run_batch
 
-        clear_cancel_request()
+        clear_cancel_request(scope="gui")
         handler = attach_gui_logging(self.log)
 
         def observer(i, total, item, status, detail):
@@ -419,28 +425,29 @@ class BatchWorker(QThread):
         demucs_cache = None
         whisper_cache = None
         try:
-            if self._reuse_tts:
-                from autodub.speech.tts import SynthCache
-                synth_cache = SynthCache()
-            if len(self._items) > 1:
-                # Giữ worker Demucs sống giữa các video — CLI (run_batch) đã
-                # làm vậy, nhánh GUI trước đây quên nên nạp lại model mỗi video.
-                from autodub.media.vocal_separator import DemucsCache
-                demucs_cache = DemucsCache()
-                from autodub.speech.transcriber import WhisperCache
-                whisper_cache = WhisperCache()
-            pipeline = DubPipeline(
-                self._settings,
-                progress=self.progress.emit,
-                cancel_event=self._cancel_event,
-                synth_cache=synth_cache,
-                demucs_cache=demucs_cache,
-                whisper_cache=whisper_cache,
-            )
-            summary = run_batch(self._items, self._settings, self._template,
-                                pipeline=pipeline, observer=observer,
-                                retry_done=self._retry_done)
-            self.finished_ok.emit(summary)
+            with cancel_scope("gui"):
+                if self._reuse_tts:
+                    from autodub.speech.tts import SynthCache
+                    synth_cache = SynthCache()
+                if len(self._items) > 1:
+                    # Giữ worker Demucs sống giữa các video — CLI (run_batch) đã
+                    # làm vậy, nhánh GUI trước đây quên nên nạp lại model mỗi video.
+                    from autodub.media.vocal_separator import DemucsCache
+                    demucs_cache = DemucsCache()
+                    from autodub.speech.transcriber import WhisperCache
+                    whisper_cache = WhisperCache()
+                pipeline = DubPipeline(
+                    self._settings,
+                    progress=self.progress.emit,
+                    cancel_event=self._cancel_event,
+                    synth_cache=synth_cache,
+                    demucs_cache=demucs_cache,
+                    whisper_cache=whisper_cache,
+                )
+                summary = run_batch(self._items, self._settings, self._template,
+                                    pipeline=pipeline, observer=observer,
+                                    retry_done=self._retry_done)
+                self.finished_ok.emit(summary)
         except PipelineCancelled:
             self.cancelled.emit()
         except Exception as e:
@@ -789,7 +796,7 @@ class TimelineThumbnailWorker(QThread):
     def cancel(self) -> None:
         """Bỏ dở phần khung còn lại — teardown không phải đợi hết 12 lệnh ffmpeg."""
         self._cancel_event.set()
-        cancel_processes()
+        cancel_processes(scope="gui")
 
     def run(self) -> None:
         import subprocess
@@ -797,36 +804,37 @@ class TimelineThumbnailWorker(QThread):
         from autodub.workdir import data_path
 
         try:
-            if not self._video or not __import__("os").path.isfile(self._video):
-                return
-            dur = max(1.0, self._duration)
-            n = self._N_FRAMES
-            thumbs_dir = data_path(
-                self._work_dir, self._THUMB_DIR, create_dir=True)
-
-            results: list[tuple[float, str]] = []
-            for i in range(n):
-                if self._cancel_event.is_set():
+            with cancel_scope("gui"):
+                if not self._video or not __import__("os").path.isfile(self._video):
                     return
-                t = dur * (i + 0.5) / n
-                dst = __import__("os").path.join(thumbs_dir,
-                                                 f"frame_{i:03d}.jpg")
-                cmd = [
-                    "ffmpeg", "-v", "error",
-                    "-ss", f"{t:.3f}", "-i", self._video,
-                    "-frames:v", "1", "-q:v", "5",
-                    "-vf", (f"scale={self._THUMB_W}:{self._THUMB_H}:force_original_aspect_ratio=decrease,"
-                           f"pad={self._THUMB_W}:{self._THUMB_H}:(ow-iw)/2:(oh-ih)/2"),
-                    "-y", dst,
-                ]
-                flags = (subprocess.CREATE_NO_WINDOW
-                         if __import__("os").name == "nt" else 0)
-                run_registered(cmd, capture_output=True, timeout=10,
-                               creationflags=flags)
-                if __import__("os").path.isfile(dst):
-                    results.append((t, dst))
-            if results and not self._cancel_event.is_set():
-                self.ready.emit(results)
+                dur = max(1.0, self._duration)
+                n = self._N_FRAMES
+                thumbs_dir = data_path(
+                    self._work_dir, self._THUMB_DIR, create_dir=True)
+
+                results: list[tuple[float, str]] = []
+                for i in range(n):
+                    if self._cancel_event.is_set():
+                        return
+                    t = dur * (i + 0.5) / n
+                    dst = __import__("os").path.join(thumbs_dir,
+                                                     f"frame_{i:03d}.jpg")
+                    cmd = [
+                        "ffmpeg", "-v", "error",
+                        "-ss", f"{t:.3f}", "-i", self._video,
+                        "-frames:v", "1", "-q:v", "5",
+                        "-vf", (f"scale={self._THUMB_W}:{self._THUMB_H}:force_original_aspect_ratio=decrease,"
+                               f"pad={self._THUMB_W}:{self._THUMB_H}:(ow-iw)/2:(oh-ih)/2"),
+                        "-y", dst,
+                    ]
+                    flags = (subprocess.CREATE_NO_WINDOW
+                             if __import__("os").name == "nt" else 0)
+                    run_registered(cmd, capture_output=True, timeout=10,
+                                   creationflags=flags)
+                    if __import__("os").path.isfile(dst):
+                        results.append((t, dst))
+                if results and not self._cancel_event.is_set():
+                    self.ready.emit(results)
         except Exception as e:
             if not self._cancel_event.is_set():
                 self.failed.emit(str(e))
@@ -849,7 +857,7 @@ class ExportAudioWorker(QThread):
 
     def cancel(self) -> None:
         self._cancel_event.set()
-        cancel_processes()
+        cancel_processes(scope="gui")
 
     def run(self) -> None:
         import subprocess
@@ -858,38 +866,40 @@ class ExportAudioWorker(QThread):
         from autodub.utils import ffmpeg_timeout_s
         from autodub.workdir import data_path
 
-        clear_cancel_request()
+        clear_cancel_request(scope="gui")
         handler = attach_gui_logging(self.log)
         try:
-            src = data_path(self._work_dir, "audio_vi_full.wav")
-            if not __import__("os").path.isfile(src):
-                self.failed.emit(
-                    "Chưa có tệp audio_vi_full.wav — hãy xuất video ít nhất "
-                    "một lần trước khi tải âm thanh riêng.")
-                return
-            cmd = [
-                "ffmpeg", "-y", "-i", src,
-                "-b:a", self._bitrate,
-                "-map_metadata", "-1",
-                self._output_path,
-            ]
-            try:
-                result = run_registered(
-                    cmd, capture_output=True, text=True,
-                    encoding="utf-8", errors="replace",
-                    timeout=ffmpeg_timeout_s(wav_duration_s(src)))
-            except subprocess.TimeoutExpired:
-                if not self._cancel_event.is_set():
+            with cancel_scope("gui"):
+                src = data_path(self._work_dir, "audio_vi_full.wav")
+                if not __import__("os").path.isfile(src):
                     self.failed.emit(
-                        "ffmpeg treo quá lâu khi chuyển sang MP3 — hãy thử lại.")
-                return
-            if self._cancel_event.is_set():
-                return
-            if result.returncode != 0:
-                self.failed.emit(
-                    f"ffmpeg trả về lỗi:\n{result.stderr[-800:]}")
-                return
-            self.finished_ok.emit(self._output_path)
+                        "Chưa có tệp audio_vi_full.wav — hãy xuất video ít nhất "
+                        "một lần trước khi tải âm thanh riêng.")
+                    return
+                cmd = [
+                    "ffmpeg", "-y", "-i", src,
+                    "-b:a", self._bitrate,
+                    "-map_metadata", "-1",
+                    self._output_path,
+                ]
+                try:
+                    result = run_registered(
+                        cmd, capture_output=True, text=True,
+                        encoding="utf-8", errors="replace",
+                        timeout=ffmpeg_timeout_s(wav_duration_s(src)),
+                    )
+                except subprocess.TimeoutExpired:
+                    if not self._cancel_event.is_set():
+                        self.failed.emit(
+                            "ffmpeg treo quá lâu khi chuyển sang MP3 — hãy thử lại.")
+                    return
+                if self._cancel_event.is_set():
+                    return
+                if result.returncode != 0:
+                    self.failed.emit(
+                        f"ffmpeg trả về lỗi:\n{result.stderr[-800:]}")
+                    return
+                self.finished_ok.emit(self._output_path)
         except Exception as e:
             if not self._cancel_event.is_set():
                 self.failed.emit(str(e))

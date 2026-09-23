@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.0.23 - 2026-09-23
+
+### Fixed
+
+- **Tự động nhận diện và nạp thư mục binary FFmpeg/FFprobe (`candidate_bin_dirs` & `ensure_bin_in_path`).**
+  Tự động quét và nạp thư mục `bin` cài đặt (`%LOCALAPPDATA%/DubFlow/bin` trên Windows hoặc `~/.local/share/dubflow/bin` trên Linux) vào `PATH` ngay khi import `autodub` và trong test runner (`tests/conftest.py`). Khắc phục triệt để lỗi không tìm thấy `ffmpeg`/`ffprobe` (`FileNotFoundError: [WinError 2]`) khi chạy lệnh CLI hoặc chạy kiểm thử `pytest` ngoài môi trường GUI.
+- **Phân lập phạm vi hủy tiến trình con (Scope-Aware Process Cancellation).**
+  Nâng cấp `autodub/cancel.py` với `cancel_scope` và `contextvars`, gắn nhãn phạm vi phân lập cho các worker GUI (`DubWorker`, `BatchWorker`, `TimelineThumbnailWorker`, `ExportAudioWorker`) và worker hàng đợi OpenClaw (`autodub/remote_worker.py`). Ngăn chặn tình trạng khi người dùng bấm "Dừng" trên GUI làm chết nhầm các tiến trình con AI (Faster-Whisper, VieNeu, Demucs, FFmpeg) đang xử lý của OpenClaw hoặc các luồng độc lập khác.
+- **Đồng bộ hóa phiên bản `autodub_gui.__version__`** với phiên bản chuẩn của dự án.
+
 ## 3.0.22 - 2026-09-14
 
 ### Fixed

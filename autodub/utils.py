@@ -17,6 +17,41 @@ def app_root() -> str:
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def candidate_bin_dirs() -> list[str]:
+    """Danh sách các thư mục bin khả dĩ chứa ffmpeg, ffprobe, yt-dlp."""
+    candidates = [
+        os.path.join(data_root(), "bin"),
+        os.path.join(app_root(), "bin"),
+    ]
+    if os.name == "nt":
+        local_app = os.environ.get("LOCALAPPDATA")
+        if local_app:
+            candidates.append(os.path.join(local_app, "DubFlow", "bin"))
+    else:
+        xdg = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+        candidates.append(os.path.join(xdg, "dubflow", "bin"))
+    seen: set[str] = set()
+    result: list[str] = []
+    for d in candidates:
+        if not d:
+            continue
+        norm = os.path.normcase(os.path.abspath(d))
+        if norm not in seen and os.path.isdir(d):
+            seen.add(norm)
+            result.append(d)
+    return result
+
+
+def ensure_bin_in_path() -> None:
+    """Đảm bảo thư mục bin chứa ffmpeg/ffprobe có mặt trong PATH (idempotent)."""
+    current = os.environ.get("PATH", "")
+    existing = {os.path.normcase(os.path.abspath(p)) for p in current.split(os.pathsep) if p}
+    to_add = [d for d in candidate_bin_dirs() if os.path.normcase(os.path.abspath(d)) not in existing]
+    if to_add:
+        os.environ["PATH"] = os.pathsep.join(to_add) + (os.pathsep + current if current else "")
+
+
+
 def data_root() -> str:
     """Thư mục dữ liệu có thể ghi của app.
 

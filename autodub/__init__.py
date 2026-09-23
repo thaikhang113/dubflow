@@ -12,6 +12,9 @@ from autodub.config import ConfigError, Settings
 from autodub.languages import TARGETS, TargetLang, get_target
 from autodub.pipeline import DubPipeline, DubRequest, DubResult
 from autodub.progress import PipelineCancelled, ProgressEvent, ProgressFn
+from autodub.utils import ensure_bin_in_path
+
+ensure_bin_in_path()
 
 __all__ = [
     "TARGETS",
@@ -27,4 +30,4 @@ __all__ = [
     "get_target",
 ]
 
-__version__ = "3.0.22"
+__version__ = "3.0.23"

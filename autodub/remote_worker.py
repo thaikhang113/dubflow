@@ -8,6 +8,8 @@ import time
 from dataclasses import replace
 from pathlib import Path
 
+from autodub.cancel import cancel_processes, cancel_scope
+
 _TOP_LEVEL_KEYS = {"job_id", "request", "branding"}
 _REQUEST_KEYS = {
     "url", "file_path", "source_lang", "voice", "clone_voice",
@@ -203,10 +205,11 @@ def run_worker(root: str, settings, stop_event=None, poll_s: float = 1.0) -> Non
             _write_status(base, job_id, status="running", step="pipeline")
             request = request_from_payload(payload)
             job_settings = settings_from_payload(payload, settings)
+            scope = f"openclaw_{job_id}"
             cancel_event = threading.Event()
             watcher = threading.Thread(
                 target=_watch_cancel,
-                args=(base, job_id, cancel_event, stop_event),
+                args=(base, job_id, cancel_event, stop_event, scope),
                 daemon=True,
             )
             watcher.start()
@@ -221,9 +224,10 @@ def run_worker(root: str, settings, stop_event=None, poll_s: float = 1.0) -> Non
                     percent=percent, detail=event.detail,
                 )
 
-            result = DubPipeline(
-                job_settings, progress=on_progress, cancel_event=cancel_event,
-            ).run(request)
+            with cancel_scope(scope):
+                result = DubPipeline(
+                    job_settings, progress=on_progress, cancel_event=cancel_event,
+                ).run(request)
             final_status = "cancelled" if cancel_event.is_set() else result.status
             _write_status(
                 base,
@@ -245,10 +249,12 @@ def run_worker(root: str, settings, stop_event=None, poll_s: float = 1.0) -> Non
                 pass
 
 
-def _watch_cancel(root: Path, job_id: str, cancel_event, stop_event) -> None:
+def _watch_cancel(root: Path, job_id: str, cancel_event, stop_event, scope: str | None = None) -> None:
     marker = root / "cancel" / job_id
     while not cancel_event.is_set():
         if marker.exists() or (stop_event is not None and stop_event.is_set()):
             cancel_event.set()
+            if scope:
+                cancel_processes(scope=scope)
             return
         time.sleep(0.25)
