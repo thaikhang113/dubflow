@@ -96,3 +96,33 @@ def save_netscape_cookies(text: str, path: str) -> None:
     except OSError:
         pass
     os.replace(temporary, path)
+
+def default_bilibili_cookies_file() -> str | None:
+    """Find default Bilibili Netscape cookies file if present."""
+    from autodub.utils import data_root
+    candidates = [
+        os.path.join(data_root(), "bilibili-cookies.txt"),
+    ]
+    if os.name == "nt":
+        local_app = os.environ.get("LOCALAPPDATA", "")
+        if local_app:
+            candidates.extend([
+                os.path.join(local_app, "Programs", "DubFlow", "bilibili-cookies.txt"),
+                os.path.join(local_app, "DubFlow", "bilibili-cookies.txt"),
+            ])
+            env_file = os.path.join(local_app, "DubFlow", ".env")
+            if os.path.isfile(env_file):
+                try:
+                    with open(env_file, encoding="utf-8") as f:
+                        for line in f:
+                            if line.startswith("BILIBILI_COOKIES_FILE="):
+                                val = line.split("=", 1)[1].strip()
+                                if val:
+                                    candidates.append(val)
+                except Exception:
+                    pass
+    for p in candidates:
+        if p and has_login_cookies(p):
+            return p
+    return None
+

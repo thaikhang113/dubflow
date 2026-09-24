@@ -9,7 +9,13 @@ from urllib.parse import parse_qs, urlparse
 import yt_dlp
 
 from autodub.progress import PipelineCancelled
-from autodub.utils import ensure_dir, save_json_atomic, setup_logging
+from autodub.utils import (
+    candidate_bin_dirs,
+    ensure_bin_in_path,
+    ensure_dir,
+    save_json_atomic,
+    setup_logging,
+)
 
 logger = setup_logging("autodub.downloader")
 
@@ -187,8 +193,16 @@ def download_video(
     if canonical != url:
         logger.info(f"Normalized URL: {url} -> {canonical}")
 
+    if not cookies_file and ("bilibili.com" in url or "bilibili.com" in canonical):
+        try:
+            from autodub.media.bilibili import default_bilibili_cookies_file
+            cookies_file = default_bilibili_cookies_file()
+        except Exception:
+            pass
+
+    ensure_bin_in_path()
     ydl_opts = {
-        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "format": "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080][ext=mp4]/best[ext=mp4]/best",
         "outtmpl": os.path.join(output_dir, "%(id)s.%(ext)s"),
         "merge_output_format": "mp4",
         "noplaylist": True,
@@ -200,6 +214,9 @@ def download_video(
         "socket_timeout": 30,
         "concurrent_fragment_downloads": max(1, min(16, int(fragment_workers))),
     }
+    bin_dirs = candidate_bin_dirs()
+    if bin_dirs:
+        ydl_opts["ffmpeg_location"] = bin_dirs[0]
     if cookies_from_browser:
         ydl_opts["cookiesfrombrowser"] = (cookies_from_browser,)
     if cookies_file:
@@ -252,10 +269,11 @@ def build_ydl_opts(
     fragment_workers: int = 2,
 ) -> dict:
     """yt-dlp options for the standalone `autodub download` command."""
+    ensure_bin_in_path()
     opts = {
         # Use extractor + id as filename so TikTok/Douyin/YouTube don't collide
         "outtmpl": os.path.join(output_dir, "%(extractor_key)s_%(id)s.%(ext)s"),
-        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "format": "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080][ext=mp4]/best[ext=mp4]/best",
         "merge_output_format": "mp4",
         "noplaylist": True,
         "quiet": False,
@@ -266,6 +284,9 @@ def build_ydl_opts(
         "socket_timeout": 30,
         "concurrent_fragment_downloads": max(1, min(16, int(fragment_workers))),
     }
+    bin_dirs = candidate_bin_dirs()
+    if bin_dirs:
+        opts["ffmpeg_location"] = bin_dirs[0]
     if cookies_from_browser:
         opts["cookiesfrombrowser"] = (cookies_from_browser,)
     if cookies_file:
@@ -351,6 +372,13 @@ def download_one(
     canonical = canonical_url(normalize_url(url))
     if canonical != url:
         logger.info(f"Normalized: {url} -> {canonical}")
+
+    if not cookies_file and ("bilibili.com" in url or "bilibili.com" in canonical):
+        try:
+            from autodub.media.bilibili import default_bilibili_cookies_file
+            cookies_file = default_bilibili_cookies_file()
+        except Exception:
+            pass
 
     ydl_opts = build_ydl_opts(
         output_dir, cookies_from_browser, cookies_file, fragment_workers)

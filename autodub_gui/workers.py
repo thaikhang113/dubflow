@@ -936,14 +936,19 @@ class PrefetchWorker(QThread):
         self._cancel_event.set()
 
     def run(self) -> None:
+        from autodub.config import Settings
         from autodub.media.downloader import download_video
         from autodub.utils import ensure_dir
 
         try:
             ensure_dir(self._output_dir)
+            settings = Settings.load()
             path = download_video(
                 self._url,
                 self._output_dir,
+                cookies_file=settings.bilibili_cookies_file or None,
+                douyin_cookies_file=settings.douyin_cookies_file or None,
+                fragment_workers=settings.download_fragment_workers,
                 progress=self.progress.emit,
                 cancel_event=self._cancel_event,
             )
