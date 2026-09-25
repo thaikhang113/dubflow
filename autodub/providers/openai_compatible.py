@@ -135,7 +135,7 @@ class OpenAICompatibleProvider:
         except Exception as exc:
             raise OpenAICompatibleError(
                 _redact(f"Không tải được danh sách model: {exc}", self.api_key)
-            ) from exc
+            ) from None
         items = data.get("data", []) if isinstance(data, dict) else []
         models = [
             str(item.get("id", "")).strip()
@@ -170,7 +170,7 @@ class OpenAICompatibleProvider:
         except Exception as exc:
             raise OpenAICompatibleError(
                 _redact(f"Model không trả lời: {exc}", self.api_key)
-            ) from exc
+            ) from None
 
     def complete_object(self, prompt: str, *, system: str = "",
                         temperature: float = 0.4,
@@ -208,7 +208,7 @@ class OpenAICompatibleProvider:
         except Exception as exc:
             raise OpenAICompatibleError(
                 _redact(f"Không lấy được kết quả: {exc}", self.api_key)
-            ) from exc
+            ) from None
 
     def translate(
         self,
@@ -257,7 +257,7 @@ class OpenAICompatibleProvider:
                     time.sleep(delay)
         raise OpenAICompatibleError(
             _redact(f"Dịch thất bại sau 4 lần thử: {last}", self.api_key)
-        ) from last
+        ) from None
 
     def shorten_translations(self, segments: list[dict]) -> list[dict]:
         """Shorten translated lines without changing their meaning."""
@@ -298,4 +298,4 @@ class OpenAICompatibleProvider:
         except Exception as exc:
             raise OpenAICompatibleError(
                 _redact(f"Rút gọn bản dịch thất bại: {exc}", self.api_key)
-            ) from exc
+            ) from None

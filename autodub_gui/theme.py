@@ -108,7 +108,7 @@ QListWidget#nav::item, QListWidget#nav2::item {{
     height: {_t.NAV_ITEM_H}px;
     padding: 0px 14px;
     border: none;
-    border-radius: {_t.RADIUS_MD}px;
+    border-radius: 6px;
     margin: 2px 10px;
     color: {_t.TEXT_SECONDARY};
     font-size: {_t.FS_BODY}px;
@@ -132,7 +132,7 @@ QListWidget#nav::item:selected:hover, QListWidget#nav2::item:selected:hover {{
 QFrame#card {{
     background: {_t.BG_PANEL};
     border: 1px solid {_t.BORDER_SUBTLE};
-    border-radius: 10px;
+    border-radius: 12px;
 }}
 QFrame#card:hover {{
     border-color: {_t.BORDER_DEFAULT};
@@ -140,17 +140,17 @@ QFrame#card:hover {{
 QFrame#cardFlat {{
     background: {_t.BG_PANEL};
     border: 1px solid {_t.BORDER_SUBTLE};
-    border-radius: 10px;
+    border-radius: 12px;
 }}
 QFrame#sidebarCard {{
     background: {_t.BG_PANEL};
     border: 1px solid {_t.BORDER_SUBTLE};
-    border-radius: 10px;
+    border-radius: 12px;
 }}
 QFrame#banner {{
     background: {_t.BG_PANEL};
     border: 1px solid {_t.BORDER_SUBTLE};
-    border-radius: 10px;
+    border-radius: 12px;
 }}
 QFrame#divider {{
     border: none;
@@ -180,7 +180,7 @@ QGroupBox::title {{
 QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit, QTextEdit {{
     background: {_t.BG_INPUT};
     border: 1px solid {_t.BORDER_SUBTLE};
-    border-radius: 8px;
+    border-radius: 6px;
     padding: 8px 12px;
     min-height: 22px;
     color: {_t.TEXT_PRIMARY};
@@ -212,7 +212,7 @@ QComboBox::down-arrow {{
 QComboBox QAbstractItemView {{
     background: {_t.BG_PANEL};
     border: 1px solid {_t.BORDER_DEFAULT};
-    border-radius: 10px;
+    border-radius: 12px;
     selection-background-color: {_t.BG_SELECTED};
     selection-color: {_t.PRIMARY};
     outline: none;
@@ -251,8 +251,8 @@ QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{
 QPushButton {{
     background: {_t.BG_BUTTON};
     border: 1px solid {_t.BORDER_BUTTON};
-    border-radius: 8px;
-    padding: 9px 18px;
+    border-radius: 6px;
+    padding: 10px 20px;
     min-height: 22px;
     color: {_t.TEXT_PRIMARY};
 }}
@@ -273,8 +273,8 @@ QPushButton#primary {{
     border: none;
     color: {_t.TEXT_ON_ACCENT};
     font-weight: 600;
-    padding: 10px 22px;
-    border-radius: {_t.RADIUS_MD}px;
+    padding: 12px 24px;
+    border-radius: 6px;
 }}
 QPushButton#primary:hover {{
     background: {_t.PRIMARY_HOVER};
@@ -380,7 +380,7 @@ QPushButton#stop:disabled {{ color: {_t.TEXT_DISABLED}; border-color: {_t.BORDER
 QPushButton#purple {{
     background: {_t.ACCENT_PURPLE}; border: none;
     color: {_t.TEXT_ON_ACCENT}; font-weight: 600;
-    padding: 9px 18px; border-radius: 8px;
+    padding: 10px 20px; border-radius: 6px;
 }}
 QPushButton#purple:hover {{ background: {_t.ACCENT_PURPLE_HOVER}; }}
 QPushButton#purple:disabled {{ background: {_t.BG_PANEL}; color: {_t.TEXT_DISABLED}; }}
@@ -509,7 +509,7 @@ QProgressBar::chunk {{
 QTableWidget, QTableView {{
     background: {_t.BG_PANEL};
     border: 1px solid {_t.BORDER_SUBTLE};
-    border-radius: 10px;
+    border-radius: 12px;
     gridline-color: transparent;
     selection-background-color: {_t.BG_SELECTED};
     selection-color: {_t.TEXT_PRIMARY};
@@ -535,7 +535,7 @@ QTableCornerButton::section {{ background: {_t.BG_PANEL}; border: none; }}
 QListWidget {{
     background: {_t.BG_PANEL};
     border: 1px solid {_t.BORDER_SUBTLE};
-    border-radius: 10px;
+    border-radius: 12px;
     outline: none;
 }}
 QListWidget::item {{ border: none; color: {_t.TEXT_PRIMARY}; }}
@@ -546,7 +546,7 @@ QTabWidget::pane {{ border: none; background: transparent; }}
 QTabBar::tab {{
     background: transparent;
     color: {_t.TEXT_SECONDARY};
-    padding: 9px 18px;
+    padding: 10px 20px;
     border: none;
     border-bottom: 2px solid transparent;
     margin-right: 2px;
@@ -624,14 +624,14 @@ QToolTip {{
     background: {_t.BG_INPUT};
     color: {_t.TEXT_PRIMARY};
     border: 1px solid {_t.BORDER_DEFAULT};
-    border-radius: 8px;
+    border-radius: 6px;
     padding: 6px 10px;
     font-size: {_t.FS_LABEL}px;
 }}
 QMenu {{
     background: {_t.BG_PANEL};
     border: 1px solid {_t.BORDER_DEFAULT};
-    border-radius: 8px;
+    border-radius: 6px;
     padding: 4px;
 }}
 QMenu::item {{
@@ -646,7 +646,7 @@ QMenu::separator {{
 QFrame#videoCard {{
     background: {_t.BG_PANEL};
     border: 1px solid {_t.BORDER_SUBTLE};
-    border-radius: 10px;
+    border-radius: 12px;
 }}
 QFrame#videoCard:hover {{
     border-color: {_t.BORDER_DEFAULT};

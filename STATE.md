@@ -31,6 +31,32 @@ Build and maintain DubFlow: local Vietnamese video dubbing desktop app.
 - `qa/gui_walkthrough.py` và `qa/commit_safety_check.py` trước mỗi commit
 
 ## Latest Verification
+- 2026-09-24: Nâng cấp phiên bản v3.0.25 (Sửa lỗi và tăng tốc tải video Bilibili / Douyin).
+  + Tự động nạp cookies Netscape Bilibili (`default_bilibili_cookies_file`) tránh bị CDN bóp băng thông 90KB/s hoặc từ chối kết nối.
+  + Bổ sung cookies, douyin_cookies và fragment_workers vào `PrefetchWorker` ở Bước 1 GUI.
+  + Tự động cấu hình `ffmpeg_location` trong `yt-dlp` (`build_ydl_opts` và `download_video`), ngăn lỗi thiếu ffmpeg khi ghép luồng video/audio.
+  + Tối ưu hóa chuỗi định dạng tải `bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]...` ngăn tải luồng 4K khổng lồ làm treo và chậm tiến trình.
+  + 986/986 tests passed, linter sạch 100%.
+- 2026-09-24: Kiểm tra toàn diện thực tế mọi chức năng (Real-World E2E & Component Validation).
+  + Toàn bộ 986 unit/integration tests qua 100% trong 65s.
+  + Bộ rà soát GUI Walkthrough: 13/13 trang dựng và điều hướng hoàn hảo, 0 lỗi.
+  + Bộ rà soát tính năng Features Review: Quét 33 dự án thật, Báo cáo chất lượng nạp 8 dự án, vòng đọc/ghi Cài đặt, 174 giọng đọc VieNeu, OpenClaw API (port 50762, auth tokens, /v1/prepare), 17 mục Doctor.
+  + Bộ rà soát Trình chỉnh sửa Editor Review: Sửa câu, tách phụ đề khỏi lời đọc, VieNeu đọc lại từng câu, dựng lại video và xuất video gắn phụ đề thành công (0 phát hiện).
+  + Bộ rà soát Dừng khẩn cấp Cancel Review: Dừng ngay sau 0.0s - 0.1s, 0 tiến trình FFmpeg bị treo hoặc mồ côi.
+  + Bộ rà soát Xử lý hàng loạt Batch Flows Review: Dừng giữa chừng, chế độ chạy lại video đã xong (retry_done=True), và tạm dừng chờ bản dịch tay rồi tiếp tục đều hoạt động chuẩn xác (0 phát hiện).
+  + Bộ rà soát Đầu-Cuối E2E Review (S1-S7): 7/7 kịch bản chạy video thật và tải YouTube thật, hoàn tất không lỗi (findings_e2e = 0).
+  + Kiểm thử tải video thực tế: Tải URL YouTube thật, nhận 19 sự kiện tiến độ, định dạng chi tiết [download] ...% of ~... at ... ETA ..., cập nhật ghi đè tại chỗ trên LogPanel và thanh tiến trình.
+  + Đo lường hiệu năng thực tế: Lượt chạy sạch hoàn tất trong 33.4s (`timing_single.py`), lượt tái sử dụng hoàn tất trong 15.6s (`timing_review.py`).
+  + Kiểm tra chống lỗi âm thầm (`probe_guard_check.py`): Test guard phát hiện lỗi tiêm probe chuẩn xác và khôi phục 100%.
+  + Smoke Test chính thức (`AUTODUB_SMOKE=1`): 17/17 tiêu chí hệ thống đạt `ok: true`.
+- 2026-09-23: Nâng cấp phiên bản v3.0.24.
+  + Hiển thị tiến độ tải video thời gian thực chuẩn xác: `[download] 35.4% of ~2.80GiB at 14.5MiB/s ETA 02:08`.
+  + Tích hợp StepTracker, LogPanel (ghi đè tại chỗ) và DownloadPage.
+  + 100% tests passed, 13/13 trang GUI walkthrough sạch sẽ.
+- 2026-09-23: Nâng cấp phiên bản v3.0.23.
+  + Tự động quét và nạp thư mục binary FFmpeg/FFprobe (`candidate_bin_dirs` & `ensure_bin_in_path`) trong `autodub/utils.py`.
+  + Phân lập phạm vi hủy tiến trình con (Scope-Aware Process Cancellation) qua `cancel_scope` và `contextvars` trong `autodub/cancel.py`.
+  + Full test suite: 984 passed, 0 failures; `ruff check` sạch 100%.
 - 2026-09-13: `autodub/batch.py` + `.env.example` + một toast ở trang Dự án
   được sửa lỗi mã hóa hai lượt (UTF-8 -> CP1252 -> UTF-8) bằng ftfy, có rào
   chắn giữ nguyên bộ dấu câu toàn góc trong `batch.py`. Lưới chặn hồi quy:

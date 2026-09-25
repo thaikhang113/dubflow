@@ -1,4 +1,6 @@
 
+import traceback
+
 import pytest
 
 from autodub.pipeline import _api_translation_batches
@@ -175,6 +177,96 @@ def test_translate_retries_rate_limit_with_retry_after(monkeypatch):
     ).translate([{"id": 1, "text": "你好"}])
     assert result[0]["text_vi"] == "Xin chao"
     assert waits == [7.0]
+
+def test_translate_retries_transient_transport_error_with_backoff(monkeypatch):
+    waits = []
+
+    class Success:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"message": {
+                "content": '{"segments":[{"id":1,"text_vi":"Xin chao"}]}'}}]}
+
+    class Session:
+        def __init__(self):
+            self.calls = 0
+
+        def post(self, *_args, **_kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                raise ConnectionError("temporary network error")
+            return Success()
+
+    session = Session()
+    monkeypatch.setattr("autodub.providers.openai_compatible.time.sleep", waits.append)
+    result = OpenAICompatibleProvider(
+        "https://example.test/v1", "", model="m", session=session
+    ).translate([{"id": 1, "text": "你好"}])
+
+    assert result[0]["text_vi"] == "Xin chao"
+    assert session.calls == 2
+    assert waits == [1]
+
+
+@pytest.mark.parametrize("operation", ["check_model", "translate", "shorten"])
+def test_provider_post_errors_redact_api_key(monkeypatch, operation):
+    class Session:
+        def post(self, *_args, **_kwargs):
+            raise RuntimeError("request failed with secret-key")
+
+    provider = OpenAICompatibleProvider(
+        "https://example.test/v1", "secret-key", model="m", session=Session()
+    )
+    monkeypatch.setattr("autodub.providers.openai_compatible.time.sleep", lambda _delay: None)
+
+    with pytest.raises(OpenAICompatibleError) as raised:
+        if operation == "check_model":
+            provider.check_model()
+        elif operation == "translate":
+            provider.translate([{"id": 1, "text": "你好"}])
+        else:
+            provider.shorten_translations([{"id": 1, "text_vi": "好"}])
+
+    assert "secret-key" not in str(raised.value)
+    assert "[REDACTED]" in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    "operation", ["list_models", "check_model", "complete_object", "translate", "shorten"]
+)
+def test_provider_tracebacks_suppress_original_api_key(monkeypatch, operation):
+    secret = "trace-secret-key"
+
+    class Session:
+        def get(self, *_args, **_kwargs):
+            raise RuntimeError(f"request failed with {secret}")
+
+        def post(self, *_args, **_kwargs):
+            raise RuntimeError(f"request failed with {secret}")
+
+    provider = OpenAICompatibleProvider(
+        "https://example.test/v1", secret, model="m", session=Session()
+    )
+    monkeypatch.setattr("autodub.providers.openai_compatible.time.sleep", lambda _delay: None)
+
+    with pytest.raises(OpenAICompatibleError) as raised:
+        if operation == "list_models":
+            provider.list_models()
+        elif operation == "check_model":
+            provider.check_model()
+        elif operation == "complete_object":
+            provider.complete_object("prompt")
+        elif operation == "translate":
+            provider.translate([{"id": 1, "text": "你好"}])
+        else:
+            provider.shorten_translations([{"id": 1, "text_vi": "好"}])
+
+    formatted = "".join(traceback.format_exception(raised.value))
+    assert secret not in formatted
+    assert "[REDACTED]" in formatted
+
 
 def test_translate_timeout_scales_with_prompt_size():
     seen = {}

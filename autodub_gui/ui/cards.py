@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QVBoxLayout,
     QWidget,
+    QGraphicsDropShadowEffect,
 )
 
 from autodub_gui import icons, tokens
@@ -40,6 +41,14 @@ class Card(QFrame):
                  padding: int = tokens.SP_4, spacing: int = tokens.SP_3):
         super().__init__(parent)
         self.setObjectName("card")
+        
+        # Add smooth shadow
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(20)
+        shadow.setYOffset(4)
+        shadow.setColor(QColor(0, 0, 0, 80))
+        self.setGraphicsEffect(shadow)
+        
         self.body = QVBoxLayout(self)
         self.body.setContentsMargins(padding, padding, padding, padding)
         self.body.setSpacing(spacing)
@@ -345,6 +354,13 @@ class ProjectCard(QFrame):
         self._build()
 
     def _build(self) -> None:
+        # Add smooth shadow
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(20)
+        shadow.setYOffset(4)
+        shadow.setColor(QColor(0, 0, 0, 80))
+        self.setGraphicsEffect(shadow)
+        
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)

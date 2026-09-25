@@ -36,19 +36,19 @@ if errorlevel 1 goto :fail
 %VENV_PY% -m pip install -r requirements.txt
 if errorlevel 1 goto :fail
 
-py -3 scripts\setup_whisper.py
+"%VENV_PY%" scripts\setup_whisper.py
 if errorlevel 1 goto :fail
-py -3 scripts\setup_vieneu.py
+"%VENV_PY%" scripts\setup_vieneu.py
 if errorlevel 1 goto :fail
-py -3 scripts\setup_paraformer.py
+"%VENV_PY%" scripts\setup_paraformer.py
 if errorlevel 1 goto :fail
-py -3 scripts\setup_ocr.py
+"%VENV_PY%" scripts\setup_ocr.py
 if errorlevel 1 echo [CANH BAO] OCR khong cai duoc - app van chay voi blur thu cong
-py -3 scripts\setup_vsr.py
+"%VENV_PY%" scripts\setup_vsr.py
 if errorlevel 1 echo [CANH BAO] VSR khong cai duoc - app van chay voi blur thu cong
-py -3 scripts\setup_douyin.py
+"%VENV_PY%" scripts\setup_douyin.py
 if errorlevel 1 goto :fail
-py -3 scripts\setup_demucs.py
+"%VENV_PY%" scripts\setup_demucs.py
 if errorlevel 1 goto :fail
 
 echo.

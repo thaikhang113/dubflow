@@ -9,36 +9,36 @@ nền than đậm, thẻ xám tối, accent chàm #6366f1, viền mảnh tinh t�
 from __future__ import annotations
 
 # -- Nền --------------------------------------------------------------
-BG_APP          = "#0e0e14"   # nền cửa sổ — than đen tím nhẹ
-BG_SIDEBAR      = "#16161e"   # thanh bên — tối hơn panel một chút
-BG_MAIN         = "#0e0e14"   # vùng nội dung
-BG_PANEL        = "#1a1a24"   # thẻ / khung nhóm
-BG_PANEL_HOVER  = "#22222e"   # hover nhẹ — xanh tint tối
-BG_INPUT        = "#1e1e2a"   # ô nhập
+BG_APP          = '#000000'
+BG_SIDEBAR      = '#0a0a0a'
+BG_MAIN         = '#000000'
+BG_PANEL        = '#0a0a0a'
+BG_PANEL_HOVER  = '#171717'
+BG_INPUT        = '#121212'
 
 # Nền phụ trợ (dẫn xuất, dùng trong bảng kiểu QSS)
-BG_INPUT_DISABLED = "#16161e"
-BG_BUTTON         = "#20202c"  # nút mặc định
-BG_BUTTON_PRESSED = "#2a2a48"  # nhấn → indigo tint tối
-BG_VIDEO          = "#0d0d14"  # sân khấu video — GIỮ TỐI (letterbox)
-BG_SELECTED       = "#2a2a48"  # nav item đang chọn — indigo tint tối
-BG_SELECTED_SOFT  = "#1e1e38"  # selected nhạt hơn (chip, badge, hover nhẹ)
+BG_INPUT_DISABLED = '#0a0a0a'
+BG_BUTTON         = '#171717'
+BG_BUTTON_PRESSED = '#262626'
+BG_VIDEO          = '#000000'
+BG_SELECTED       = '#262626'
+BG_SELECTED_SOFT  = '#171717'
 
 # -- Viền -------------------------------------------------------------
-BORDER_SUBTLE   = "#252534"   # viền rất nhạt — phân tách nhẹ
-BORDER_DEFAULT  = "#32324a"   # viền rõ hơn một chút
-BORDER_ACTIVE   = "#6366f1"
-BORDER_BUTTON   = "#32324a"   # viền nút — theo BORDER_DEFAULT
-BORDER_DANGER   = "#5a1f1f"
-BORDER_UPLOAD   = "#3a3a6a"
+BORDER_SUBTLE   = '#1f1f1f'
+BORDER_DEFAULT  = '#262626'
+BORDER_ACTIVE   = '#5e6ad2'
+BORDER_BUTTON   = '#262626'
+BORDER_DANGER   = '#450a0a'
+BORDER_UPLOAD   = '#262626'
 
 # -- Màu chính --------------------------------------------------------
-PRIMARY         = "#6366f1"
-PRIMARY_HOVER   = "#7577f3"   # sáng hơn một chút — trên nền tối đọc là hover
-PRIMARY_DARK    = "#4f46e5"
+PRIMARY         = '#5e6ad2'
+PRIMARY_HOVER   = '#7b87f0'
+PRIMARY_DARK    = '#4a55a8'
 PRIMARY_GRAD_B  = "#8b5cf6"   # điểm cuối dải chuyển sắc của nút chính
 PRIMARY_GRAD_B_HOVER = "#7c4ff0"
-PRIMARY_DISABLED_BG  = "#2a2a48"
+PRIMARY_DISABLED_BG  = '#171717'
 
 # -- Màu nhấn ---------------------------------------------------------
 ACCENT_BLUE     = "#4f6ef7"
@@ -46,10 +46,10 @@ ACCENT_PURPLE   = "#8b5cf6"
 ACCENT_PURPLE_HOVER = "#9b6ef8"
 
 # -- Chữ --------------------------------------------------------------
-TEXT_PRIMARY    = "#e8e8f0"   # trắng xanh nhẹ — dễ đọc trên nền tối
-TEXT_SECONDARY  = "#9090a8"   # xám tím vừa
-TEXT_MUTED      = "#82829a"   # xám phụ đủ tương phản trên nền tối
-TEXT_DISABLED   = "#3e3e54"
+TEXT_PRIMARY    = '#fafafa'
+TEXT_SECONDARY  = '#a1a1aa'
+TEXT_MUTED      = '#71717a'
+TEXT_DISABLED   = '#3f3f46'
 TEXT_ON_ACCENT  = "#ffffff"
 
 # -- Trạng thái -------------------------------------------------------
@@ -115,7 +115,7 @@ BRAND_LOGO_BG   = "#1a1a38"
 # -- Thẻ giọng đọc & chip lọc -----------------------------------------
 CHIP_BG            = "#1a1a24"   # nền chip lọc (thường)
 CHIP_BG_ACTIVE     = "#1a1a38"   # nền chip đang chọn
-CHIP_BORDER_ACTIVE = "#6366f1"   # viền chip đang chọn (= PRIMARY)
+CHIP_BORDER_ACTIVE   = '#5e6ad2'
 VOICE_SELECTED_BG  = "#1a1a38"   # nền thẻ giọng đang chọn
 SECTION_LABEL      = "#606078"   # chữ CÔNG CỤ / HỆ THỐNG trong thanh bên
 
@@ -143,8 +143,8 @@ PLAYER_BAR_BG   = "rgba(22,22,30,230)"     # thanh điều khiển tối mờ
 SUBTITLE_BOX_BG = "rgba(0,0,0,140)"        # đè lên video — giữ tối
 
 # -- Bo góc -----------------------------------------------------------
-RADIUS_SM = 6
-RADIUS_MD = 9
+RADIUS_SM = 4
+RADIUS_MD = 8
 RADIUS_LG = 12
 RADIUS_XL = 16
 
@@ -154,7 +154,7 @@ SP_1, SP_2, SP_3, SP_4, SP_5, SP_6, SP_8 = 4, 8, 12, 16, 20, 24, 32
 # -- Kiểu chữ ---------------------------------------------------------
 # Qt stylesheets do not reliably parse browser-style fallback lists on
 # machines without system fonts. This family ships with every release build.
-FONT_STACK = '"Merriweather", "Noto Sans", "DejaVu Sans"'
+FONT_STACK = '"Inter", "Segoe UI Variable Display", "Segoe UI", sans-serif'
 FONT_MONO = '"Consolas", "Cascadia Mono", monospace'
 FS_PAGE_TITLE   = 25   # tiêu đề trang
 FS_SECTION      = 17   # tiêu đề mục

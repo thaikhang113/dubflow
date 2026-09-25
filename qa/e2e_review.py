@@ -271,8 +271,11 @@ def scenario_manual_translate() -> str:
 
 # ---------------------------------------------------------------- S4/S5 ----- #
 def scenario_batch(mock_endpoint: str) -> None:
+    import shutil
     from autodub.batch import BatchItem, run_batch
     out = os.path.join(RUNS, "s4_batch")
+    shutil.rmtree(out, ignore_errors=True)
+    os.makedirs(out, exist_ok=True)
     settings = base_settings(output_dir=out, translate_enabled=True,
                              translation_endpoint=mock_endpoint,
                              translation_api_key="mock",
@@ -368,11 +371,15 @@ def scenario_auto_clean(mock_endpoint: str) -> None:
                 "auto-clean bật nhưng tệp trung gian lớn vẫn còn",
                 "tệp trung gian bị dọn sau khi có video kết quả", big)
     # Batch phải vẫn validate được dự án này
+    import shutil
     from autodub.batch import BatchItem, run_batch
+    batch_out = os.path.join(RUNS, "s6_batch")
+    shutil.rmtree(batch_out, ignore_errors=True)
+    os.makedirs(batch_out, exist_ok=True)
     items = [BatchItem(file_path=LOCAL_VIDEO, voice=None)]
     summary = run_batch(items, settings, DubRequest(
         source_lang="vi", bg_mode="none", skip_video=False,
-        subtitle_mode="none", output_dir=os.path.join(RUNS, "s6_batch")))
+        subtitle_mode="none", output_dir=batch_out))
     if summary.failed:
         finding("S6 auto-clean", "batch", "S1",
                 "batch fail vì auto-clean lấy mất tệp validate",

@@ -344,6 +344,25 @@ def test_failed_video_records_work_dir_for_resume(env, tmp_path):
     assert pipe2.seen[0].resume_dir == str(crash_dir)
 
 
+def test_interrupted_processing_state_resumes_after_restart(env, tmp_path):
+    settings, template, state_path = env
+    crash_dir = tmp_path / "processing-workdir"
+    crash_dir.mkdir()
+    with open(state_path, "w", encoding="utf-8") as handle:
+        json.dump({"videos": [{
+            "video_url": "https://a.com/1",
+            "status": "processing",
+            "work_dir": str(crash_dir),
+        }]}, handle)
+
+    pipe = FakePipeline()
+    summary = run_batch("https://a.com/1", settings, template, pipeline=pipe)
+
+    assert summary.success == 1
+    assert pipe.seen[0].resume_dir == str(crash_dir)
+    assert read_state(state_path)["videos"][0]["status"] == "success"
+
+
 def test_missing_work_dir_falls_back_to_fresh_run(env, tmp_path):
     """Thư mục dở dang đã bị xóa tay → chạy lại như video mới, không đổ lỗi."""
     settings, template, _ = env

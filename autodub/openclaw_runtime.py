@@ -108,6 +108,12 @@ class _Handler(BaseHTTPRequestHandler):
                     {"action": action, "batch_id": batch_id}))
                 return
 
+            if method == "POST" and path == "/v1/tools/call":
+                payload = self._json_body()
+                payload["action"] = "tools_call"
+                self._reply(200, runtime.handle(payload))
+                return
+
             self._reply(404, {"ok": False, "error": "Route không tồn tại"})
         except (TypeError, ValueError, FileNotFoundError) as exc:
             self._reply(400, {"ok": False, "error": str(exc)})
@@ -292,6 +298,7 @@ Endpoint:
 - GET /v1/batches/{{batch_id}}
 - POST /v1/batches/{{batch_id}}/cancel
 - POST /v1/batches/{{batch_id}}/retry-failed
+- POST /v1/tools/call
 
 Sau khi gọi /health thành công, báo người dùng rằng DubFlow đã sẵn sàng."""
 

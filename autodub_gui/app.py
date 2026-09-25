@@ -34,7 +34,7 @@ from autodub_gui.ui.toast import TOASTS
 
 APP_NAME = "DubFlow"
 APP_TAGLINE = "Lồng tiếng video bằng AI"
-APP_VERSION = "3.0.24"
+APP_VERSION = "3.0.25"
 
 def _runtime_version() -> str:
     """Read release version written into frozen bundles."""
@@ -155,6 +155,9 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(_MIN_W, _MIN_H)
         self._startup_watcher: QThread | None = None
         self._status_worker: QThread | None = None
+        self._status_timer = QTimer(self)
+        self._status_timer.timeout.connect(self.refresh_system_status)
+        self._status_timer.start(_STARTUP_RECHECK_MS)
         self._force_close = False
         self._breakpoint = ""
         self._page_widgets: dict[int, QWidget] = {}
@@ -501,6 +504,7 @@ class MainWindow(QMainWindow):
             TOASTS.warn("Hoàn tất cài đặt DubFlow trước khi sử dụng.")
             self.close()
             return
+        self._run_preflight()
         self._check_updates()
 
     def _check_updates(self, manual: bool = False) -> None:

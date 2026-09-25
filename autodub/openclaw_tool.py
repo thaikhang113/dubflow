@@ -331,7 +331,10 @@ def handle(payload: dict, *, queue_root: str = "remote_queue",
         return _cancel(payload, queue_root)
     if action == "retry_failed":
         return _retry_failed(payload, queue_root)
-    raise ValueError("action phải là prepare, submit, status, cancel hoặc retry_failed")
+    if action == "tools_call":
+        from autodub.openclaw_tools_registry import dispatch_tool
+        return dispatch_tool(payload.get("name"), payload.get("arguments", {}), settings=settings)
+    raise ValueError("action phải là prepare, submit, status, cancel, retry_failed hoặc tools_call")
 
 
 def main() -> int:

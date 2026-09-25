@@ -725,6 +725,25 @@ def test_download_page_keeps_table_visible(monkeypatch):
     page.deleteLater()
     app.processEvents()
 
+def test_download_failure_dialog_shows_error_without_assuming_permissions(monkeypatch):
+    from types import SimpleNamespace
+
+    from autodub_gui.pages import download_page
+
+    shown = {}
+    monkeypatch.setattr(download_page.REGISTRY, "finish_job", lambda *_args: None)
+    monkeypatch.setattr(
+        download_page.ConfirmDialog, "show_error",
+        lambda *args, **kwargs: shown.update(message=args[2], detail=kwargs["detail"]))
+    page = SimpleNamespace(log=SimpleNamespace(append_log=lambda *_args: None))
+
+    download_page.DownloadPage._on_failed(page, "HTTP 503: Service Unavailable")
+
+    assert "thất bại" in shown["message"]
+    assert "HTTP 503" in shown["detail"]
+    assert "không ghi được vào thư mục" not in shown["message"]
+
+
 def test_help_page_documents_ocr_and_uses_bundled_readme_name():
     from autodub_gui.pages import help_page
 

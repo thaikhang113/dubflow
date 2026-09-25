@@ -492,8 +492,9 @@ class DownloadPage(BasePage):
         REGISTRY.finish_job(False, message[:120])
         ConfirmDialog.show_error(
             self, "Không tải được",
-            "Ứng dụng không ghi được vào thư mục lưu. Hãy chọn một thư mục "
-            "khác mà bạn có quyền ghi, rồi thử lại.", detail=message)
+            "Lượt tải video thất bại. Xem chi tiết bên dưới; kiểm tra liên kết, "
+            "kết nối mạng và quyền ghi thư mục nếu lỗi liên quan đến lưu tệp.",
+            detail=message)
 
     def _on_cancelled(self) -> None:
         import logging as _log

@@ -193,7 +193,7 @@ def download_video(
     if canonical != url:
         logger.info(f"Normalized URL: {url} -> {canonical}")
 
-    if not cookies_file and ("bilibili.com" in url or "bilibili.com" in canonical):
+    if not cookies_file and not cookies_from_browser and ("bilibili.com" in url or "bilibili.com" in canonical):
         try:
             from autodub.media.bilibili import default_bilibili_cookies_file
             cookies_file = default_bilibili_cookies_file()
@@ -373,7 +373,7 @@ def download_one(
     if canonical != url:
         logger.info(f"Normalized: {url} -> {canonical}")
 
-    if not cookies_file and ("bilibili.com" in url or "bilibili.com" in canonical):
+    if not cookies_file and not cookies_from_browser and ("bilibili.com" in url or "bilibili.com" in canonical):
         try:
             from autodub.media.bilibili import default_bilibili_cookies_file
             cookies_file = default_bilibili_cookies_file()

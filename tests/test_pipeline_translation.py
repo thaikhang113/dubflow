@@ -100,6 +100,27 @@ def test_quality_report_does_not_require_missing_usage_snapshot() -> None:
     assert report["translate_usage"] == {}
 
 
+def test_quality_report_surfaces_degraded_audio_artifacts(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        "autodub.media.audio.FALLBACKS",
+        SimpleNamespace(snapshot=lambda: {
+            "atempo_failed": [1], "postprocess_failed": [2],
+        }),
+    )
+
+    report = DubPipeline._build_quality_report(
+        get_target("vi"), SEGMENTS, {}, Settings()
+    )
+
+    assert report["summary"]["segments_speed_fallback"] == 1
+    assert report["summary"]["segments_postprocess_fallback"] == 1
+    issues = {item["id"]: item for item in report["per_segment"]}
+    assert issues[1]["speed_fallback"] is True
+    assert issues[2]["postprocess_fallback"] is True
+
+
 # -- Lùi sang dịch tay khi endpoint hỏng ---------------------------------- #
 
 def _vi_target():
