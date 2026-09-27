@@ -2,7 +2,23 @@ name: CI
 
 on:
   push:
+    paths-ignore:
+      - "docs/**"
+      - "scratch/**"
+      - ".agent-teams/**"
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "scratch/**"
+      - ".agent-teams/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   test:

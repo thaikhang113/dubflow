@@ -1,6 +1,5 @@
 import json
 import sys
-import os
 import urllib.request
 from pathlib import Path
 
