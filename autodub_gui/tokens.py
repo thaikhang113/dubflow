@@ -9,7 +9,7 @@ nền than đậm, thẻ xám tối, accent chàm #6366f1, viền mảnh tinh t�
 from __future__ import annotations
 
 # -- Nền --------------------------------------------------------------
-BG_APP          = '#000000'
+BG_APP          = '#0f1117'
 BG_SIDEBAR      = '#0a0a0a'
 BG_MAIN         = '#000000'
 BG_PANEL        = '#0a0a0a'
@@ -48,7 +48,7 @@ ACCENT_PURPLE_HOVER = "#9b6ef8"
 # -- Chữ --------------------------------------------------------------
 TEXT_PRIMARY    = '#fafafa'
 TEXT_SECONDARY  = '#a1a1aa'
-TEXT_MUTED      = '#71717a'
+TEXT_MUTED      = '#85858f'
 TEXT_DISABLED   = '#3f3f46'
 TEXT_ON_ACCENT  = "#ffffff"
 
@@ -154,7 +154,7 @@ SP_1, SP_2, SP_3, SP_4, SP_5, SP_6, SP_8 = 4, 8, 12, 16, 20, 24, 32
 # -- Kiểu chữ ---------------------------------------------------------
 # Qt stylesheets do not reliably parse browser-style fallback lists on
 # machines without system fonts. This family ships with every release build.
-FONT_STACK = '"Inter", "Segoe UI Variable Display", "Segoe UI", sans-serif'
+FONT_STACK = '"Inter", "Noto Sans", "DejaVu Sans", "Segoe UI Variable Display", "Segoe UI", sans-serif'
 FONT_MONO = '"Consolas", "Cascadia Mono", monospace'
 FS_PAGE_TITLE   = 25   # tiêu đề trang
 FS_SECTION      = 17   # tiêu đề mục
