@@ -150,6 +150,20 @@ def test_manual_pending_is_persisted_and_asr_is_preserved(
     assert (data.parent / "TRANSLATE_PENDING.txt").is_file()
 
 
+def test_translate_pending_checkpoint_creates_missing_step_entry(
+    cached_pipeline,
+):
+    """A fresh project has no steps yet, so the checkpoint must create one."""
+    pipeline, request, data = cached_pipeline
+
+    result = pipeline.run(request)
+
+    assert result.status == "translate_pending"
+    state = load_pipeline_state(result.work_dir)
+    assert state["pipeline"]["current_step"] == "translate"
+    assert state["steps"]["translate"]["status"] == "pending"
+
+
 def test_translation_checkpoint_survives_failed_transcript_save(
     cached_pipeline, translation_endpoint, monkeypatch,
 ):

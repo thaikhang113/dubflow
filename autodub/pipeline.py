@@ -862,7 +862,15 @@ class DubPipeline:
                 state = load_pipeline_state(work_dir)
                 state["pipeline"]["status"] = "translate_pending"
                 state["pipeline"]["current_step"] = "translate"
-                state["steps"]["translate"]["status"] = "pending"
+                state.setdefault("steps", {}).setdefault(
+                    "translate", {
+                        "status": "pending",
+                        "started_at": "",
+                        "finished_at": "",
+                        "last_detail": "",
+                        "current": 0,
+                        "total": 0,
+                    })["status"] = "pending"
                 save_pipeline_state(work_dir, state)
                 return DubResult(status="translate_pending", work_dir=work_dir)
 
