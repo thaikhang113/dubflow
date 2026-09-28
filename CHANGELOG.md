@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.0.27 - 2026-10-01
+
+### Fixed
+
+- Match bundled Python with component-install runtimes and verify Douyin imports/Chromium in Doctor.
+- Avoid false Whisper preflight failures when faster-whisper is in its dedicated venv; check the configured model cache.
+- Show Doctor repair progress and failure details; prevent concurrent component installs.
+- Retry VSR source downloads with timeout, progress, checksum verification, and bounded pip installation.
+
 ## 3.0.26 - 2026-09-28
 
 ### Fixed

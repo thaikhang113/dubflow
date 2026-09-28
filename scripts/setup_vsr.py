@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
 import shutil
 import stat
 import subprocess
 import sys
+import time
 import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -38,6 +40,69 @@ def _verify_archive(path: str | Path) -> None:
             digest.update(chunk)
     if digest.hexdigest() != ARCHIVE_SHA256:
         raise RuntimeError("VSR archive checksum mismatch")
+
+def _download_archive(
+    url: str,
+    destination: str | Path,
+    *,
+    log=print,
+    attempts: int = 3,
+    timeout: int = 60,
+) -> None:
+    """Download a checksum-pinned archive with timeout, progress, and retries."""
+    if attempts < 1:
+        raise ValueError("attempts must be at least one")
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    part_path = destination.with_name(destination.name + ".part")
+    last_error: Exception | None = None
+
+    for attempt in range(1, attempts + 1):
+        try:
+            log(f"Đang tải source VSR (lần {attempt}/{attempts})...")
+            request = urllib.request.Request(
+                url, headers={"User-Agent": "DubFlow-Setup/1.0"})
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                total = int(response.headers.get("Content-Length") or 0)
+                downloaded = 0
+                last_reported = 0
+                with part_path.open("wb") as handle:
+                    while True:
+                        chunk = response.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        handle.write(chunk)
+                        downloaded += len(chunk)
+                        if downloaded - last_reported >= 16 * 1024 * 1024:
+                            if total:
+                                log(
+                                    f"Đang tải VSR: {downloaded // (1024 * 1024)} / "
+                                    f"{total // (1024 * 1024)} MB")
+                            else:
+                                log(f"Đã tải VSR: {downloaded // (1024 * 1024)} MB")
+                            last_reported = downloaded
+                    handle.flush()
+                    os.fsync(handle.fileno())
+            if total and downloaded != total:
+                raise OSError(
+                    f"Tải chưa đủ dữ liệu ({downloaded}/{total} byte).")
+            log(f"Đã tải VSR: {downloaded // (1024 * 1024)} MB; đang kiểm tra SHA256...")
+            _verify_archive(part_path)
+            os.replace(part_path, destination)
+            return
+        except (OSError, RuntimeError, ValueError, http.client.HTTPException) as exc:
+            last_error = exc
+            try:
+                part_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            if attempt < attempts:
+                log(f"Tải VSR lỗi ({exc}); sẽ thử lại.")
+                time.sleep(min(2 ** (attempt - 1), 4))
+
+    raise RuntimeError(
+        f"Không tải được source VSR sau {attempts} lần thử: {last_error}") from last_error
+
 
 def _safe_extract(handle: zipfile.ZipFile, destination: str | Path) -> None:
     root = Path(destination).resolve()
@@ -91,11 +156,7 @@ def main() -> int:
     os.makedirs(MODEL_DIR, exist_ok=True)
     if not os.path.isdir(SOURCE_DIR):
         archive = os.path.join(MODEL_DIR, "source.zip")
-        log("Tải video-subtitle-remover 1.1.1 ...")
-        urllib.request.urlretrieve(  # nosec B310 — pinned release URL
-            ARCHIVE_URL, archive,
-        )
-        _verify_archive(archive)
+        _download_archive(ARCHIVE_URL, archive, log=log)
         extracted = os.path.join(MODEL_DIR, "extract")
         os.makedirs(extracted, exist_ok=True)
         with zipfile.ZipFile(archive) as handle:
@@ -111,8 +172,13 @@ def main() -> int:
     if os.path.isfile(requirements):
         log("Cài dependency VSR ...")
         subprocess.run(
-            [PYTHON, "-m", "pip", "install", "-r", requirements],
+            [PYTHON, "-m", "pip", "install", "--retries", "3",
+             "--timeout", "30", "-r", requirements],
             check=True,
+            timeout=1800,
+        )
+        subprocess.run(
+            [PYTHON, "-m", "pip", "check"], check=True, timeout=120,
         )
     with open(MARKER, "w", encoding="utf-8") as handle:
         json.dump({

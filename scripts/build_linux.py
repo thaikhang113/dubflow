@@ -17,6 +17,15 @@ import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIST = os.path.join(ROOT, "dist", "DubFlow")
+SETUP_PYTHON_VERSION = "3.12"
+
+
+def _require_setup_python() -> None:
+    actual = f"{sys.version_info[0]}.{sys.version_info[1]}"
+    if actual != SETUP_PYTHON_VERSION:
+        raise SystemExit(
+            f"Linux bundle cần Python {SETUP_PYTHON_VERSION}, đang build bằng "
+            f"{actual}; dùng đúng phiên bản để khớp portable runtime.")
 
 
 def _source_version() -> str:
@@ -48,15 +57,19 @@ def assemble(version: str) -> None:
     clean_distribution_artifacts()
     with open(os.path.join(DIST, "VERSION"), "w", encoding="utf-8") as handle:
         handle.write(f"{version}\n")
-    os.makedirs(os.path.join(DIST, "scripts"), exist_ok=True)
+    scripts_dir = os.path.join(DIST, "scripts")
+    os.makedirs(scripts_dir, exist_ok=True)
     for name in ("setup_support.py", "setup_vieneu.py",
                  "setup_paraformer.py", "setup_whisper.py", "setup_ocr.py",
                  "setup_douyin.py", "setup_demucs.py", "setup_voices.py",
                  "setup_deepseek_ocr.py", "setup_vsr.py"):
         shutil.copy2(
             os.path.join(ROOT, "scripts", name),
-            os.path.join(DIST, "scripts", name),
+            os.path.join(scripts_dir, name),
         )
+    with open(os.path.join(scripts_dir, "python_tag.txt"), "w",
+              encoding="utf-8") as handle:
+        handle.write(f"{SETUP_PYTHON_VERSION}\n")
     shutil.copy2(os.path.join(ROOT, ".env.example"),
                  os.path.join(DIST, ".env.example"))
     shutil.copy2(os.path.join(ROOT, "LICENSE"), os.path.join(DIST, "LICENSE"))
@@ -105,6 +118,7 @@ def main() -> int:
     parser.add_argument("--no-test", action="store_true")
     parser.add_argument("--version", default=_source_version())
     args = parser.parse_args()
+    _require_setup_python()
     started = time.time()
 
     if os.path.isdir(DIST):

@@ -36,7 +36,15 @@ def _bundle_data_dir() -> str:
         if os.path.isdir(path):
             return path
     return os.path.join(DIST_DIR, "_internal")
-SETUP_PYTHON_VERSION = "3.12"
+SETUP_PYTHON_VERSION = f"{sys.version_info[0]}.{sys.version_info[1]}"
+_SUPPORTED_SETUP_PYTHON = ("3.10", "3.11", "3.12")
+
+
+def _require_supported_setup_python() -> None:
+    if SETUP_PYTHON_VERSION not in _SUPPORTED_SETUP_PYTHON:
+        raise SystemExit(
+            f"Build Python {SETUP_PYTHON_VERSION} không tương thích với setup scripts; "
+            "cần Python 3.10–3.12.")
 
 def log(msg: str) -> None:
     print(f"[build] {msg}", flush=True)
@@ -59,6 +67,7 @@ def run(cmd: list[str], **kw) -> None:
 # ------------------------------------------------------------------ steps --
 
 def step_pyinstaller() -> None:
+    _require_supported_setup_python()
     # Xóa dist cũ để không lẫn file rác từ lần build trước.
     if os.path.isdir(DIST_DIR):
         log("xóa dist/DubFlow cũ...")
@@ -89,6 +98,7 @@ def step_pyinstaller() -> None:
 
 
 def step_assemble() -> None:
+    _require_supported_setup_python()
     log("lắp ráp thư mục phân phối...")
 
     clean_distribution_artifacts()
@@ -108,8 +118,8 @@ def step_assemble() -> None:
         shutil.copy2(os.path.join(PROJECT_ROOT, "scripts", script),
                      scripts_dst)
 
-    # Setup extensions dùng Python 3.10–3.12. Build bằng Python khác không được
-    # ghi vào tag vì người dùng cần runtime tương thích, không phải build host.
+    # Native extensions như greenlet phải khớp Python nhúng trong exe; tag này
+    # buộc setup worker dùng đúng major/minor của interpreter build app.
     with open(os.path.join(scripts_dst, "python_tag.txt"), "w",
               encoding="utf-8") as f:
         f.write(f"{SETUP_PYTHON_VERSION}\n")
@@ -292,7 +302,7 @@ echo.
 pause
 """
 
-SETUP_DOUYIN_BAT = r"""@echo off
+SETUP_DOUYIN_BAT = rf"""@echo off
 chcp 65001 >nul
 title Cai dat tinh nang tai video Douyin cho DubFlow
 echo.
@@ -301,7 +311,7 @@ echo  (~170 MB) de tai video Douyin. YouTube va link truc tiep KHONG can.
 echo  Yeu cau: Python DUNG phien ban ghi trong scripts\python_tag.txt.
 echo.
 cd /d "%~dp0"
-py -3.12 scripts\setup_douyin.py 2>nul || py scripts\setup_douyin.py || python scripts\setup_douyin.py
+py -{SETUP_PYTHON_VERSION} scripts\setup_douyin.py 2>nul || py scripts\setup_douyin.py || python scripts\setup_douyin.py
 if errorlevel 1 (
     echo.
     echo  !! Cai dat that bai. Kiem tra da cai Python dung phien ban:

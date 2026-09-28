@@ -182,17 +182,30 @@ def _download_portable_python(log, progress) -> str:
         shutil.rmtree(temp_root, ignore_errors=True)
 
 
-def _probe_python(cmd: list[str]) -> str:
-    """Trả về đường dẫn thật của trình thông dịch nếu chạy được, else ""."""
+def _probe_python(
+    cmd: list[str], required_version: str | None = None
+) -> str:
+    """Return a supported interpreter path, optionally matching an ABI tag."""
+    if required_version is not None:
+        major, minor = (int(part) for part in required_version.split("."))
+        check = (
+            "import sys; "
+            f"print(sys.executable if sys.version_info[:2] == ({major}, {minor}) "
+            "else '')"
+        )
+    else:
+        check = (
+            "import sys; "
+            "print(sys.executable if (3, 10) <= sys.version_info[:2] <= "
+            "(3, 12) else '')"
+        )
     try:
         out = subprocess.run(
-            [*cmd, "-c",
-             ("import sys; "
-             "print(sys.executable if (3, 10) <= sys.version_info[:2] <= "
-             "(3, 12) else '')")],
+            [*cmd, "-c", check],
             capture_output=True, text=True, timeout=15,
             creationflags=_NO_WINDOW,
-        check=False)
+            check=False,
+        )
     except (OSError, subprocess.TimeoutExpired):
         return ""
     if out.returncode != 0:
@@ -200,53 +213,57 @@ def _probe_python(cmd: list[str]) -> str:
     return (out.stdout or "").strip()
 
 
-def _find_python() -> str:
-    """Đường dẫn Python chạy được scripts/setup_*.py.
+def _find_python(required_version: str | None = None) -> str:
+    """Find a supported interpreter, optionally matching the packaged app ABI."""
+    if required_version is not None and required_version not in _SUPPORTED_PY:
+        raise RuntimeError(f"Phiên bản Python không được hỗ trợ: {required_version}")
+    versions = (required_version,) if required_version else _SUPPORTED_PY
 
-    Bản đóng gói: ``sys.executable`` là DubFlow.exe — không chạy được .py, nên
-    phải mượn Python của máy. Bản dev: Python đang chạy app có thể là phiên
-    bản quá mới (3.13+) so với các gói mà script cần cài, nên vẫn ưu tiên dò
-    3.12/3.11/3.10 qua ``py`` launcher trước, giống các file .bat.
-    """
     if sys.platform != "win32":
         portable = _portable_python()
-        if portable and _probe_python([portable]):
+        if portable and _probe_python([portable], required_version):
             return portable
 
     if sys.platform == "win32":
-        for version in _SUPPORTED_PY:
-            found = _probe_python(["py", f"-{version}"])
+        for version in versions:
+            found = _probe_python(["py", f"-{version}"], required_version)
             if found:
                 return found
-        candidates = (
-            os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs",
-                         "Python", "Python312", "python.exe"),
-            os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs",
-                         "Python", "Python311", "python.exe"),
-            os.path.join(os.environ.get("PROGRAMFILES", ""), "Python312",
-                         "python.exe"),
-        )
+        candidates = []
+        for version in versions:
+            suffix = version.replace(".", "")
+            candidates.extend((
+                os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs",
+                             "Python", f"Python{suffix}", "python.exe"),
+                os.path.join(os.environ.get("PROGRAMFILES", ""),
+                             f"Python{suffix}", "python.exe"),
+            ))
         for candidate in candidates:
-            if os.path.isfile(candidate) and _probe_python([candidate]):
+            if os.path.isfile(candidate) and _probe_python(
+                    [candidate], required_version):
                 return candidate
 
-    # Python đang chạy app — chỉ dùng khi bản thân nó được hỗ trợ.
+    # In source mode, the running interpreter is compatible when it matches.
     if not getattr(sys, "frozen", False):
         current = f"{sys.version_info[0]}.{sys.version_info[1]}"
-        if current in _SUPPORTED_PY:
+        if current in _SUPPORTED_PY and (
+                required_version is None or current == required_version):
             return sys.executable
 
     candidates = (
-        "python3.12", "python3.11", "python3.10", "python3", "python"
+        (f"python{required_version}", "python3", "python")
+        if required_version else
+        ("python3.12", "python3.11", "python3.10", "python3", "python")
     ) if sys.platform != "win32" else ()
     for candidate in candidates:
         exe = shutil.which(candidate)
-        if exe and _probe_python([exe]):
+        if exe and _probe_python([exe], required_version):
             return exe
 
+    wanted = required_version or "3.10–3.12"
     raise RuntimeError(
-        "Không tìm thấy Python 3.10–3.12 trên máy. Hãy cài Python 3.12 từ "
-        "python.org (nhớ tích 'Add python.exe to PATH') rồi bấm Thử lại.")
+        f"Không tìm thấy Python {wanted} phù hợp với ứng dụng. "
+        "Hãy cài đúng Python rồi bấm Thử lại.")
 
 class PythonRuntimeWorker(QThread):
     """Ensure external Python exists for first-run setup scripts."""
@@ -258,8 +275,9 @@ class PythonRuntimeWorker(QThread):
 
     def run(self) -> None:
         try:
+            required_version = _required_bundle_python()
             try:
-                python = _find_python()
+                python = _find_python(required_version)
                 self.log.emit(f"{STATUS_OK} Python đã sẵn sàng: {python}")
                 self.progress.emit(100)
                 self.finished_ok.emit()
@@ -268,10 +286,11 @@ class PythonRuntimeWorker(QThread):
                 pass
 
             if sys.platform == "win32":
-                self.log.emit("Đang cài Python 3.12 qua winget...")
+                version = required_version or "3.12"
+                self.log.emit(f"Đang cài Python {version} qua winget...")
                 self.progress.emit(10)
                 command = [
-                    "winget", "install", "--id", "Python.Python.3.12",
+                    "winget", "install", "--id", f"Python.Python.{version}",
                     "--scope", "user", "--silent",
                     "--accept-source-agreements",
                     "--accept-package-agreements",
@@ -280,19 +299,25 @@ class PythonRuntimeWorker(QThread):
                     command, capture_output=True, text=True,
                     encoding="utf-8", errors="replace",
                     timeout=900, creationflags=_NO_WINDOW,
-                check=False)
+                    check=False,
+                )
                 if proc.returncode != 0:
                     tail = (proc.stderr or proc.stdout or "").strip()[-1200:]
                     raise RuntimeError(
-                        f"winget cài Python thất bại ({proc.returncode}).\n{tail}")
+                        f"winget cài Python {version} thất bại ({proc.returncode}).\n{tail}")
             else:
                 python = _download_portable_python(
                     self.log.emit, self.progress.emit)
+                if required_version and not _probe_python(
+                        [python], required_version):
+                    raise RuntimeError(
+                        f"Ứng dụng cần Python {required_version}, nhưng "
+                        "runtime portable không khớp.")
                 self.log.emit(f"{STATUS_OK} Python portable đã sẵn sàng: {python}")
                 self.finished_ok.emit()
                 return
 
-            python = _find_python()
+            python = _find_python(required_version)
             self.log.emit(f"{STATUS_OK} Python đã sẵn sàng: {python}")
             self.progress.emit(100)
             self.finished_ok.emit()
@@ -311,6 +336,22 @@ def _find_script(rel_path: str) -> str:
     raise FileNotFoundError(
         f"Không tìm thấy script '{rel_path}'. "
         "Hãy chạy từ thư mục chứa mã nguồn ứng dụng.")
+
+
+def _required_bundle_python() -> str | None:
+    """Read the Python minor version used to freeze this application."""
+    try:
+        tag_path = _find_script(os.path.join("scripts", "python_tag.txt"))
+    except FileNotFoundError:
+        return None
+    try:
+        with open(tag_path, encoding="utf-8") as handle:
+            version = handle.read().strip()
+    except OSError as exc:
+        raise RuntimeError(f"Không đọc được python_tag.txt: {exc}") from exc
+    if version not in _SUPPORTED_PY:
+        raise RuntimeError(f"python_tag.txt không hợp lệ: {version!r}")
+    return version
 
 
 # --------------------------------------------------------------------------- #
@@ -590,9 +631,14 @@ class SetupScriptWorker(QThread):
             app_dir = app_root()
             os.environ["DUBFLOW_DATA_DIR"] = data_dir
             script_path = _find_script(self._script_rel)
-            python_exe  = _find_python()
-
             script_name = os.path.basename(self._script_rel)
+            required_version = _required_bundle_python()
+            if (script_name == "setup_douyin.py" and required_version is None
+                    and not getattr(sys, "frozen", False)):
+                # Native greenlet must use the source app's own Python ABI.
+                python_exe = sys.executable
+            else:
+                python_exe = _find_python(required_version)
             total_lines = _SCRIPT_LINES_ESTIMATE.get(script_name, 30)
 
             self.log.emit(f"Chạy: {script_name}")

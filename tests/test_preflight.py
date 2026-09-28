@@ -81,6 +81,82 @@ def test_check_asr_paraformer_not_configured(settings, monkeypatch):
     assert "Whisper" in result.advice
 
 
+def test_check_asr_accepts_dedicated_venv_without_app_import(
+    settings, monkeypatch
+):
+    """Packaged app must validate its dedicated Whisper runtime."""
+    import builtins
+
+    import autodub.preflight as preflight
+
+    settings.asr_engine = "whisper"
+    monkeypatch.setattr(Settings, "whisper_venv_configured",
+                        lambda self: True)
+    real_import = builtins.__import__
+
+    def without_bundled_whisper(name, *args, **kwargs):
+        if name == "faster_whisper":
+            raise ImportError("not bundled in the application")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", without_bundled_whisper)
+    monkeypatch.setattr(preflight.os.path, "isdir", lambda _path: False)
+
+    result = _check_asr(settings)
+
+    assert result.level == "warn"
+    assert "Thiếu thư viện faster-whisper" not in result.message
+
+
+def test_check_asr_uses_configured_model_cache(settings, monkeypatch, tmp_path):
+    import builtins
+
+    settings.asr_engine = "whisper"
+    settings.whisper_model = "tiny"
+    monkeypatch.setattr(Settings, "whisper_venv_configured",
+                        lambda self: True)
+    model_root = tmp_path / "models" / "whisper"
+    model_dir = model_root / (
+        f"models--Systran--faster-whisper-{settings.whisper_model}")
+    model_dir.mkdir(parents=True)
+    monkeypatch.setattr(Settings, "whisper_model_dir_path",
+                        lambda self: str(model_root))
+    real_import = builtins.__import__
+
+    def without_bundled_whisper(name, *args, **kwargs):
+        if name == "faster_whisper":
+            raise ImportError("not bundled in the application")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", without_bundled_whisper)
+
+    result = _check_asr(settings)
+
+    assert result.level == "ok"
+    assert "đã có sẵn" in result.message
+
+
+def test_check_asr_requires_venv_or_in_process_package(settings, monkeypatch):
+    import builtins
+
+    settings.asr_engine = "whisper"
+    monkeypatch.setattr(Settings, "whisper_venv_configured",
+                        lambda self: False)
+    real_import = builtins.__import__
+
+    def without_whisper(name, *args, **kwargs):
+        if name == "faster_whisper":
+            raise ImportError("not installed")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", without_whisper)
+
+    result = _check_asr(settings)
+
+    assert result.level == "fail"
+    assert "setup_whisper.py" in result.advice
+
+
 def test_total_ram_readable():
     total = _total_ram_gb()
     # Trên máy thật phải đọc được số dương; 0.0 chỉ khi API hỏng.

@@ -778,6 +778,68 @@ def test_help_page_install_rows_use_in_app_buttons(monkeypatch):
     page.deleteLater()
     app.processEvents()
 
+def test_doctor_reload_shows_activity_and_install_error(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from autodub.config import Settings
+    from autodub.doctor import DoctorCheck
+    from autodub_gui import workers_setup
+    from autodub_gui.pages import help_page
+    from autodub_gui.pages.help_page import HelpPage
+
+    class FakeSignal:
+        def __init__(self):
+            self.callback = None
+
+        def connect(self, callback):
+            self.callback = callback
+
+        def emit(self, *args):
+            self.callback(*args)
+
+    class FakeWorker:
+        instance = None
+
+        def __init__(self, *_args, **_kwargs):
+            FakeWorker.instance = self
+            self.log = FakeSignal()
+            self.progress = FakeSignal()
+            self.finished_ok = FakeSignal()
+            self.failed = FakeSignal()
+            self.finished = FakeSignal()
+
+        def start(self):
+            pass
+
+        def deleteLater(self):
+            pass
+
+    app = QApplication.instance() or QApplication([])
+    page = HelpPage(lambda: Settings())
+    check = DoctorCheck(
+        "whisper", "Whisper", "fail", "Thiếu runtime", "Bấm tải lại",
+        "scripts/setup_whisper.py")
+    page._add_doctor_row(check)
+    monkeypatch.setattr(workers_setup, "SetupScriptWorker", FakeWorker)
+    monkeypatch.setattr(help_page.TOASTS, "error", lambda *_args: None)
+
+    page._start_doctor_repair("whisper")
+    row = page._doctor_rows["whisper"]
+    assert row["state"].text() == "Đang cài"
+    assert not row["progress"].isHidden()
+    assert not row["repair_button"].isEnabled()
+
+    FakeWorker.instance.log.emit("Đang tải gói 25 MB")
+    assert "25 MB" in row["message"].text()
+    FakeWorker.instance.failed.emit("pip failed: HTTP 503")
+    assert row["state"].text() == "Lỗi"
+    assert "HTTP 503" in row["message"].toolTip()
+    assert row["repair_button"].isEnabled()
+    page.deleteLater()
+    app.processEvents()
+
+
 def test_openclaw_page_is_app_managed(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication

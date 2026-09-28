@@ -102,3 +102,40 @@ def test_doctor_reports_planned_vsr_fallback_without_repair(tmp_path, monkeypatc
     assert result.level == "ok"
     assert "fallback" in result.message.lower()
     assert not result.repairable
+
+
+def test_douyin_doctor_requires_real_import_and_chromium(tmp_path, monkeypatch):
+    import autodub.doctor as doctor
+
+    monkeypatch.setattr(doctor, "data_root", lambda: str(tmp_path))
+    monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path / "pw-browsers"))
+    monkeypatch.setattr(doctor.importlib.util, "find_spec", lambda _name: object())
+    monkeypatch.setattr(doctor.importlib, "import_module", lambda _name: object())
+    result = doctor._check_douyin()
+    assert result.level == "fail"
+    assert result.repairable
+
+    browser_root = tmp_path / "pw-browsers"
+    (browser_root / "chromium-1234").mkdir(parents=True)
+    result = doctor._check_douyin()
+    assert result.level == "ok"
+
+
+def test_douyin_doctor_catches_python_abi_import_error(tmp_path, monkeypatch):
+    import autodub.doctor as doctor
+
+    (tmp_path / "pw-browsers" / "chromium-1234").mkdir(parents=True)
+    monkeypatch.setattr(doctor, "data_root", lambda: str(tmp_path))
+    monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path / "pw-browsers"))
+    monkeypatch.setattr(doctor.importlib.util, "find_spec", lambda _name: object())
+
+    def import_module(name):
+        if name == "greenlet":
+            raise ModuleNotFoundError("greenlet._greenlet")
+        return object()
+
+    monkeypatch.setattr(doctor.importlib, "import_module", import_module)
+    result = doctor._check_douyin()
+
+    assert result.level == "fail"
+    assert result.repairable

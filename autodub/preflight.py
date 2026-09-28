@@ -244,19 +244,21 @@ def _check_asr(settings: Settings) -> CheckResult:
             message="Cấu hình đang chọn Paraformer nhưng máy chưa cài.",
             advice="Chạy: py scripts/setup_paraformer.py — hoặc trong Cài đặt "
                    "đổi Bộ nghe về Whisper (không cần cài thêm).")
-    # Whisper tải model tự động ở lần chạy đầu — chỉ cần xác nhận gói có mặt.
-    try:
-        import faster_whisper  # noqa: F401
-    except ImportError:
-        return CheckResult(
-            key="asr", title="Bộ nghe (Whisper)", level="fail",
-            message="Thiếu thư viện faster-whisper.",
-            advice="Cài lại phụ thuộc: py -m pip install -r requirements.txt "
-                   "— hoặc cài lại ứng dụng nếu đang dùng bản đóng gói.")
-    # Báo trước khi Whisper tải model lần đầu — tránh người dùng tưởng treo.
+    # Bản đóng gói cài faster-whisper trong venv riêng; không thể import từ
+    # Python nhúng của app. Bản dev có thể dùng dependency trong interpreter.
+    if not settings.whisper_venv_configured():
+        try:
+            import faster_whisper  # noqa: F401
+        except ImportError:
+            return CheckResult(
+                key="asr", title="Bộ nghe (Whisper)", level="fail",
+                message="Môi trường Whisper chưa được cài hoàn tất.",
+                advice="Bấm Tải lại để chạy scripts/setup_whisper.py; cần mạng "
+                       "để cài faster-whisper và kiểm tra model.")
+    # Worker Whisper dùng model cache do Settings cấu hình (không phải cache
+    # HuggingFace mặc định của Python nhúng trong ứng dụng).
     model_name = settings.whisper_model
-    model_dir = os.path.join(
-        os.path.expanduser("~"), ".cache", "huggingface", "hub")
+    model_dir = settings.whisper_model_dir_path()
     # Thư mục cache có thể chứa nhiều model; chỉ kiểm tra model đang chọn.
     model_slug = f"models--Systran--faster-whisper-{model_name}"
     already_cached = os.path.isdir(os.path.join(model_dir, model_slug))

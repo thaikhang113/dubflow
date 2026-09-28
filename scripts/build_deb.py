@@ -51,6 +51,10 @@ def _validate_bundle(bundle: Path, version: str) -> None:
     if not version_file.is_file() or version_file.read_text(
             encoding="utf-8").strip() != version:
         raise SystemExit(f"VERSION trong bundle không khớp {version!r}")
+    python_tag = bundle / "scripts" / "python_tag.txt"
+    if not python_tag.is_file() or python_tag.read_text(
+            encoding="utf-8").strip() != "3.12":
+        raise SystemExit("bundle Python ABI tag thiếu hoặc không khớp portable runtime")
     for name in (
         "setup_support.py", "setup_vieneu.py", "setup_whisper.py",
         "setup_paraformer.py", "setup_ocr.py", "setup_douyin.py",

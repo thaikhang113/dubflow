@@ -385,7 +385,10 @@ class HelpPage(BasePage):
             return False
 
     def _start_install(self, checker: str) -> None:
-        if self._active_install is not None:
+        if (self._active_install is not None
+                or self._doctor_worker is not None
+                or self._doctor_repair_worker is not None):
+            TOASTS.error("Đang có tác vụ cài đặt/kiểm tra khác chạy.")
             return
         row = self._install_rows.get(checker)
         settings = self._safe_settings()
@@ -426,7 +429,10 @@ class HelpPage(BasePage):
         worker.start()
 
     def _start_doctor_check(self) -> None:
-        if self._doctor_worker is not None or self._doctor_repair_worker is not None:
+        if (self._active_install is not None
+                or self._doctor_worker is not None
+                or self._doctor_repair_worker is not None):
+            TOASTS.error("Đang có tác vụ cài đặt/kiểm tra khác chạy.")
             return
         settings = self._safe_settings()
         if settings is None:
@@ -501,24 +507,42 @@ class HelpPage(BasePage):
         message.setStyleSheet(
             f"color: {tokens.TEXT_SECONDARY}; font-size: {tokens.FS_META}px; "
             "background: transparent;")
+        activity = QProgressBar()
+        activity.setRange(0, 0)
+        activity.setTextVisible(False)
+        activity.setFixedSize(64, 8)
+        activity.hide()
+        repair = None
         row.addWidget(title)
         row.addWidget(state)
         row.addWidget(message, 1)
+        row.addWidget(activity)
         if check.repairable:
             repair = GhostButton("Tải lại")
             repair.clicked.connect(
                 lambda _checked=False, key=check.key: self._start_doctor_repair(key))
             row.addWidget(repair)
         self._doctor_layout.addLayout(row)
-        self._doctor_rows[check.key] = {"check": check, "layout": row}
+        self._doctor_rows[check.key] = {
+            "check": check,
+            "layout": row,
+            "state": state,
+            "message": message,
+            "progress": activity,
+            "repair_button": repair,
+        }
 
     def _start_doctor_repair(self, check_key: str) -> None:
-        if self._doctor_repair_worker is not None or self._active_install is not None:
+        if (self._doctor_repair_worker is not None
+                or self._doctor_worker is not None
+                or self._active_install is not None):
+            TOASTS.error("Đang có tác vụ cài đặt/kiểm tra khác chạy.")
             return
         row = self._doctor_rows.get(check_key, {})
         check = row.get("check")
         script = getattr(check, "repair_script", "")
         if not script:
+            TOASTS.error("Không tìm thấy script sửa cho thành phần này.")
             return
         from autodub_gui.workers_setup import (
             FFmpegDownloadWorker,
@@ -530,16 +554,41 @@ class HelpPage(BasePage):
             if script == "__ffmpeg__"
             else SetupScriptWorker(script, self)
         )
-        worker.log.connect(lambda message: self._doctor_rows[check_key].update(
-            {"last_log": message}))
+        row["last_log"] = "Đang chuẩn bị cài đặt..."
+        row["state"].setText("Đang cài")
+        row["state"].setStyleSheet(
+            f"color: {tokens.ACCENT_BLUE}; font-size: {tokens.FS_META}px; "
+            "background: transparent;")
+        row["message"].setText(row["last_log"])
+        row["message"].setToolTip(row["last_log"])
+        row["progress"].show()
+        if row["repair_button"] is not None:
+            row["repair_button"].setText("Đang tải...")
+        for other_row in self._doctor_rows.values():
+            button = other_row.get("repair_button")
+            if button is not None:
+                button.setEnabled(False)
+        if self._doctor_check_button is not None:
+            self._doctor_check_button.setEnabled(False)
+
+        worker.log.connect(
+            lambda text, key=check_key: self._doctor_repair_log(key, text))
         worker.finished_ok.connect(
             lambda key=check_key: self._finish_doctor_repair(key, True, ""))
         worker.failed.connect(
-            lambda message, key=check_key: self._finish_doctor_repair(
-                key, False, message))
+            lambda text, key=check_key: self._finish_doctor_repair(
+                key, False, text))
         worker.finished.connect(worker.deleteLater)
         self._doctor_repair_worker = worker
         worker.start()
+
+    def _doctor_repair_log(self, check_key: str, text: str) -> None:
+        row = self._doctor_rows.get(check_key, {})
+        row["last_log"] = text
+        message = row.get("message")
+        if isinstance(message, QLabel):
+            message.setText(text)
+            message.setToolTip(text)
 
     def _finish_doctor_repair(
         self, check_key: str, ok: bool, message: str
@@ -548,18 +597,42 @@ class HelpPage(BasePage):
         self._doctor_repair_worker = None
         if worker is not None:
             worker.deleteLater()
+        row = self._doctor_rows.get(check_key, {})
+        row["progress"].hide()
         if ok:
-            TOASTS.success("Đã tải lại thành phần. Kiểm tra lại hệ thống.")
+            row["state"].setText("Đã tải — đang kiểm tra")
+            row["message"].setText("Đang chạy lại kiểm tra hệ thống...")
+            row["repair_button"].setText("Đang kiểm tra...")
+            TOASTS.success("Đã tải lại thành phần. Đang kiểm tra lại hệ thống.")
             self._start_doctor_check()
-        else:
-            TOASTS.error("Tải lại thành phần thất bại.")
-            row = self._doctor_rows.get(check_key, {})
-            check = row.get("check")
-            if check is not None:
-                check = type(check)(
-                    check.key, check.title, "fail", check.message, message,
-                    check.repair_script)
-                row["check"] = check
+            return
+
+        details = message.strip() or row.get("last_log", "") or "Không có log lỗi."
+        summary = details.splitlines()[-1][:240]
+        row["state"].setText("Lỗi")
+        row["state"].setStyleSheet(
+            f"color: {tokens.DANGER}; font-size: {tokens.FS_META}px; "
+            "background: transparent;")
+        row["state"].setToolTip(details)
+        row["message"].setText(summary)
+        row["message"].setToolTip(details)
+        button = row.get("repair_button")
+        if button is not None:
+            button.setText("Thử lại")
+        for other_row in self._doctor_rows.values():
+            other_button = other_row.get("repair_button")
+            other_check = other_row.get("check")
+            if other_button is not None:
+                other_button.setEnabled(
+                    bool(other_check and other_check.repairable))
+        if self._doctor_check_button is not None:
+            self._doctor_check_button.setEnabled(True)
+        check = row.get("check")
+        if check is not None:
+            row["check"] = type(check)(
+                check.key, check.title, "fail", check.message, details,
+                check.repair_script)
+        TOASTS.error(f"Tải lại thất bại: {summary}")
 
     def _finish_install(self, checker: str, ok: bool, message: str) -> None:
         row = self._install_rows.get(checker)

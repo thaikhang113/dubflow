@@ -1,8 +1,30 @@
+import re
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_release_version_metadata_is_synchronized():
+    app_source = (ROOT / "autodub_gui" / "app.py").read_text(encoding="utf-8")
+    version = re.search(r'^APP_VERSION = "([^"]+)"', app_source, re.MULTILINE)
+    assert version is not None
+    version = version.group(1)
+
+    checks = (
+        ("autodub/__init__.py", rf'^__version__ = "{re.escape(version)}"'),
+        ("autodub_gui/__init__.py", rf'^__version__ = "{re.escape(version)}"'),
+        ("pyproject.toml", rf'^version = "{re.escape(version)}"'),
+        ("scripts/DubFlow.iss", rf'^#define AppVersion "{re.escape(version)}"'),
+    )
+    for relative, pattern in checks:
+        source = (ROOT / relative).read_text(encoding="utf-8")
+        assert re.search(pattern, source, re.MULTILINE), relative
+
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert any(line.startswith(f"## {version} - ")
+               for line in changelog.splitlines()[:4])
 
 
 def test_all_installers_exist_and_call_all_setup_steps():
@@ -21,11 +43,41 @@ def test_release_builders_bundle_setup_support_helper():
     linux = (ROOT / "scripts" / "build_linux.py").read_text(encoding="utf-8")
     assert '"setup_support.py"' in windows
     assert '"setup_support.py"' in linux
-    assert 'SETUP_PYTHON_VERSION = "3.12"' in windows
+    assert 'SETUP_PYTHON_VERSION = f"{sys.version_info[0]}.{sys.version_info[1]}"' in windows
+    assert "_require_supported_setup_python" in windows
+    assert "py -{SETUP_PYTHON_VERSION} scripts\\setup_douyin.py" in windows
     assert "VoxDub" not in windows[windows.index("def release_guide"):].split(
         "def main", 1
     )[0]
     assert "VoxDub" not in linux
+
+
+def test_windows_and_linux_release_targets_match_douyin_abi():
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8")
+    assert workflow.count('python-version: "3.12"') == 2
+    windows_builder = (ROOT / "scripts" / "build_exe.py").read_text(
+        encoding="utf-8")
+    assert "_require_supported_setup_python" in windows_builder
+    linux_builder = (ROOT / "scripts" / "build_linux.py").read_text(
+        encoding="utf-8")
+    assert 'SETUP_PYTHON_VERSION = "3.12"' in linux_builder
+    assert "_require_setup_python" in linux_builder
+    assert "python_tag.txt" in linux_builder
+
+
+def test_release_builders_reject_unsupported_python(monkeypatch):
+    from scripts import build_exe, build_linux
+
+    monkeypatch.setattr(build_exe, "SETUP_PYTHON_VERSION", "3.13")
+    with pytest.raises(SystemExit, match="Python 3.13"):
+        build_exe._require_supported_setup_python()
+
+    monkeypatch.setattr(build_linux, "sys", type("FakeSys", (), {
+        "version_info": (3, 11),
+    })())
+    with pytest.raises(SystemExit, match="Python 3.12"):
+        build_linux._require_setup_python()
 
 
 def test_release_specs_bundle_whisper_worker():
@@ -98,6 +150,37 @@ def test_linux_runtime_probe_rejects_unsupported_python(monkeypatch):
     assert "(3, 10)" in calls[0][-1]
     assert "(3, 12)" in calls[0][-1]
 
+
+def test_find_python_honors_exact_packaged_runtime(monkeypatch):
+    from autodub_gui import workers_setup
+
+    seen = []
+    monkeypatch.setattr(workers_setup.sys, "platform", "win32")
+    monkeypatch.setattr(
+        workers_setup, "_probe_python",
+        lambda command, required_version=None: (
+            seen.append((command, required_version)) or
+            ("C:/Python311/python.exe"
+             if command == ["py", "-3.11"] else "")
+        ),
+    )
+    monkeypatch.setattr(workers_setup.os.path, "isfile", lambda _path: False)
+
+    assert workers_setup._find_python(required_version="3.11") == (
+        "C:/Python311/python.exe")
+    assert seen == [(["py", "-3.11"], "3.11")]
+
+
+def test_required_bundle_python_reads_packaged_tag(tmp_path, monkeypatch):
+    from autodub_gui import workers_setup
+
+    tag_path = tmp_path / "python_tag.txt"
+    tag_path.write_text("3.11\n", encoding="utf-8")
+    monkeypatch.setattr(workers_setup, "_find_script", lambda _path: str(tag_path))
+
+    assert workers_setup._required_bundle_python() == "3.11"
+
+
 def test_linux_package_does_not_require_host_python():
     source = (ROOT / "scripts" / "build_deb.py").read_text(encoding="utf-8")
     assert "python3.10" not in source
@@ -144,6 +227,7 @@ def test_deb_bundle_validation_checks_executable_workers_and_setup_scripts(
     (bundle / "DubFlow").chmod(0o755)
     (bundle / "VERSION").write_text("3.0.4\n", encoding="utf-8")
     (bundle / "scripts").mkdir()
+    (bundle / "scripts" / "python_tag.txt").write_text("3.12\n", encoding="utf-8")
     for name in (
         "setup_support.py", "setup_vieneu.py", "setup_whisper.py",
             "setup_paraformer.py", "setup_ocr.py", "setup_douyin.py",
@@ -176,6 +260,7 @@ def test_deb_bundle_validation_prefers_data_dir_with_workers(tmp_path):
     (bundle / "DubFlow").chmod(0o755)
     (bundle / "VERSION").write_text("3.0.4\n", encoding="utf-8")
     (bundle / "scripts").mkdir()
+    (bundle / "scripts" / "python_tag.txt").write_text("3.12\n", encoding="utf-8")
     for name in (
         "setup_support.py", "setup_vieneu.py", "setup_whisper.py",
             "setup_paraformer.py", "setup_ocr.py", "setup_douyin.py",
@@ -220,6 +305,54 @@ def test_vsr_extraction_rejects_zip_slip(tmp_path):
         _safe_extract(handle, destination)
 
     assert not (tmp_path / "outside.txt").exists()
+
+
+def test_vsr_download_retries_partial_response_and_promotes_atomically(
+    tmp_path, monkeypatch
+):
+    import hashlib
+
+    from scripts import setup_vsr
+
+    payload = b"verified VSR archive payload"
+    calls = []
+    messages = []
+
+    class Response:
+        def __init__(self, chunks):
+            self.headers = {"Content-Length": str(len(payload))}
+            self.chunks = iter(chunks)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, _size):
+            return next(self.chunks, b"")
+
+    def fake_urlopen(_request, timeout):
+        calls.append(timeout)
+        if len(calls) == 1:
+            return Response([b"truncated", b""])
+        return Response([payload, b""])
+
+    monkeypatch.setattr(setup_vsr.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(setup_vsr.time, "sleep", lambda _delay: None)
+    monkeypatch.setattr(
+        setup_vsr, "ARCHIVE_SHA256", hashlib.sha256(payload).hexdigest()
+    )
+    destination = tmp_path / "source.zip"
+
+    setup_vsr._download_archive(
+        setup_vsr.ARCHIVE_URL, destination, log=messages.append
+    )
+
+    assert calls == [60, 60]
+    assert destination.read_bytes() == payload
+    assert not (tmp_path / "source.zip.part").exists()
+    assert any("thử lại" in message.lower() for message in messages)
 
 def test_linux_first_run_has_portable_python_runtime():
     source = (ROOT / "autodub_gui" / "workers_setup.py").read_text(

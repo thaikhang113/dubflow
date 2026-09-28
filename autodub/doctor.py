@@ -1,6 +1,7 @@
 """Kiểm tra và định tuyến sửa lỗi môi trường phát hành DubFlow."""
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import json
 import os
@@ -291,18 +292,38 @@ def _check_optional_component(
 
 def _check_douyin() -> DoctorCheck:
     try:
-        if importlib.util.find_spec("playwright") is None:
-            raise ImportError
-    except Exception:
+        importlib.import_module("playwright.sync_api")
+        importlib.import_module("greenlet")
+    except Exception as exc:
         return DoctorCheck(
             "douyin",
             "Tải Douyin",
             "fail",
-            "Thiếu Playwright/Chromium cho đường tải dự phòng Douyin.",
+            "Playwright/greenlet không import được trong Python của ứng dụng.",
+            f"Chi tiết: {type(exc).__name__}. Bấm Tải lại để cài lại Douyin.",
+            repair_script_for("douyin"),
+        )
+
+    browser_root = os.environ.get("PLAYWRIGHT_BROWSERS_PATH") or os.path.join(
+        data_root(), "pw-browsers")
+    try:
+        chromium_ready = any(
+            name.startswith("chromium") for name in os.listdir(browser_root)
+        )
+    except OSError:
+        chromium_ready = False
+    if not chromium_ready:
+        return DoctorCheck(
+            "douyin",
+            "Tải Douyin",
+            "fail",
+            "Chưa tìm thấy Chromium trong thư mục trình duyệt của DubFlow.",
             "Bấm Tải lại để cài Playwright và Chromium.",
             repair_script_for("douyin"),
         )
-    return DoctorCheck("douyin", "Tải Douyin", "ok", "Playwright đã sẵn sàng.")
+    return DoctorCheck(
+        "douyin", "Tải Douyin", "ok", "Playwright và Chromium đã sẵn sàng."
+    )
 
 
 def _check_demucs() -> DoctorCheck:
