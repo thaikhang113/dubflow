@@ -31,6 +31,9 @@ Build and maintain DubFlow: local Vietnamese video dubbing desktop app.
 - `qa/gui_walkthrough.py` và `qa/commit_safety_check.py` trước mỗi commit
 
 ## Latest Verification
+- 2026-09-28: Chuẩn bị phát hành v3.0.26 sau kiểm toán workflow. 1071 tests passed, Ruff sạch; source GUI smoke thành công. Lưu ý: model dịch mặc định trên máy kiểm thử trả HTTP 503 nên cần tài khoản/model provider được cấp quyền; app giữ trạng thái translate_pending, không tự đổi lựa chọn người dùng.
+  + OpenClaw phục hồi job mồ côi bằng heartbeat/PID, retry không đóng oan job còn sống; kiểm chứng kill cứng và job retry riêng biệt.
+  + Sửa đường hủy Demucs/GUI, giữ cờ OCR khi resume, sửa retry lỗi tải Bilibili/Douyin và thêm test hồi quy.
 - 2026-09-24: Nâng cấp phiên bản v3.0.25 (Sửa lỗi và tăng tốc tải video Bilibili / Douyin).
   + Tự động nạp cookies Netscape Bilibili (`default_bilibili_cookies_file`) tránh bị CDN bóp băng thông 90KB/s hoặc từ chối kết nối.
   + Bổ sung cookies, douyin_cookies và fragment_workers vào `PrefetchWorker` ở Bước 1 GUI.

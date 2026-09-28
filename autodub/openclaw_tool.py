@@ -8,13 +8,24 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from autodub.batch import parse_lines
 from autodub.config import Settings
 from autodub.remote_worker import (
     cancel_job,
+    job_is_live,
+    settle_orphan_status,
     submit_job,
 )
+
+
+class BatchNotFound(ValueError):
+    """Batch không tồn tại: route hợp lệ nhưng ``batch_id`` sai → HTTP 404.
+
+    Là lớp con của ``ValueError`` nên mọi nơi bắt ``ValueError`` cũ vẫn chạy
+    đúng; tầng HTTP phân biệt được 404 với 400 nhờ tên lớp.
+    """
 
 _OPTION_KEYS = {
     "source_lang", "voice", "bg_mode", "bg_duck_db", "skip_video",
@@ -43,10 +54,73 @@ _STYLE_NOTES = {
     "social": "Câu ngắn, nhịp nhanh, dễ nghe khi lướt; tránh câu dài lê thê.",
 }
 _TERMINAL = {"completed", "failed", "cancelled", "translate_pending"}
+#: "interrupted" = app bị tắt khi job đang chạy. Không còn tiến trình nào
+#: chạy nữa nên batch đã "an vị" — nhưng KHÁC "cancelled": còn chạy tiếp
+#: được, nên giao diện phải thấy trạng thái này thay vì "Đang chạy".
+_SETTLED = _TERMINAL | {"interrupted"}
+
+
+def recover_orphan_running(queue_root: str) -> list[str]:
+    """Đánh dấu 'interrupted' cho job còn nằm trong running/ lúc khởi động.
+
+    App bị giết cứng để lại tệp job trong ``running/`` mà không ai ghi
+    trạng thái kết thúc. Không quét lúc khởi động thì batch đó kẹt vĩnh viễn
+    ở 'running' và KHÔNG API nào cứu được. Trả về danh sách job_id đã cứu.
+    """
+    base = Path(queue_root).expanduser().resolve()
+    running_dir = base / "running"
+    recovered: list[str] = []
+    if not running_dir.is_dir():
+        return recovered
+    for path in sorted(running_dir.glob("*.json")):
+        job_id = path.stem
+        try:
+            status = _read_status(queue_root, job_id)
+        except FileNotFoundError:
+            status = {}
+        if status.get("status") in _SETTLED:
+            continue
+        if job_is_live(base, job_id):
+            # Nhịp tim còn đập và PID còn sống — không phải job mồ côi. Quét
+            # lúc khởi động có thể chạy trong khi một tiến trình khác đang
+            # thật sự làm việc; đóng nó lại là giết việc đang chạy.
+            continue
+        _settle_orphan(queue_root, job_id, status)
+        recovered.append(job_id)
+    return recovered
+
+
+def _settle_orphan(queue_root: str, job_id: str, status: dict) -> None:
+    """Ghi trạng thái 'interrupted' cho một job mồ côi (giữ tiến độ cũ)."""
+    base = Path(queue_root).expanduser().resolve()
+    status_dir = base / "status"
+    status_dir.mkdir(parents=True, exist_ok=True)
+    updated = dict(status) if isinstance(status, dict) else {}
+    updated.setdefault("job_id", job_id)
+    updated.update({
+        "status": "interrupted",
+        "step": "interrupted",
+        "detail": "Ứng dụng đã tắt khi job đang chạy — chạy tiếp được",
+        "error": "",
+    })
+    status_path = status_dir / f"{job_id}.json"
+    temp = status_path.with_name(f".{job_id}.json.tmp")
+    temp.write_text(json.dumps(updated, ensure_ascii=False, indent=2),
+                    encoding="utf-8")
+    temp.replace(status_path)
+#: Job còn chạy tiếp được khi người dùng yêu cầu: lỗi thật, đang chờ dịch
+#: tay, hoặc bị cắt vì ứng dụng tắt giữa chừng (không phải người dùng hủy).
+_RETRYABLE = {"failed", "translate_pending", "interrupted"}
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _is_http_url(value: str) -> bool:
+    """Chuỗi này có phải URL http(s) thật không (không chỉ là 'có gì đó')?"""
+    parts = urlsplit(value.strip())
+    return parts.scheme.lower() in ("http", "https") and bool(parts.netloc)
 
 
 def _links(payload: dict) -> list[str]:
@@ -60,6 +134,14 @@ def _links(payload: dict) -> list[str]:
     links = [item.url for item in items if item.url]
     if not links:
         raise ValueError("Không tìm thấy link video http(s)")
+    # parse_lines coi MỌI dòng không rỗng là một URL, nên chuỗi rác ("not a
+    # url") lọt tới đây nguyên vẹn và tạo batch thật rồi chết ở bước tải. Chặn
+    # ngay tại biên API, nói rõ dòng nào sai.
+    invalid = [link for link in links if not _is_http_url(link)]
+    if invalid:
+        raise ValueError(
+            "Link không hợp lệ (phải là http:// hoặc https://): "
+            + ", ".join(repr(link) for link in invalid[:5]))
     if len(links) > 100:
         raise ValueError("Tối đa 100 link mỗi batch")
     return links
@@ -175,7 +257,7 @@ def _read_manifest(queue_root: str, batch_id: str) -> dict:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError(f"Không tìm thấy batch: {batch_id}") from exc
+        raise BatchNotFound(f"Không tìm thấy batch: {batch_id}") from exc
 
 
 def _read_status(queue_root: str, job_id: str) -> dict:
@@ -222,11 +304,15 @@ def _aggregate_status(jobs: list[dict]) -> str:
     states = {item["status"] for item in jobs}
     if states == {"completed"}:
         return "completed"
-    if states and states <= _TERMINAL:
+    if states and states <= _SETTLED:
         if "failed" in states:
             return "failed"
         if "translate_pending" in states:
             return "translate_pending"
+        # Ưu tiên "interrupted" hơn "cancelled": batch còn chạy tiếp được
+        # thì phải hiện nút Thử lại, đừng để người dùng kẹt.
+        if "interrupted" in states:
+            return "interrupted"
         if "cancelled" in states:
             return "cancelled"
     return "running"
@@ -269,13 +355,31 @@ def _submit(payload: dict, queue_root: str, settings: Settings) -> dict:
 def _cancel(payload: dict, queue_root: str) -> dict:
     manifest = _read_manifest(queue_root, payload.get("batch_id", ""))
     cancelled = []
+    signalled = []
+    alive = []
     for job_id in manifest["job_ids"]:
-        status = _read_status(queue_root, job_id)
-        if status.get("status") not in _TERMINAL:
-            cancel_job(queue_root, job_id)
+        # Tệp trạng thái có thể không tồn tại (job kẹt ở inbox/, worker chết
+        # trước khi ghi) — hủy vẫn phải chạy, không được ném FileNotFoundError
+        # rồi bị _dispatch đổi thành HTTP 400.
+        try:
+            status = _read_status(queue_root, job_id)
+        except FileNotFoundError:
+            status = {}
+        if status.get("status") in _TERMINAL:
+            continue
+        # cancel_job trả False khi job còn tiến trình sống: lúc đó ta mới chỉ
+        # CẮM CỜ để worker tự dừng, chưa đóng được job. Báo "đã hủy xong" ở
+        # đây chính là nguồn của ca "cancel trả ok=True nhưng batch vẫn
+        # 'running'". Phải phân biệt và nói đúng sự thật.
+        if cancel_job(queue_root, job_id):
             cancelled.append(job_id)
+        else:
+            signalled.append(job_id)
+            if job_is_live(queue_root, job_id):
+                alive.append(job_id)
     return {"ok": True, "batch_id": manifest["batch_id"],
-            "cancelled": cancelled}
+            "cancelled": cancelled, "signalled": signalled,
+            "still_running": alive}
 
 
 def _retry_failed(payload: dict, queue_root: str) -> dict:
@@ -284,12 +388,33 @@ def _retry_failed(payload: dict, queue_root: str) -> dict:
     replacement_by_old_id = {}
     try:
         for job in manifest["jobs"]:
-            status = _read_status(queue_root, job["job_id"])
-            if status.get("status") != "failed":
+            try:
+                status = _read_status(queue_root, job["job_id"])
+            except FileNotFoundError:
+                # Không có tệp trạng thái = job chưa từng chạy xong: coi như
+                # đáng thử lại thay vì ném lỗi ra tầng HTTP.
+                status = {}
+            # Job mồ côi (kẹt ở 'running' vì app bị giết cứng) cũng phải cứu
+            # được: đóng nó lại thành 'interrupted' rồi thay bằng job mới,
+            # thay vì để batch không bao giờ kết thúc.
+            #
+            # NHƯNG job còn nhịp tim thì TUYỆT ĐỐI không được đụng vào. Với
+            # phép thử bằng mtime, một job đang chạy thật ở bước im lặng dài
+            # (Demucs/ASR video dài, >5 phút không sự kiện tiến trình) bị coi
+            # là mồ côi: nó bị đổi thành 'interrupted' dù vẫn đang chạy, rồi
+            # một job MỚI giữ nguyên request (kèm output_dir) được tạo ra —
+            # hai job ghi cùng một thư mục.
+            orphan = (status.get("status") not in _RETRYABLE
+                      and settle_orphan_status(
+                          queue_root, job["job_id"]) is not None)
+            if status.get("status") not in _RETRYABLE and not orphan:
                 continue
             new_id = f"{manifest['batch_id']}-retry-{uuid.uuid4().hex[:6]}"
             replacement = dict(job)
             replacement["job_id"] = new_id
+            # GIỮ NGUYÊN request (kể cả output_dir/resume_dir) để job mới tìm
+            # lại đúng thư mục làm việc cũ và tái dùng video/.part đã tải dở.
+            # Đổi item_dir là mất ~18% đã tải và lỗi lại đúng chỗ cũ.
             submit_job(queue_root, replacement)
             replacement_jobs.append(replacement)
             replacement_by_old_id[job["job_id"]] = replacement
@@ -337,9 +462,34 @@ def handle(payload: dict, *, queue_root: str = "remote_queue",
     raise ValueError("action phải là prepare, submit, status, cancel, retry_failed hoặc tools_call")
 
 
+def _configure_stdout() -> None:
+    """Ép stdout sang UTF-8 mà không chết trên console Windows cp1252.
+
+    ``errors="strict"`` làm tiến trình ném UnicodeEncodeError ngay khi in
+    tên video có tiếng Việt/tiếng Trung ra console mặc định của Windows
+    (cp1252) — CLI chết giữa lúc trả kết quả, exit code 1. ``replace`` giữ
+    đúng hợp đồng "một dòng JSON trên stdout": ký tự không mã hoá được
+    thành "?" nhưng payload vẫn tới tay client.
+    """
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError, ValueError):
+        pass
+
+
+def _emit(payload: dict) -> None:
+    """In một dòng JSON, không bao giờ để lỗi mã hoá giết tiến trình."""
+    line = json.dumps(payload, ensure_ascii=False)
+    try:
+        print(line, flush=True)
+    except UnicodeEncodeError:
+        sys.stdout.buffer.write(
+            line.encode("utf-8", "replace") + b"\n")
+        sys.stdout.buffer.flush()
+
+
 def main() -> int:
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="strict")
+    _configure_stdout()
     parser = argparse.ArgumentParser()
     parser.add_argument("--queue", default="remote_queue")
     args = parser.parse_args()
@@ -348,9 +498,9 @@ def main() -> int:
         result = handle(payload, queue_root=args.queue)
     except Exception as exc:
         result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-        print(json.dumps(result, ensure_ascii=False), flush=True)
+        _emit(result)
         return 1
-    print(json.dumps(result, ensure_ascii=False), flush=True)
+    _emit(result)
     return 0
 
 

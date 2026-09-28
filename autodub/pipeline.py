@@ -322,6 +322,22 @@ class DubPipeline:
                 except OSError:
                     pass
             fut = self._active_bg_future
+            if fut is not None and not isinstance(exc, PipelineCancelled):
+                if self._reporter.cancel_event:
+                    self._reporter.cancel_event.set()
+                from autodub.cancel import cancel_processes, CURRENT_CANCEL_SCOPE
+                # scope=None nghĩa là HỦY TOÀN CỤC: _REQUESTED bị bật và
+                # KHÔNG BAO GIỜ tự tắt, nên mọi lượt chạy sau (kể cả trong
+                # cùng tiến trình GUI) chết ngay ở dòng kiểm tra hủy đầu
+                # tiên. Không có scope nào đang hoạt động thì bỏ qua việc
+                # hủy — tiến trình con đã chết theo tiến trình này rồi.
+                scope = CURRENT_CANCEL_SCOPE.get()
+                if scope is not None:
+                    try:
+                        cancel_processes(scope=scope)
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to cancel background processes on crash: {e}")
             if fut is not None:
                 fut.cancel()
                 # Observe the eventual result so a failure in the background
@@ -329,12 +345,19 @@ class DubPipeline:
                 fut.add_done_callback(
                     lambda f: f.cancelled() or f.exception())
             synth = self._active_synth
+            early = self._early_synth
             if (self._synth_cache is None and synth is not None
                     and hasattr(synth, "close")):
                 try:
                     synth.close()
                 except Exception as e:
                     logger.warning(f"Không đóng được TTS synth khi dọn dẹp: {e}")
+            if (self._synth_cache is None and early is not None
+                    and early is not synth and hasattr(early, "close")):
+                try:
+                    early.close()
+                except Exception as e:
+                    logger.warning(f"Không đóng được TTS early synth khi dọn dẹp: {e}")
             raise
         finally:
             # Executor được đóng ở đây, không phải ngay sau submit():
@@ -775,6 +798,11 @@ class DubPipeline:
                     tts_synth = early
                     self._active_synth = early
                 else:
+                    if early is not None and hasattr(early, "close") and self._synth_cache is None:
+                        try:
+                            early.close()
+                        except Exception:
+                            pass
                     tts_synth = self._get_synth(target, effective_voice)
                     self._active_synth = tts_synth
                     warm = getattr(tts_synth, "warm_up_async", None)
@@ -1009,7 +1037,7 @@ class DubPipeline:
             "subtitle_mode": req.subtitle_mode,
             "blur_regions": blur_regions,
             "mirror": req.mirror,
-            "ocr_enabled": req.ocr_enabled,
+            "ocr_enabled": ocr_enabled_for_request(settings, req),
             "logo_path": _setting_or_request(req, settings, "logo_path"),
             "intro_path": _setting_or_request(req, settings, "intro_path"),
             "outro_path": _setting_or_request(req, settings, "outro_path"),
@@ -1125,7 +1153,7 @@ class DubPipeline:
                 "blur_regions": req.blur_regions,
                 "subtitle_style": subtitle_style,
                 "mirror": req.mirror,
-                "ocr_enabled": req.ocr_enabled,
+                "ocr_enabled": ocr_enabled_for_request(settings, req),
             })
         else:
             # Chỉ xuất âm thanh: vẫn ghim kiểu phụ đề của LẦN CHẠY NÀY để

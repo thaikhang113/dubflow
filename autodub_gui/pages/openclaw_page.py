@@ -185,7 +185,10 @@ class OpenClawPage(BasePage):
                     lambda _checked=False, value=batch_id:
                     self._batch_action(value, "cancel"))
                 actions.append(button)
-            elif state == "failed":
+            elif state in ("failed", "interrupted", "translate_pending"):
+                # "interrupted" = app bị tắt giữa chừng, "translate_pending" =
+                # chờ bản dịch. Cả hai đều chạy tiếp được, phải có nút; nếu
+                # không người dùng kẹt vĩnh viễn không có đường thoát.
                 button = GhostButton("Thử lại")
                 button.clicked.connect(
                     lambda _checked=False, value=batch_id:
@@ -209,6 +212,8 @@ class OpenClawPage(BasePage):
             "completed": "Hoàn thành",
             "failed": "Lỗi",
             "cancelled": "Đã dừng",
+            "interrupted": "Tạm dừng",
+            "translate_pending": "Chờ dịch",
         }.get(state, "Đang chờ")
 
     @staticmethod
@@ -218,6 +223,8 @@ class OpenClawPage(BasePage):
             "completed": "success",
             "failed": "error",
             "cancelled": "warning",
+            "interrupted": "warning",
+            "translate_pending": "warning",
         }.get(state, "neutral")
 
     def is_running(self) -> bool:

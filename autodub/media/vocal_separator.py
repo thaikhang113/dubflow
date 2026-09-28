@@ -17,6 +17,7 @@ import os
 import subprocess
 import threading
 
+from autodub.progress import PipelineCancelled
 from autodub.resources import GPU_LOCK
 from autodub.utils import (
     bundled_file,
@@ -220,7 +221,28 @@ def separate_vocals(
         if not done and not _run_demucs_gpu_worker(
                 input_wav, raw_vocals, raw_no_vocals, model):
             _run_demucs(input_wav, raw_vocals, raw_no_vocals, model)
+    except PipelineCancelled:
+        # Người dùng bấm Dừng: PipelineCancelled là lớp con của Exception nên
+        # nếu để nhánh dưới bắt, lệnh hủy bị NUỐT thành «nền im lặng» và
+        # pipeline chạy tiếp bước dài nhất dù người dùng đã dừng. Dọn tệp dở
+        # rồi ném tiếp để lệnh hủy đi tới nơi gọi.
+        for path in (raw_vocals, raw_no_vocals):
+            if os.path.exists(path):
+                os.remove(path)
+        raise
     except Exception as exc:
+        from autodub.cancel import is_cancel_requested
+
+        # Đường Demucs THIẾU (máy chưa setup .venv-demucs) ném RuntimeError
+        # ngay, không có PipelineCancelled nào để nhánh trên bắt. Nếu người
+        # dùng đã bấm Dừng thì nuốt lỗi ở đây = pipeline chạy tiếp bước dài
+        # nhất bằng nền im lặng. Kiểm cờ hủy trước khi fallback.
+        if is_cancel_requested():
+            for path in (raw_vocals, raw_no_vocals):
+                if os.path.exists(path):
+                    os.remove(path)
+            raise PipelineCancelled(
+                "Đã hủy trong lúc tách nhạc nền") from exc
         logger.warning(f"Demucs separation failed: {exc}; falling back to silent base.")
         for path in (raw_vocals, raw_no_vocals):
             if os.path.exists(path):
@@ -349,12 +371,12 @@ def _run_demucs(input_wav: str, vocals_out: str, no_vocals_out: str,
     logger.info(f"Running Demucs ({model_name}) in CPU worker on {input_wav}")
     env = dict(os.environ)
     env.setdefault("TORCH_HOME", os.path.join(demucs_model_dir(), "torch"))
+    from autodub.cancel import run_registered
     try:
-        result = subprocess.run(
+        result = run_registered(
             cmd, env=env, capture_output=True, encoding="utf-8",
             errors="replace", text=True,
-            timeout=demucs_timeout_s(_probe_duration_s(input_wav)),
-        check=False)
+            timeout=demucs_timeout_s(_probe_duration_s(input_wav)))
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError("Demucs CPU worker timed out") from exc
     lines = [line.strip() for line in (result.stdout or "").splitlines()
@@ -385,11 +407,11 @@ def _normalize(src: str, dst: str, sample_rate: str, channels: int = 1) -> None:
         "-acodec", "pcm_s16le",
         dst,
     ]
+    from autodub.cancel import run_registered
     try:
-        result = subprocess.run(
+        result = run_registered(
             cmd, capture_output=True, encoding="utf-8", errors="replace",
-            timeout=ffmpeg_timeout_s(_probe_duration_s(src)),
-        check=False)
+            timeout=ffmpeg_timeout_s(_probe_duration_s(src)))
     except subprocess.TimeoutExpired as exc:
         # Cùng dạng lỗi với nhánh thất bại bên dưới nên caller ở :204 vẫn rơi
         # đúng vào fallback "nền im lặng".

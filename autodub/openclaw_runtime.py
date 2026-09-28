@@ -19,6 +19,9 @@ _MAX_BODY = 1_000_000
 _DEFAULT_BIND_HOST = "127.0.0.1"
 _DEFAULT_PORT = 38643
 _DOCKER_HOST = "host.docker.internal"
+#: Quét job mồ côi định kỳ trong lúc app đang chạy. Rẻ (chỉ đọc vài tệp nhỏ)
+#: nên đặt thưa; mục đích là dọn luồng worker chết vì lỗi giữa chừng.
+_ORPHAN_SCAN_INTERVAL_S = 30.0
 
 
 class _Server(ThreadingHTTPServer):
@@ -66,6 +69,10 @@ class _Handler(BaseHTTPRequestHandler):
         return payload
 
     def _dispatch(self, method: str) -> None:
+        # Nhập cục bộ: openclaw_tool kéo theo cả pipeline, không cần nạp
+        # sớm khi tiến trình chỉ khởi động server.
+        from autodub.openclaw_tool import BatchNotFound
+
         runtime = self.server.runtime
         if not self._authorized():
             self._reply(401, {"ok": False, "error": "Token không hợp lệ"})
@@ -115,6 +122,10 @@ class _Handler(BaseHTTPRequestHandler):
                 return
 
             self._reply(404, {"ok": False, "error": "Route không tồn tại"})
+        except BatchNotFound as exc:
+            # Route hợp lệ, chỉ có batch_id là sai → 404. Client phân biệt
+            # được "gõ nhầm id" với "yêu cầu không hợp lệ" (400).
+            self._reply(404, {"ok": False, "error": str(exc)})
         except (TypeError, ValueError, FileNotFoundError) as exc:
             self._reply(400, {"ok": False, "error": str(exc)})
         except Exception as exc:
@@ -156,6 +167,7 @@ class OpenClawRuntime:
         self._server: _Server | None = None
         self._server_thread: threading.Thread | None = None
         self._worker_thread: threading.Thread | None = None
+        self._orphan_scan_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._lock = threading.RLock()
         self._write_config()
@@ -228,6 +240,10 @@ class OpenClawRuntime:
                 daemon=True,
             )
             self._server_thread.start()
+            # Job mồ côi từ lần chạy trước (app bị giết cứng) phải được đóng
+            # lại TRƯỚC khi worker mới bắt đầu nhận việc: để nguyên thì batch
+            # đó kẹt vĩnh viễn ở 'running' và không API nào cứu được.
+            self._recover_orphans()
             if worker:
                 self._worker_thread = threading.Thread(
                     target=run_worker,
@@ -238,6 +254,36 @@ class OpenClawRuntime:
                     daemon=True,
                 )
                 self._worker_thread.start()
+            # Quét định kỳ, không chỉ lúc khởi động: luồng worker có thể chết
+            # vì lỗi trong khi app vẫn sống, để lại job trong running/ mà
+            # không ai đóng. Không có vòng quét này thì batch vẫn kẹt
+            # 'running' cho tới khi người dùng khởi động lại app.
+            self._orphan_scan_thread = threading.Thread(
+                target=self._scan_orphans_loop,
+                name="dubflow-openclaw-orphan-scan",
+                daemon=True,
+            )
+            self._orphan_scan_thread.start()
+
+    def _recover_orphans(self) -> None:
+        """Đóng các job còn nằm trong running/ từ lần chạy trước."""
+        try:
+            from autodub.openclaw_tool import recover_orphan_running
+
+            recovered = recover_orphan_running(str(self._queue_root))
+        except Exception as exc:  # noqa: BLE001 - API phải vẫn khởi động
+            logging.getLogger(__name__).warning(
+                "Không quét được job mồ côi trong running/: %s", exc)
+            return
+        if recovered:
+            logging.getLogger(__name__).info(
+                "Đã đánh dấu 'interrupted' cho %d job mồ côi: %s",
+                len(recovered), ", ".join(recovered))
+
+    def _scan_orphans_loop(self) -> None:
+        """Quét định kỳ: luồng worker chết vì lỗi mà app vẫn sống."""
+        while not self._stop_event.wait(_ORPHAN_SCAN_INTERVAL_S):
+            self._recover_orphans()
 
     def stop(self) -> None:
         with self._lock:
@@ -249,9 +295,12 @@ class OpenClawRuntime:
                 self._server_thread.join(timeout=3)
             if self._worker_thread is not None:
                 self._worker_thread.join(timeout=3)
+            if self._orphan_scan_thread is not None:
+                self._orphan_scan_thread.join(timeout=3)
             self._server = None
             self._server_thread = None
             self._worker_thread = None
+            self._orphan_scan_thread = None
 
     def shutdown(self) -> None:
         self.stop()

@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -88,7 +87,10 @@ class DubWorker(QThread):
         cancel_processes(scope="gui")
 
     def run(self) -> None:
-        clear_cancel_request(scope="gui")
+        # Xoá cờ hủy ở MỌI phạm vi: cờ toàn cục (_REQUESTED) là event dùng
+        # chung cả tiến trình và không tự tắt, nên một lần hủy ở lượt trước
+        # sẽ làm lượt mới chết ngay ở bước kiểm tra hủy đầu tiên.
+        clear_cancel_request()
         handler = attach_gui_logging(self.log)
         try:
             with cancel_scope("gui"):
@@ -168,30 +170,35 @@ class SaveAllWorker(QThread):
 
     def cancel(self) -> None:
         self._cancel_event.set()
+        cancel_processes(scope="gui")
 
     def run(self) -> None:
         from autodub.editor import resynth_segments, save_segment_texts
         from autodub.progress import ProgressReporter
 
+        # Cờ hủy toàn cục là event dùng chung cả tiến trình: không xoá thì
+        # thao tác này chết ngay sau một lần người dùng bấm Dừng trước đó.
+        clear_cancel_request()
         handler = attach_gui_logging(self.log)
         reporter = ProgressReporter(lambda _e: None, self._cancel_event)
         try:
-            changed = save_segment_texts(self._work_dir, self._edits, self._target_key)
-            # Đổi giọng cho cả video: đọc lại mọi câu, kể cả câu không sửa chữ.
-            if self._force_all:
-                changed = sorted(self._edits.keys())
-            # Câu chỉ đổi giọng mà không sửa chữ: bổ sung vào danh sách cần đọc lại.
-            if self._force_ids:
-                changed = sorted(set(changed) | self._force_ids)
-            if not changed:
-                self.finished_ok.emit([])
-                return
-            resynth_segments(
-                self._work_dir, changed, self._settings,
-                self._target_key, self._voice, reporter,
-                on_progress=lambda done, total, sid:
-                    self.seg_done.emit(sid, done, total))
-            self.finished_ok.emit(changed)
+            with cancel_scope("gui"):
+                changed = save_segment_texts(self._work_dir, self._edits, self._target_key)
+                # Đổi giọng cho cả video: đọc lại mọi câu, kể cả câu không sửa chữ.
+                if self._force_all:
+                    changed = sorted(self._edits.keys())
+                # Câu chỉ đổi giọng mà không sửa chữ: bổ sung vào danh sách cần đọc lại.
+                if self._force_ids:
+                    changed = sorted(set(changed) | self._force_ids)
+                if not changed:
+                    self.finished_ok.emit([])
+                    return
+                resynth_segments(
+                    self._work_dir, changed, self._settings,
+                    self._target_key, self._voice, reporter,
+                    on_progress=lambda done, total, sid:
+                        self.seg_done.emit(sid, done, total))
+                self.finished_ok.emit(changed)
         except PipelineCancelled:
             self.cancelled.emit()
         except Exception as e:
@@ -219,6 +226,7 @@ class QualityRepairWorker(QThread):
 
     def cancel(self) -> None:
         self._cancel_event.set()
+        cancel_processes(scope="gui")
 
     def run(self) -> None:
         from autodub.editor import repair_over_budget_translations, resynth_segments
@@ -226,15 +234,16 @@ class QualityRepairWorker(QThread):
 
         handler = attach_gui_logging(self.log)
         try:
-            result = repair_over_budget_translations(
-                self._work_dir, self._settings, self._target_key)
-            changed = result["changed_ids"]
-            if changed:
-                reporter = ProgressReporter(lambda _e: None, self._cancel_event)
-                resynth_segments(
-                    self._work_dir, changed, self._settings,
-                    self._target_key, self._voice, reporter)
-            self.finished_ok.emit(result)
+            with cancel_scope("gui"):
+                result = repair_over_budget_translations(
+                    self._work_dir, self._settings, self._target_key)
+                changed = result["changed_ids"]
+                if changed:
+                    reporter = ProgressReporter(lambda _e: None, self._cancel_event)
+                    resynth_segments(
+                        self._work_dir, changed, self._settings,
+                        self._target_key, self._voice, reporter)
+                self.finished_ok.emit(result)
         except PipelineCancelled:
             self.cancelled.emit()
         except Exception as e:
@@ -269,6 +278,7 @@ class RebuildWorker(QThread):
 
     def cancel(self) -> None:
         self._cancel_event.set()
+        cancel_processes(scope="gui")
 
     def run(self) -> None:
         from autodub.editor import rebuild_output
@@ -277,12 +287,13 @@ class RebuildWorker(QThread):
         handler = attach_gui_logging(self.log)
         reporter = ProgressReporter(self.progress.emit, self._cancel_event)
         try:
-            out = rebuild_output(
-                self._work_dir, self._settings, self._target_key, self._voice,
-                self._bg_mode, self._bg_duck_db,
-                self._subtitle_mode, self._blur_regions,
-                self._subtitle_style, reporter)
-            self.finished_ok.emit(out)
+            with cancel_scope("gui"):
+                out = rebuild_output(
+                    self._work_dir, self._settings, self._target_key, self._voice,
+                    self._bg_mode, self._bg_duck_db,
+                    self._subtitle_mode, self._blur_regions,
+                    self._subtitle_style, reporter)
+                self.finished_ok.emit(out)
         except PipelineCancelled:
             self.cancelled.emit()
         except Exception as e:
@@ -318,6 +329,7 @@ class SubtitleWorker(QThread):
 
     def cancel(self) -> None:
         self._cancel_event.set()
+        cancel_processes(scope="gui")
 
     def run(self) -> None:
         from autodub.editor import rebuild_subtitles
@@ -326,11 +338,12 @@ class SubtitleWorker(QThread):
         handler = attach_gui_logging(self.log)
         reporter = ProgressReporter(self.progress.emit, self._cancel_event)
         try:
-            out = rebuild_subtitles(
-                self._work_dir, self._settings, self._target_key,
-                self._subtitle_mode, self._blur_regions,
-                self._subtitle_style, reporter)
-            self.finished_ok.emit(out)
+            with cancel_scope("gui"):
+                out = rebuild_subtitles(
+                    self._work_dir, self._settings, self._target_key,
+                    self._subtitle_mode, self._blur_regions,
+                    self._subtitle_style, reporter)
+                self.finished_ok.emit(out)
         except PipelineCancelled:
             self.cancelled.emit()
         except Exception as e:
@@ -368,18 +381,22 @@ class SegmentPreviewWorker(QThread):
 
     def cancel(self) -> None:
         self._cancel_event.set()
+        cancel_processes(scope="gui")
 
     def run(self) -> None:
         from autodub.editor import render_segment_preview
 
         handler = attach_gui_logging(self.log)
         try:
-            out = render_segment_preview(
-                self._work_dir, self._settings, self._seg_id,
-                self._target_key, self._bg_mode, self._bg_duck_db,
-                self._subtitle_mode, self._subtitle_style)
-            if not self._cancel_event.is_set():
-                self.finished_ok.emit(out)
+            with cancel_scope("gui"):
+                out = render_segment_preview(
+                    self._work_dir, self._settings, self._seg_id,
+                    self._target_key, self._bg_mode, self._bg_duck_db,
+                    self._subtitle_mode, self._subtitle_style)
+                if not self._cancel_event.is_set():
+                    self.finished_ok.emit(out)
+        except PipelineCancelled:
+            pass # GUI doesn't handle cancelled signal, it's just discarded
         except Exception as e:
             if not self._cancel_event.is_set():
                 self.failed.emit(str(e))
@@ -415,7 +432,9 @@ class BatchWorker(QThread):
     def run(self) -> None:
         from autodub.batch import run_batch
 
-        clear_cancel_request(scope="gui")
+        # Xoá cả cờ toàn cục: một lần hủy ở lượt trước sẽ làm lượt hàng loạt
+        # này chết ngay ở bước kiểm tra hủy đầu tiên.
+        clear_cancel_request()
         handler = attach_gui_logging(self.log)
 
         def observer(i, total, item, status, detail):
@@ -663,10 +682,14 @@ class DownloadWorker(QThread):
 
     def cancel(self) -> None:
         self._cancel_event.set()
+        cancel_processes(scope="gui")
 
     def run(self) -> None:
         from autodub.media.douyin import is_douyin_url
-        from autodub.media.downloader import download_one
+        from autodub.media.downloader import (
+            download_one,
+            is_transient_download_error,
+        )
         from autodub.utils import ensure_dir, save_json_atomic
 
         handler = attach_gui_logging(self.log)
@@ -728,13 +751,17 @@ class DownloadWorker(QThread):
                                 progress=_on_prog,
                                 cancel_event=self._cancel_event)
                             return i, url, entry, None
+                        except PipelineCancelled:
+                            return i, url, None, "cancelled"
                         except Exception as e:
                             message = str(e)
-                            transient = bool(re.search(
-                                r"\b(?:408|425|429|500|502|503|504|522|524)\b|"
-                                r"timed?\s*out|connection\s+(?:reset|aborted|error)|"
-                                r"temporar(?:y|ily)", message, re.IGNORECASE))
-                            if not transient or attempt == 3:
+                            # Phân loại theo LOẠI ngoại lệ + mã HTTP, không dò
+                            # chuỗi tự do: chuỗi thật của sự cố Bilibili
+                            # "('Connection broken: IncompleteRead(975 bytes read,
+                            # 469233162 more expected)', IncompleteRead(...))" không
+                            # khớp regex cũ nên app bỏ cuộc ngay ở lần thử đầu.
+                            if (not is_transient_download_error(e)
+                                    or attempt == 3):
                                 return i, url, None, message[:200]
                 finally:
                     if gate:
@@ -873,7 +900,9 @@ class ExportAudioWorker(QThread):
         from autodub.utils import ffmpeg_timeout_s
         from autodub.workdir import data_path
 
-        clear_cancel_request(scope="gui")
+        # Xoá cả cờ toàn cục (xem DubWorker.run) — nếu không, xuất MP3 sau
+        # một lần bấm Dừng trước đó sẽ hỏng ngay lập tức.
+        clear_cancel_request()
         handler = attach_gui_logging(self.log)
         try:
             with cancel_scope("gui"):

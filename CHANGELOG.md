@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.0.26 - 2026-09-28
+
+### Fixed
+
+- Recover orphaned OpenClaw jobs after a hard shutdown and prevent retries from duplicating live jobs.
+- Propagate cancellation through media separation and preserve OCR settings when resuming a project.
+- Retry transient/incomplete video downloads safely and reject truncated Douyin assets.
+- Validate OpenClaw URLs and expose retry actions for interrupted or translation-pending batches.
+- Use a packaged Vietnamese voice by default; document that translation requires an authorized provider account/model.
+
 ## 3.0.25 - 2026-09-24
 
 ### Fixed

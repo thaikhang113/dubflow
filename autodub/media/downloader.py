@@ -1,6 +1,8 @@
 """Video download via yt-dlp, with Douyin routed through Playwright."""
+import http.client
 import os
 import re
+import socket
 import threading
 import time
 from collections.abc import Callable
@@ -99,20 +101,86 @@ def _emit_progress(
     except Exception:
         pass
 
+#: Lỗi TOÀN VẸN DỮ LIỆU: kết nối đứt giữa chừng nên thân phản hồi ngắn hơn
+#: Content-Length. yt-dlp bọc chúng thành ContentTooShortError với thông điệp
+#: kiểu "975 bytes read, 469233162 more expected" rồi tự resume ở lần thử sau —
+#: tầng app PHẢI coi là tạm thời. Đây đúng là chuỗi của sự cố Bilibili 1080p:
+#: "('Connection broken: IncompleteRead(975 bytes read, 469233162 more
+#: expected)', IncompleteRead(...))".
+_INCOMPLETE_RE = re.compile(
+    r"incompleteread|connection\s+broken|bytes\s+read|content\s+too\s+short",
+    re.IGNORECASE,
+)
+
+#: Chỉ các mã HTTP này mới đáng thử lại — giữ nguyên tập cũ (412 Bilibili,
+#: 429 rate limit, 5xx) và thêm 408/425/522/524 vốn cũng là mã tạm thời.
+#: 403/404/410 KHÔNG nằm ở đây: link hết hạn hay sai thì thử lại chỉ tốn
+#: thời gian, phải báo người dùng ngay.
+_TRANSIENT_HTTP = frozenset({408, 412, 425, 429, 500, 502, 503, 504, 522, 524})
+_HTTP_CODE_RE = re.compile(r"\b(\d{3})\b")
+
+#: Lỗi ĐỨT KẾT NỐI nhưng không mang mã HTTP nào (mất mạng, timeout ở tầng
+#: socket). Phải thử lại — nếu không, app bỏ cuộc ngay ở lần thử đầu đúng
+#: lúc mạng chập chờn nhất.
+_TRANSIENT_MSG_RE = re.compile(
+    r"read\s+timed?\s*out|timed\s*out|connection\s+(?:reset|refused|aborted)"
+    r"|connection\s+error|remote\s+end\s+closed|network\s+is\s+unreachable"
+    r"|temporar(?:y|ily)\s+(?:failure|unavailable)"
+    r"|\b50[234]\b|service\s+unavailable|bad\s+gateway|gateway\s+time-?out"
+    r"|too\s+many\s+requests|rate\s*limit",
+    re.IGNORECASE,
+)
+
+#: Ngoại lệ mạng/tạm thời của thư viện chuẩn — yt-dlp, requests và urllib3 đều
+#: ném ra những lớp này (hoặc lớp con của chúng). IncompleteRead là lớp duy nhất
+#: ở đây KHÔNG phải OSError, nên phải kể tên riêng.
+_TRANSIENT_EXC = (
+    http.client.IncompleteRead,
+    ConnectionError,
+    socket.timeout,
+    TimeoutError,
+)
+
+
+def is_transient_download_error(error: object) -> bool:
+    """Lỗi tải này có đáng thử lại không?
+
+    Phân loại theo **loại ngoại lệ** và **mã HTTP**, không dò chuỗi tự do.
+    Cách cũ (regex trên chuỗi) sai cả hai chiều:
+
+    * âm tính giả — chuỗi thật của sự cố Bilibili không chứa "timeout" hay
+      "connection reset" nào, nên app bỏ cuộc ngay ở lần thử đầu;
+    * dương tính giả — "Content too short (expected 469233162, served 976)"
+      khớp chữ "connection error" nằm trong phần thông tin nền.
+
+    Thứ tự xét: ngoại lệ toàn vẹn/mạng → dấu hiệu cắt cụt trong thông điệp →
+    mã HTTP tạm thời. Có mã HTTP nhưng không nằm trong danh sách tạm thời
+    (403/404/410) thì trả False — yt-dlp ném cùng một lớp HTTPError cho cả
+    403 lẫn 503 nên không thể chỉ nhìn loại ngoại lệ.
+    """
+    if isinstance(error, _TRANSIENT_EXC):
+        return True
+    message = str(error)
+    if _INCOMPLETE_RE.search(message) or _TRANSIENT_MSG_RE.search(message):
+        return True
+    # Có mã HTTP nhưng KHÔNG nằm trong tập tạm thời (403/404/410...) → vĩnh
+    # viễn. Không có mã nào (lỗi mạng thuần) thì đã xét ở trên.
+    codes = {int(value) for value in _HTTP_CODE_RE.findall(message)}
+    return bool(codes & _TRANSIENT_HTTP)
+
+
 def _extract_info_with_retry(ydl, url: str, attempts: int = 3) -> dict:
     """Retry transient Bilibili metadata failures before failing the job."""
     for attempt in range(attempts):
         try:
             return ydl.extract_info(url, download=True)
         except Exception as exc:
-            message = str(exc)
-            transient = re.search(r"\b(412|429|500|502|503|504)\b", message)
-            if not transient or attempt == attempts - 1:
+            if not is_transient_download_error(exc) or attempt == attempts - 1:
                 raise
             delay = 2 * (attempt + 1)
             logger.warning(
-                f"yt-dlp metadata retry {attempt + 1}/{attempts - 1} "
-                f"after HTTP {transient.group(1)}; waiting {delay}s"
+                f"yt-dlp retry {attempt + 1}/{attempts - 1} sau lỗi tạm thời "
+                f"({type(exc).__name__}); chờ {delay}s"
             )
             time.sleep(delay)
     # Vòng lặp luôn return hoặc raise khi attempts >= 1; xuống tới đây nghĩa là

@@ -16,8 +16,11 @@ giao diện gọi thoải mái.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import dataclass
+
+logger = logging.getLogger("autodub.voices")
 
 # --- Từ vựng dùng chung cho bộ lọc ----------------------------------------
 
@@ -130,9 +133,19 @@ def source_group(voice: Voice) -> str:
         return "clone"
     return "capcut" if voice.is_capcut else "offline"
 
-#: Giọng fallback khi catalog trống (ví dụ chưa tải voices).
-# Tên này sẽ trùng với một giọng trong thư viện sau khi tải.
-DEFAULT_VOICE = "Trần Hải"
+#: Giọng fallback khi người dùng chưa chọn gì.
+#
+# Tên PHẢI có thật trong danh mục trên MỌI máy: giao diện lấy hằng số này
+# làm giá trị hiển thị và ghi thẳng vào .env khi chưa chọn giọng
+# (voice_library.py, settings_panels.py, new_project_steps.py; và
+# BatchItem/submit_job gửi nó xuống bước đọc). Một cái tên không tồn tại
+# làm mọi lượt chạy in cảnh báo rồi âm thầm đổi sang giọng khác.
+#
+# Vì vậy phải là giọng CAPCUT (Voice.json đóng gói sẵn, 22 giọng, không
+# cần mạng và không cần voices.zip), chứ không phải giọng VieNeu trong
+# voices.zip — bản sau chỉ có sau khi tải xong, nên máy mới cài sẽ trượt.
+# "Thanh Lan" nằm trong cả hai nguồn nên an toàn nhất.
+DEFAULT_VOICE = "Thanh Lan"
 
 
 def _from_label(name: str, label: str) -> Voice:
@@ -248,6 +261,26 @@ def invalidate_catalog_cache() -> None:
     _catalog_cache.clear()
 
 
+def _closest_voice_hint(candidate: str, names: set[str]) -> str:
+    """Gợi ý tên gần đúng cho một tên giọng không có trong danh mục.
+
+    Ca thật: ``.env`` bị mã hoá hai lần thành ``Pháº¡m TuyÃªn`` — so khớp
+    không dấu/khoảng trắng vẫn nhận ra "Phạm Tuyên" nhờ bỏ byte lạ. Trả về
+    chuỗi rỗng khi không đoán được gì, để câu log gọn.
+    """
+    def _squash(value: str) -> str:
+        return "".join(ch for ch in value.lower() if ch.isalnum())
+
+    target = _squash(candidate)
+    if not target:
+        return ""
+    for known in sorted(names):
+        squashed = _squash(known)
+        if squashed and (squashed in target or target in squashed):
+            return f" (ý bạn là {known!r}?)"
+    return ""
+
+
 def resolve(settings, name: str | None = None) -> str:
     """Tên giọng dùng thật cho một lần chạy.
 
@@ -262,6 +295,15 @@ def resolve(settings, name: str | None = None) -> str:
         candidate = (candidate or "").strip()
         if candidate in names:
             return candidate
+        if candidate:
+            # Không im lặng nữa: tên không có trong danh mục (gõ sai, hoặc
+            # .env bị mojibake) phải để lại dấu vết trong log, kèm gợi ý tên
+            # gần đúng — nếu không người dùng chỉ thấy "máy đọc giọng khác".
+            logger.warning(
+                "Giọng %r không có trong danh mục%s; dùng giọng mặc định.",
+                candidate,
+                _closest_voice_hint(candidate, names),
+            )
     if DEFAULT_VOICE in names:
         return DEFAULT_VOICE
     if voices:

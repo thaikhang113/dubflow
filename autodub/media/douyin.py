@@ -435,6 +435,15 @@ def _download_stream(
             raise RuntimeError(
                 f"CDN returned suspiciously small file ({size}B) — likely an "
                 "error page, not the video")
+        # Đối chiếu Content-Length: CDN đóng kết nối giữa chừng vẫn để lại
+        # một MP4 ĐỌC ĐƯỢC (moov nằm ở đầu file) nên ffprobe không phát hiện
+        # được — thiếu vài chục phần trăm mà pipeline vẫn chạy tiếp trên asset
+        # hỏng. Thà hỏng to còn hơn hỏng im lặng.
+        if total is not None and size < total:
+            raise RuntimeError(
+                f"CDN closed the connection early: got {size}B of {total}B "
+                f"({total - size}B missing) — refusing to keep a truncated "
+                "file")
         os.replace(part, dest)
         _emit_progress(progress, "finished", size, total)
     finally:
