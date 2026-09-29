@@ -1000,3 +1000,29 @@ def test_new_project_has_separate_persistent_pipeline_defaults() -> None:
     assert "self._load_pipeline_defaults()" in source
     assert 'for key in ("source", "url", "file_path", "resume_dir")' in source
     assert "data.pop(key, None)" in source
+
+
+def test_unreadable_media_has_a_friendly_explanation() -> None:
+    """FFmpeg đổ cả trang cấu hình biên dịch khi tệp nguồn không phải video.
+
+    Người dùng chỉ cần biết mình chọn nhầm tệp, nên mọi biến thể lỗi phải
+    khớp được với một lời khuyên trong bảng dịch lỗi.
+    """
+    from autodub_gui.dub_constants import friendly_error
+
+    noisy = (
+        "FFmpeg failed: ffmpeg version N-126086-ge5ecfe8970-20260812 "
+        "Copyright (c) 2000-2026 the FFmpeg developers configuration: "
+        "--enable-gpl --enable-libx264 [200 lines]"
+    )
+    friendly = friendly_error(noisy)
+    assert friendly is not None, "lỗi FFmpeg thô lọt tới người dùng"
+    title, advice = friendly
+    assert title and advice
+
+    for message in (
+        "Video file not found: D:\\x\\nope.mp4",
+        "No source video found in D:\\x and no --url/--file given",
+        "Không nhận dạng được lời nói nào trong video (video chỉ có nhạc)",
+    ):
+        assert friendly_error(message) is not None, message

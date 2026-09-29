@@ -68,6 +68,23 @@ MODEL_SIZES: dict[str, str] = {
 # Bảng dịch lỗi kỹ thuật sang lời khuyên cho người dùng.
 # Mỗi mục gồm: chuỗi nhận dạng, tiêu đề ngắn, việc cần làm.
 FRIENDLY_ERRORS: list[tuple[str, str, str]] = [
+    # Tệp nguồn không phải video (hoặc hỏng) làm FFmpeg in ra cả trang cấu
+    # hình biên dịch; người dùng chỉ cần biết là chọn nhầm tệp.
+    ("FFmpeg failed", "Tệp nguồn không đọc được",
+     ("Video này không mở được — có thể không phải tệp video, tệp bị hỏng "
+     "hoặc đang tải dở. Kiểm tra lại tệp rồi chạy lại.")),
+    ("Invalid data found when processing input", "Tệp nguồn không đọc được",
+     ("Video này không mở được — có thể không phải tệp video, tệp bị hỏng "
+     "hoặc đang tải dở. Kiểm tra lại tệp rồi chạy lại.")),
+    ("Video file not found", "Không tìm thấy tệp video",
+     ("Tệp đã bị di chuyển hoặc xóa. Chọn lại tệp video rồi chạy tiếp thư "
+     "mục dự án đang dở.")),
+    ("No source video found", "Không tìm thấy video gốc",
+     ("Thư mục này không còn video gốc. Chọn lại tệp video rồi bấm chạy — "
+     "ứng dụng sẽ tiếp tục từ chỗ dừng.")),
+    ("Không nhận dạng được lời nói nào", "Video không có lời thoại",
+     ("Video chỉ có nhạc hoặc chọn sai ngôn ngữ gốc. Kiểm tra Ngôn ngữ gốc "
+     "trong tab Lồng tiếng rồi chạy lại thư mục dự án đang dở.")),
     ("Video cũ đang được ứng dụng khác mở", "Video cũ đang bị khóa",
      ("Đóng video trong DubFlow hoặc trình phát ngoài rồi bấm Xuất video "
      "lại. Bản đã mã hóa vẫn nằm nguyên trong thư mục dự án.")),
