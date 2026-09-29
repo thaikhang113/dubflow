@@ -7,8 +7,10 @@ from collections import deque
 
 from autodub.config import Settings
 from autodub.languages import WHISPER_LANG_MAP
+from autodub.cancel import is_cancel_requested
 from autodub.cancel import register as register_process
 from autodub.cancel import unregister as unregister_process
+from autodub.progress import PipelineCancelled
 from autodub.resources import GPU_LOCK
 from autodub.utils import (
     asr_timeout_s,
@@ -420,6 +422,11 @@ def _transcribe_whisper_subprocess(
                     pass
 
     tail = "\n".join(stderr_tail)
+    # Nút Dừng giết tiến trình con đang chạy, nên worker thoát giữa chừng
+    # không phải lỗi nhận dạng. Báo đúng là đã hủy để bước sau không chạy
+    # trên danh sách câu dở dang.
+    if is_cancel_requested():
+        raise PipelineCancelled("Đã hủy trong lúc nghe-chép")
     if not done:
         raise RuntimeError(
             f"Whisper worker thoát bất thường (exit {proc.returncode})"
@@ -463,6 +470,8 @@ def _transcribe_whisper(audio_path: str, language: str, settings: Settings,
         logger.info(f"Loading Whisper model: {model_name} (first run downloads the model)")
         model, _device = _load_whisper_model(model_name, settings)
 
+    if is_cancel_requested():
+        raise PipelineCancelled("Đã hủy trong lúc nghe-chép")
     logger.info(f"Starting transcription: {audio_path} (language: {whisper_lang})")
     raw_segments, info = model.transcribe(
         audio_path,
@@ -479,6 +488,11 @@ def _transcribe_whisper(audio_path: str, language: str, settings: Settings,
     segments = []
     segment_id = 0
     for seg in raw_segments:
+        # Đường in-process không có tiến trình con để nút Dừng giết, nên đây
+        # là điểm dừng duy nhất: model.transcribe trả về một generator và
+        # chỉ chạy tiếp khi vòng lặp này rút phần tử kế tiếp.
+        if is_cancel_requested():
+            raise PipelineCancelled("Đã hủy trong lúc nghe-chép")
         text = seg.text.strip()
         if not text:
             continue

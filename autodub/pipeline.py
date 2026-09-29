@@ -715,6 +715,9 @@ class DubPipeline:
                          text_field="text")
             logger.info(f"Nghe xong: video có {len(segments)} câu thoại")
             rep.emit("asr", "done", detail=f"{len(segments)} segments")
+        # Nghe-chép có thể chạy bằng tiến trình con; nút Dừng giết tiến trình
+        # đó, nên phải kiểm lại trước khi ghi bản dịch/TTS cho phần đã nghe.
+        rep.check_cancelled()
         _tick("asr")
         logger.info(f"Transcribed {len(segments)} segments")
         if not segments:
