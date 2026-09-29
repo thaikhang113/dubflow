@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "autodub"
-version = "3.0.28"
+version = "3.0.29"
 description = "Automatic video dubbing into Vietnamese: download → ASR → translate → TTS → mix → export"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-demucs = ["demucs>=4.0.0", "soundfile>=0.13.0"]
+demucs = ["demucs>=4.0.0,<5.0", "soundfile>=0.13.0,<0.14"]
 dev = ["pytest>=8.0.0", "ruff>=0.6", "ftfy>=6.1"]
 
 [project.gui-scripts]

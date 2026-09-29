@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.0.29 - 2026-09-29
+
+### Fixed
+
+- Stop now stops a run during automatic OCR, logo detection, voice cloning and
+  vision logo detection. Four handlers wrapped their work in a bare
+  `except Exception`, and because `PipelineCancelled` inherits from `Exception`,
+  pressing Stop was downgraded to a warning: the pipeline kept going and the GUI
+  never received the cancel signal. Each site now re-raises `PipelineCancelled`
+  first and still degrades quietly for every other error.
+- The OCR block moved out of the pipeline body into `_detect_blur_regions()`, so
+  the cancellation path is covered by tests. It previously sat after video
+  download and Demucs, where no test could reach it — which is why the bug
+  survived several releases.
+
 ## 3.0.28 - 2026-09-29
 
 ### Fixed
@@ -10,7 +25,7 @@
 - Explain an unreadable or non-video source file in plain language instead of
   dumping the raw FFmpeg banner.
 
-## 3.0.27 - 2026-10-01
+## 3.0.27 - 2026-09-28
 
 ### Fixed
 
@@ -290,6 +305,14 @@
 
 - Installer all-in-one cài thêm VSR worker.
 
+## 3.0.8 - 2026-08-15
+
+### Added
+
+- Thêm VSR làm engine chính để xóa phụ đề cứng sau khi OCR tìm vùng chữ.
+- Tự quay về làm mờ nếu VSR chưa cài hoặc xử lý lỗi.
+- Thêm setup, Doctor, cấu hình mode và worker VSR vào bundle Windows/Linux.
+
 ## 3.0.7 - 2026-08-14
 
 ### Added
@@ -351,8 +374,4 @@
 
 - Manual `Kiểm tra cập nhật` button in the app header.
 - In-app release download, SHA256 verification, and installer handoff.
-## 3.0.8
 
-- Thêm VSR làm engine chính để xóa phụ đề cứng sau khi OCR tìm vùng chữ.
-- Tự quay về làm mờ nếu VSR chưa cài hoặc xử lý lỗi.
-- Thêm setup, Doctor, cấu hình mode và worker VSR vào bundle Windows/Linux.

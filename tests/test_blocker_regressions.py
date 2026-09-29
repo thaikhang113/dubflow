@@ -1181,3 +1181,167 @@ def test_f3_periodic_scan_settles_an_orphan_while_the_app_is_alive(tmp_path):
     finally:
         runtime_module._ORPHAN_SCAN_INTERVAL_S = original
         runtime.stop()
+
+
+
+# --------------------------------------------------------------------------- #
+# P10-audit DF-01/DF-02 — nut Dung o buoc OCR / logo / clone giong / vision
+#
+# Loi da xac nhan tren cay 3.0.28: bon cho dung 'except Exception' bao ngoai, ma
+# PipelineCancelled ke thua Exception, nen lenh huy bi ha cap thanh canh bao:
+#   autodub/pipeline.py:550 (OCR), :582 (OCR logo), :765 (clone giong), :1129
+#   (vision logo).
+# He qua that: autodub_gui/workers.py:104 'except PipelineCancelled' khong bao gio
+# chay -> bam Dung ma giao dien van bao dang chay, pipeline van di tiep.
+#
+# Cùng loại với bài F5 (tách nhạc) ở trên; khoá lại để không ai sửa lùi.
+# --------------------------------------------------------------------------- #
+
+
+class _FakeReq:
+    """DubRequest rút gọn: chỉ cần vision_enabled / blur_regions / ocr_backend."""
+
+    def __init__(self, blur_regions=None, vision_enabled=True):
+        self.blur_regions = list(blur_regions or [])
+        self.vision_enabled = vision_enabled
+        self.ocr_backend = None
+
+
+class _FakeRep:
+    """ProgressReporter giả: ghi lại sự kiện để kiểm chứng, check_cancelled là no-op."""
+
+    def __init__(self):
+        self.events = []
+
+    def emit(self, stage, status, detail=""):
+        self.events.append((stage, status, detail))
+
+    def check_cancelled(self):
+        from autodub.progress import PipelineCancelled
+
+        if _fake_rep_cancelled:
+            raise PipelineCancelled("Pipeline cancelled by user")
+
+
+_fake_rep_cancelled = False
+
+
+def _run_detect(tmp_path, monkeypatch, *, ocr_exc=None, logo_exc=None,
+                vision_enabled=True, ocr_enabled=True):
+    """Gọi thẳng _detect_blur_regions với các bước phụ được giả lập.
+
+    Trả về (blur_regions, rep, detected_logo_regions) hoặc ném lỗi ra ngoài.
+    """
+    from autodub import pipeline as pipeline_mod
+    from autodub.media import ocr as ocr_mod
+    from autodub.media import ocr_regions as reg_mod
+
+    monkeypatch.setattr(
+        pipeline_mod, "ocr_enabled_for_request", lambda *_a, **_k: ocr_enabled)
+    monkeypatch.setattr(reg_mod, "load_regions", lambda *_a, **_k: None)
+    monkeypatch.setattr(reg_mod, "save_regions", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        ocr_mod, "detect_regions_with_logo",
+        lambda *_a, **_k: (_raise(ocr_exc) or ([], [])),
+    )
+    monkeypatch.setattr(
+        ocr_mod, "detect_logo_regions",
+        lambda *_a, **_k: (_raise(logo_exc) or []),
+    )
+
+    import autodub.media.video as video_mod
+    monkeypatch.setattr(video_mod, "probe_dimensions", lambda *_a, **_k: (1920, 1080))
+    monkeypatch.setattr(video_mod, "probe_duration_s", lambda *_a, **_k: 60.0)
+
+    req = _FakeReq(vision_enabled=vision_enabled)
+    rep = _FakeRep()
+    blur = []
+    detected = pipeline_mod._detect_blur_regions(
+        rep=rep,
+        settings=object(),
+        req=req,
+        video_path=str(tmp_path / "v.mp4"),
+        ocr_path=str(tmp_path / "ocr_regions.json"),
+        logo_ocr_path=str(tmp_path / "ocr_logo_regions.json"),
+        blur_regions=blur,
+        source_logo_auto=vision_enabled,
+    )
+    return blur, rep, detected
+
+
+def _raise(exc):
+    """Ném exc nếu có; trả về None nếu không — dùng để giả lập bước lỗi."""
+
+    if exc is not None:
+        raise exc
+    return None
+
+
+def test_df01_ocr_cancel_propagates_instead_of_warning(tmp_path, monkeypatch):
+    """DF-01: huỷ ở bước OCR phải LAN RA, không bị nuốt thành cảnh báo.
+
+    Đây là lỗi thật đã xác nhận trên 3.0.28: người dùng bấm Dừng trong khi OCR
+    đang chạy -> PipelineCancelled bị hạ cấp thành 'warning' -> pipeline đi tiếp,
+    autodub_gui/workers.py:104 không bao giờ nhận được tín hiệu huỷ.
+    """
+    from autodub.progress import PipelineCancelled
+
+    with pytest.raises(PipelineCancelled):
+        _run_detect(
+            tmp_path, monkeypatch,
+            ocr_exc=PipelineCancelled("Pipeline cancelled by user"),
+        )
+
+
+def test_df01_ocr_plain_error_is_still_skipped_quietly(tmp_path, monkeypatch):
+    """Đối chứng âm: lỗi THƯỜNG ở bước OCR vẫn được bỏ qua êm như cũ.
+
+    OCR là bước tuỳ chọn — thiếu PaddleOCR không được làm hỏng cả lượt chạy.
+    Bản sửa chỉ được phép nổi lên với PipelineCancelled.
+    """
+    blur, rep, _detected = _run_detect(
+        tmp_path, monkeypatch, ocr_exc=RuntimeError("PaddleOCR chua duoc cai."))
+
+    warnings = [e for e in rep.events if e[1] == "warning"]
+    assert warnings, f"lỗi thường phải phát cảnh báo, có: {rep.events}"
+    assert blur == [], "lỗi thường không được thêm vùng blur nào"
+
+
+def test_df02_logo_cancel_propagates_instead_of_info(tmp_path, monkeypatch):
+    """DF-02: huỷ ở bước OCR logo cũng phải LAN RA, không chỉ ghi log info."""
+    from autodub.progress import PipelineCancelled
+
+    with pytest.raises(PipelineCancelled):
+        _run_detect(
+            tmp_path, monkeypatch,
+            logo_exc=PipelineCancelled("Pipeline cancelled by user"),
+        )
+
+
+def test_df02_logo_plain_error_is_still_skipped_quietly(tmp_path, monkeypatch):
+    """Đối chứng âm: lỗi THƯỜNG ở bước OCR logo vẫn được bỏ qua êm."""
+    blur, rep, _detected = _run_detect(
+        tmp_path, monkeypatch, logo_exc=RuntimeError("khong co logo"))
+
+    done = [e for e in rep.events if e[0] == "ocr" and e[1] == "done"]
+    assert done, f"OCR chính vẫn phải báo xong, có: {rep.events}"
+    assert blur == [], "lỗi logo không được thêm vùng blur nào"
+
+
+def test_df01_detect_helper_is_reachable_without_a_full_pipeline():
+    """Khoá lại lý do tách hàm: khối OCR phải gọi được mà không cần chạy pipeline.
+
+    Nếu ai đó gộp _detect_blur_regions trở lại vào _run_impl, bài này đỏ — vì khi
+    đó không còn bài test nào chạm tới được khối bắt lỗi này nữa.
+    """
+    from autodub import pipeline as pipeline_mod
+
+    assert callable(getattr(pipeline_mod, "_detect_blur_regions", None)), (
+        "khối OCR đã bị gộp lại vào _run_impl — mất khả năng kiểm thử"
+    )
+    import inspect
+
+    sig = inspect.signature(pipeline_mod._detect_blur_regions)
+    for name in ("rep", "settings", "req", "video_path", "ocr_path",
+                 "logo_ocr_path", "blur_regions", "source_logo_auto"):
+        assert name in sig.parameters, f"thiếu tham số {name} — không còn test được"

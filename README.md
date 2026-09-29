@@ -146,8 +146,15 @@ Hệ thống cung cấp sẵn một API linh hoạt (`OpenClaw API` port `38643`
 
 ### Cách cài đặt từ Source
 1. Clone repo: `git clone https://github.com/thaikhang113/dubflow.git`
-2. Chạy file cài đặt tự động (Windows): Mở `cai_dat_all.bat`. Script sẽ tự động tạo Virtual Environment (`.venv`), cài các thư viện PyTorch, PySide6, và tải sẵn các model cần thiết.
-3. Chạy phần mềm: Bấm vào `chay_app.bat` hoặc lệnh `python -m autodub_gui`.
+2. Chạy file cài đặt tự động:
+   - **Windows**: mở `cai_dat_all.bat`
+   - **Linux**: chạy `bash cai_dat_all.sh`
+
+   Script sẽ tự động tạo Virtual Environment (`.venv`), cài các thư viện PyTorch, PySide6, và tải sẵn các model cần thiết.
+3. Chạy phần mềm:
+   - **Windows**: bấm `chay_app.bat`
+   - **Linux**: chạy `bash chay_app.sh`
+   - Hoặc dùng chung một lệnh: `python -m autodub_gui`
 
 *(Phần mềm tự động phát hiện module còn thiếu và sẽ hiển thị Preflight Check cảnh báo ngay khi khởi động).*
 

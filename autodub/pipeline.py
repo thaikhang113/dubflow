@@ -173,6 +173,91 @@ def source_video_path(work_dir: str) -> str | None:
     return None
 
 
+def _detect_blur_regions(
+    *,
+    rep,
+    settings,
+    req,
+    video_path: str,
+    ocr_path: str,
+    logo_ocr_path: str,
+    blur_regions: list,
+    source_logo_auto: bool,
+) -> list:
+    """Dò vùng chữ cứng (OCR) và logo gốc; trả về danh sách vùng logo đã dò được.
+
+    Tách khỏi _run_impl để kiểm thử được: trước đây khối này nằm sau bước tải video
+    và Demucs nên không bài test nào chạm tới, khiến lệnh hủy bị nuốt thành cảnh báo
+    (P10 audit DF-01/DF-02) mà không ai phát hiện.
+
+    Quan trọng: PipelineCancelled PHẢI nổi lên, không được nuốt. Mọi lỗi khác vẫn
+    được bỏ qua như cũ vì OCR là bước tùy chọn.
+    """
+    from autodub.media.ocr_regions import load_regions, save_regions
+
+    detected_logo_regions: list = []
+    if ocr_enabled_for_request(settings, req):
+        cached_ocr = load_regions(ocr_path)
+        if cached_ocr:
+            blur_regions.extend(cached_ocr)
+            logger.info(f"Dùng lại {len(cached_ocr)} vùng blur OCR đã lưu")
+            rep.emit("ocr", "skip", detail=f"{len(cached_ocr)} regions (cached)")
+        else:
+            rep.emit("ocr", "start")
+            try:
+                from autodub.media.ocr import detect_regions_with_logo
+                from autodub.media.video import probe_dimensions, probe_duration_s
+                width, height = probe_dimensions(video_path)
+                ocr_regions, detected_logo_regions = detect_regions_with_logo(
+                    video_path,
+                    width, height,
+                    probe_duration_s(video_path) or 0.0,
+                    settings,
+                )
+                save_regions(ocr_path, ocr_regions)
+                blur_regions.extend(ocr_regions)
+                if detected_logo_regions:
+                    save_regions(logo_ocr_path, detected_logo_regions)
+                logger.info(f"OCR phát hiện {len(ocr_regions)} vùng blur an toàn")
+                rep.emit("ocr", "done", detail=f"{len(ocr_regions)} regions")
+            except PipelineCancelled:
+                raise
+            except Exception as exc:
+                logger.warning(f"Bỏ qua OCR tự động: {exc}")
+                rep.emit("ocr", "warning", detail=str(exc))
+    elif blur_regions:
+        logger.info("OCR tự động đã tắt — giữ nguyên vùng blur thủ công")
+
+    if source_logo_auto and not any(
+            region.get("source") == "logo" for region in blur_regions):
+        cached_logo = load_regions(logo_ocr_path)
+        if cached_logo:
+            blur_regions.extend(cached_logo)
+            logger.info(f"Dùng lại {len(cached_logo)} vùng logo OCR đã lưu")
+        elif detected_logo_regions:
+            blur_regions.extend(detected_logo_regions)
+        else:
+            try:
+                from autodub.media.ocr import detect_logo_regions
+                from autodub.media.video import probe_dimensions, probe_duration_s
+                logo_regions = detect_logo_regions(
+                    video_path,
+                    *probe_dimensions(video_path),
+                    probe_duration_s(video_path) or 0.0,
+                    settings,
+                )
+                if logo_regions:
+                    save_regions(logo_ocr_path, logo_regions)
+                    blur_regions.extend(logo_regions)
+                    logger.info(f"OCR phát hiện {len(logo_regions)} vùng logo gốc")
+            except PipelineCancelled:
+                raise
+            except Exception as exc:
+                logger.info("Không có logo OCR tự động: %s", exc)
+
+    return detected_logo_regions
+
+
 @dataclass
 class DubRequest:
     """Everything needed for one dubbing run (Vietnamese)."""
@@ -521,64 +606,16 @@ class DubPipeline:
             if req.vision_enabled is not None
             else getattr(settings, "branding_vision_enabled", True)
         )
-        detected_logo_regions = []
-        if ocr_enabled_for_request(settings, req):
-            from autodub.media.ocr_regions import load_regions, save_regions
-            cached_ocr = load_regions(ocr_path)
-            if cached_ocr:
-                blur_regions.extend(cached_ocr)
-                logger.info(f"Dùng lại {len(cached_ocr)} vùng blur OCR đã lưu")
-                rep.emit("ocr", "skip", detail=f"{len(cached_ocr)} regions (cached)")
-            else:
-                rep.emit("ocr", "start")
-                try:
-                    from autodub.media.ocr import detect_regions_with_logo
-                    from autodub.media.video import probe_dimensions, probe_duration_s
-                    width, height = probe_dimensions(video_path)
-                    ocr_regions, detected_logo_regions = detect_regions_with_logo(
-                        video_path,
-                        width, height,
-                        probe_duration_s(video_path) or 0.0,
-                        settings,
-                    )
-                    save_regions(ocr_path, ocr_regions)
-                    blur_regions.extend(ocr_regions)
-                    if detected_logo_regions:
-                        save_regions(logo_ocr_path, detected_logo_regions)
-                    logger.info(f"OCR phát hiện {len(ocr_regions)} vùng blur an toàn")
-                    rep.emit("ocr", "done", detail=f"{len(ocr_regions)} regions")
-                except Exception as exc:
-                    logger.warning(f"Bỏ qua OCR tự động: {exc}")
-                    rep.emit("ocr", "warning", detail=str(exc))
-        elif blur_regions:
-            logger.info("OCR tự động đã tắt — giữ nguyên vùng blur thủ công")
-        if source_logo_auto and not any(
-                region.get("source") == "logo" for region in blur_regions):
-            from autodub.media.ocr_regions import load_regions, save_regions
-            cached_logo = load_regions(logo_ocr_path)
-            if cached_logo:
-                blur_regions.extend(cached_logo)
-                logger.info(
-                    f"Dùng lại {len(cached_logo)} vùng logo OCR đã lưu")
-            elif detected_logo_regions:
-                blur_regions.extend(detected_logo_regions)
-            else:
-                try:
-                    from autodub.media.ocr import detect_logo_regions
-                    from autodub.media.video import probe_dimensions, probe_duration_s
-                    logo_regions = detect_logo_regions(
-                        video_path,
-                        *probe_dimensions(video_path),
-                        probe_duration_s(video_path) or 0.0,
-                        settings,
-                    )
-                    if logo_regions:
-                        save_regions(logo_ocr_path, logo_regions)
-                        blur_regions.extend(logo_regions)
-                        logger.info(
-                            f"OCR phát hiện {len(logo_regions)} vùng logo gốc")
-                except Exception as exc:
-                    logger.info("Không có logo OCR tự động: %s", exc)
+        _detect_blur_regions(
+            rep=rep,
+            settings=settings,
+            req=req,
+            video_path=video_path,
+            ocr_path=ocr_path,
+            logo_ocr_path=logo_ocr_path,
+            blur_regions=blur_regions,
+            source_logo_auto=source_logo_auto,
+        )
         _tick("ocr")
 
         # --- Step 2: Extract audio ---
@@ -758,7 +795,9 @@ class DubPipeline:
                 })
                 rep.emit("tts", "done",
                          detail=f"Da tao {speaker_count or 1} ho so giong")
-            except Exception as exc:
+            except BaseException as exc:
+                if isinstance(exc, PipelineCancelled):
+                    raise
                 clone_report = {
                     "enabled": True,
                     "status": "fallback_all",
@@ -1120,7 +1159,9 @@ class DubPipeline:
                     logger.info("Vision found stable source logo region")
                     if not logo_region:
                         logo_region = detected_logo
-            except Exception as exc:
+            except BaseException as exc:
+                if isinstance(exc, PipelineCancelled):
+                    raise
                 logger.warning("Vision logo detection skipped: %s", exc)
         if detected_logo and not source_logo_exists:
             blur_regions.append({**detected_logo, "source": "logo"})

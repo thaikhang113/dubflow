@@ -84,3 +84,24 @@ control_server/logs/
 # Website
 website/node_modules/
 website/dist/
+# Thư mục nháp của tác giả — tái tạo lại được, không phải mã ứng dụng
+scratch/
+autodub/scratch/
+docs/analysis/
+
+# Cache của công cụ (xóa rồi tạo lại, không cần commit)
+.ruff_cache/
+undefined/
+
+# Thư mục do công cụ khác tạo trên máy này
+Microsoft/
+.agent-teams/
+
+# Tệp nháp lẻ trên máy tác giả
+test_openclaw_api.py
+update_cards.py
+update_theme.py
+update_tokens.py
+dummy_test_out.mp4.part
+linux-fail.txt
+openclaw_queue/
