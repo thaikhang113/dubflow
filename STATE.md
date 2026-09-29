@@ -31,7 +31,7 @@ Build and maintain DubFlow: local Vietnamese video dubbing desktop app.
 - `qa/gui_walkthrough.py` và `qa/commit_safety_check.py` trước mỗi commit
 
 ## Latest Verification
-- 2026-09-29: Vá bảy phát hiện của phiên kiểm toán P10 (3.0.28 không phát hành lại).
+- 2026-09-29: Vá bảy phát hiện của phiên kiểm toán P10 — phát hành 3.0.29.
   + **DF-01/DF-02 (cao) — hủy bị nuốt ở bốn chỗ.** `autodub/pipeline.py` dùng `except Exception` bao ngoài, mà `PipelineCancelled` kế thừa `Exception`, nên bấm Dừng giữa bước OCR/OCR-logo/clone-giọng/vision-logo bị hạ cấp thành cảnh báo: pipeline đi tiếp và `autodub_gui/workers.py:104` không bao giờ nhận được tín hiệu hủy. Nay bốn chỗ đều re-raise `PipelineCancelled` trước khi ghi log, giữ nguyên hành vi bỏ qua với mọi lỗi khác.
   + Khối OCR được tách thành `_detect_blur_regions()` ở cấp module: trước đây nó nằm sau bước tải video và Demucs nên **không bài test nào chạm tới được** — đó là lý do lỗi sống sót qua nhiều bản phát hành. Hành vi không đổi, chỉ chuyển vị trí mã.
   + `tests/test_blocker_regressions.py`: thêm 5 bài kiểm chứng hành vi (không phải kiểm tra chuỗi nguồn). Đã chạy **đột biến ngược**: gỡ bản vá ra thì `test_df01_ocr_cancel_propagates_instead_of_warning` **đỏ** với `DID NOT RAISE PipelineCancelled` — chứng minh bài kiểm có răng thật.
@@ -39,7 +39,7 @@ Build and maintain DubFlow: local Vietnamese video dubbing desktop app.
   + **DF-04..DF-06.** `README-RELEASE.md` hết ghim `3.0.15` (nay theo `3.0.28`); `README.md` mục cài đặt có nhánh Linux (`cai_dat_all.sh`, `chay_app.sh`); `CHANGELOG.md` sửa ngày bịa `3.0.27 - 2026-10-01` thành `2026-09-28` (đúng ngày commit `dc6db57` bump 3.0.27) và đưa mục `3.0.8` về đúng vị trí với ngày thật `2026-08-15` (commit `483193e`).
   + **DF-07.** `.gitignore` bổ sung `scratch/`, `autodub/scratch/`, `.ruff_cache/`, `undefined/`, `Microsoft/`, `.agent-teams/`, `docs/analysis/` cùng các tệp nháp lẻ; danh sách chưa theo dõi của git từ 11 mục rác về 0.
   + Cổng chất lượng sau khi vá: `pytest -q` **1092 passed** (trước là 1087), `ruff check autodub autodub_gui scripts tests` **All checks passed!** (trước còn 1 lỗi ở `autodub/scratch/replace.py`), `compileall` sạch.
-  + Chưa phát hành lại: bốn chỗ nuốt lệnh hủy vẫn tồn tại trên bản phát hành 3.0.28 — người dùng đang chạy bản đó gặp lỗi này. Cần bump 3.0.29 và phát hành mới thì bản vá mới tới tay người dùng.
+  + Đã phát hành: bump đồng bộ 5 điểm lên `3.0.29`, commit `ca8e9d4` trên `main`, tag annotated `v3.0.29` đã đẩy lên `origin` — workflow `.github/workflows/release.yml` chạy test trên Python 3.11/3.12 rồi build cả Windows (`setup.exe`) và Linux (`.deb`) trước khi tạo GitHub Release. Người dùng 3.0.28 cần nâng lên 3.0.29 mới hết lỗi bấm Dừng không có tác dụng.
 - 2026-09-29: Phát hành 3.0.28 — đóng gói hai bản vá chưa từng lên bản phát hành.
   + Lý do: tag `v3.0.27` trỏ vào `61ff6c8` (commit CI), nên bản Latest 3.0.27 **không chứa** `3e694d7` (dừng giữa lúc nghe–chép) và `2b05ddc` (báo lỗi tệp nguồn không đọc được). Người dùng 3.0.27 vẫn gặp cả hai lỗi.
   + Bump đồng bộ 5 điểm: `autodub_gui/app.py:37`, `autodub/__init__.py:33`, `autodub_gui/__init__.py:5`, `pyproject.toml:7`, `scripts/DubFlow.iss:6`; thêm mục đầu `CHANGELOG.md`.
