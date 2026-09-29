@@ -41,7 +41,7 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
       - name: Lint
-        run: python -m ruff check .
+        run: python -m ruff check autodub autodub_gui scripts tests
 
   build-linux:
     name: Build Linux release

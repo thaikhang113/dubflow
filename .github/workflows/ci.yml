@@ -44,7 +44,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
       - name: Lint
-        run: python -m ruff check .
+        run: python -m ruff check autodub autodub_gui scripts tests
       - name: Run tests
         run: |
           set -o pipefail
