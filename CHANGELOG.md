@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.0.28 - 2026-09-29
+
+### Fixed
+
+- Stop now actually stops a run during speech recognition: the in-process Whisper
+  path had no child process to kill, so the cancel flag is now checked inside the
+  segment loop and after transcription.
+- Explain an unreadable or non-video source file in plain language instead of
+  dumping the raw FFmpeg banner.
+
 ## 3.0.27 - 2026-10-01
 
 ### Fixed
