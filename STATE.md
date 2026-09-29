@@ -31,7 +31,22 @@ Build and maintain DubFlow: local Vietnamese video dubbing desktop app.
 - `qa/gui_walkthrough.py` và `qa/commit_safety_check.py` trước mỗi commit
 
 ## Latest Verification
-- 2026-09-28: Chuẩn bị phát hành v3.0.26 sau kiểm toán workflow. 1071 tests passed, Ruff sạch; source GUI smoke thành công. Lưu ý: model dịch mặc định trên máy kiểm thử trả HTTP 503 nên cần tài khoản/model provider được cấp quyền; app giữ trạng thái translate_pending, không tự đổi lựa chọn người dùng.
+- 2026-09-29: Kiểm tra toàn bộ tính năng trên bản 3.0.27 (audit đầy đủ, có chạy thật).
+  + 1087 tests passed, Ruff sạch trên cây được theo dõi, `compileall` sạch.
+  + GUI: 13/13 trang dựng và điều hướng OK, 0 phát hiện (`qa/findings_gui.json`).
+  + Pipeline thật trên video mẫu: ASR (Whisper in-process và Paraformer) → chờ dịch tay → resume → TTS → ghép → ra `dubbed_video.mp4` (h264+aac, 5.76s). Nhánh dịch tự động cũng chạy trọn vẹn qua endpoint giả cục bộ.
+  + Ba chế độ nhạc nền: `none`, `duck`, `demucs` (tạo `original_audio_hq.wav`; thiếu Demucs thì lùi về nền im lặng kèm cảnh báo).
+  + Phụ đề: SRT đúng mốc thời gian; ASS karaoke 4 dòng Dialogue có hiệu ứng fade/scale.
+  + Trình chỉnh sửa: sửa chữ → đọc lại một câu (2.09s) → dựng lại video 5.76s kèm phụ đề mềm.
+  + Hàng loạt: dừng ở `translate_pending` rồi chạy tiếp thành `success`; video không có lời báo lỗi rõ ràng; trạng thái ghi lại từng video để chạy tiếp.
+  + OpenClaw: `prepare` chặn link rác ngay tại biên API; `submit`/`status`/`cancel` đúng; batch không tồn tại và action sai đều bị từ chối; không còn tiến trình mồ côi.
+  + Doctor: 17 mục chạy đủ; chỉ VSR, Video2X và Python 3.13 là chưa bật — đều không phải lỗi sản phẩm.
+  + Cài đặt: ghi `.env` rồi `Settings.load` đọc lại đúng, khoá lạ trong tệp được giữ nguyên.
+  + Kiểm tra cập nhật: phát hiện đúng v3.0.27 kèm 4 tệp phát hành; khi đã mới nhất thì im lặng.
+  + Bản phát hành: `setup.exe` tải về khớp SHA256 trong manifest; cài vào thư mục tạm chạy smoke `ok: true`, `VERSION` = 3.0.27, 22 giọng đọc đóng gói.
+  + Sửa lỗi thật: (1) hủy giữa lúc nghe-chép không dừng vì Whisper in-process không có tiến trình con để giết — thêm điểm kiểm cờ hủy trong vòng lặp segment; (2) tệp nguồn không phải video làm lộ nguyên khối log FFmpeg — thêm 5 mẫu lỗi vào bảng dịch lỗi. Cả hai đều có test hồi quy, đã push `3e694d7` và `2b05ddc`.
+  + Hạn chế phạm vi: chưa thử được VSR, Douyin hết hạn cookie, và NVENC/Whisper GPU (máy kiểm thử không có GPU rời).
+
   + OpenClaw phục hồi job mồ côi bằng heartbeat/PID, retry không đóng oan job còn sống; kiểm chứng kill cứng và job retry riêng biệt.
   + Sửa đường hủy Demucs/GUI, giữ cờ OCR khi resume, sửa retry lỗi tải Bilibili/Douyin và thêm test hồi quy.
 - 2026-09-24: Nâng cấp phiên bản v3.0.25 (Sửa lỗi và tăng tốc tải video Bilibili / Douyin).
