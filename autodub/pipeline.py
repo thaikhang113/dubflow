@@ -1681,12 +1681,15 @@ class DubPipeline:
 
         video_exts = (".mp4", ".mkv", ".webm", ".mov", ".avi")
         output_prefixes = ("dubbed_video",)
+        from autodub.media.downloader import _is_partial_name
         if os.path.isdir(work_dir):
             for f in sorted(os.listdir(work_dir)):
                 lower = f.lower()
                 if not lower.endswith(video_exts):
                     continue
                 if any(lower.startswith(prefix) for prefix in output_prefixes):
+                    continue
+                if _is_partial_name(f):
                     continue
                 cached = os.path.join(work_dir, f)
                 logger.info(f"Reusing existing video: {cached}")

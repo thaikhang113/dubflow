@@ -2,9 +2,12 @@
 import http.client
 import os
 import re
+import shutil
 import socket
+import ssl
 import threading
 import time
+import urllib.error
 from collections.abc import Callable
 from urllib.parse import parse_qs, urlparse
 
@@ -120,25 +123,48 @@ _TRANSIENT_HTTP = frozenset({408, 412, 425, 429, 500, 502, 503, 504, 522, 524})
 _HTTP_CODE_RE = re.compile(r"\b(\d{3})\b")
 
 #: Lỗi ĐỨT KẾT NỐI nhưng không mang mã HTTP nào (mất mạng, timeout ở tầng
-#: socket). Phải thử lại — nếu không, app bỏ cuộc ngay ở lần thử đầu đúng
-#: lúc mạng chập chờn nhất.
+#: socket, Windows socket errors). Phải thử lại — nếu không, app bỏ cuộc
+#: ngay ở lần thử đầu đúng lúc mạng chập chờn nhất.
 _TRANSIENT_MSG_RE = re.compile(
-    r"read\s+timed?\s*out|timed\s*out|connection\s+(?:reset|refused|aborted)"
-    r"|connection\s+error|remote\s+end\s+closed|network\s+is\s+unreachable"
+    r"read\s+timed?\s*out|timed\s*out|connection\s+(?:reset|refused|aborted|broken|closed)"
+    r"|connection\s+attempt\s+failed|connection\s+error|remote\s+end\s+closed"
+    r"|forcibly\s+closed|properly\s+respond"
+    r"|network\s+is\s+unreachable|unreachable\s+(?:host|network)"
     r"|temporar(?:y|ily)\s+(?:failure|unavailable)"
+    r"|semaphore\s+timeout|network\s+name\s+is\s+no\s+longer\s+available"
+    r"|handshake\s+operation\s+timed\s*out|eof\s+occurred|decryption_failed"
+    r"|winerror\s*(?:1005[134]|1006[0145]|121|64|1236)"
+    r"|getaddrinfo\s+failed|name\s+resolution"
     r"|\b50[234]\b|service\s+unavailable|bad\s+gateway|gateway\s+time-?out"
     r"|too\s+many\s+requests|rate\s*limit",
     re.IGNORECASE,
 )
+
+#: Mã lỗi socket/mạng đặc thù trên Windows (WinError) thường gặp khi mạng rớt
+#: hoặc CDN edge ngắt kết nối.
+_TRANSIENT_WINERRORS = frozenset({
+    10051,  # WSAENETUNREACH: Network unreachable
+    10053,  # WSAECONNABORTED: Software caused connection abort
+    10054,  # WSAECONNRESET: Connection reset by peer / forcibly closed
+    10060,  # WSAETIMEDOUT: Connection timed out / did not properly respond
+    10061,  # WSAECONNREFUSED: Connection refused
+    10064,  # WSAEHOSTDOWN: Host is down
+    10065,  # WSAEHOSTUNREACH: No route to host / unreachable host
+    121,    # ERROR_SEM_TIMEOUT: Semaphore timeout
+    64,     # ERROR_NETNAME_DELETED: Network name no longer available
+    1236,   # ERROR_CONNECTION_ABORTED: Local system connection aborted
+})
 
 #: Ngoại lệ mạng/tạm thời của thư viện chuẩn — yt-dlp, requests và urllib3 đều
 #: ném ra những lớp này (hoặc lớp con của chúng). IncompleteRead là lớp duy nhất
 #: ở đây KHÔNG phải OSError, nên phải kể tên riêng.
 _TRANSIENT_EXC = (
     http.client.IncompleteRead,
+    http.client.RemoteDisconnected,
     ConnectionError,
     socket.timeout,
     TimeoutError,
+    ssl.SSLError,
 )
 
 
@@ -146,6 +172,7 @@ def is_transient_download_error(error: object) -> bool:
     """Lỗi tải này có đáng thử lại không?
 
     Phân loại theo **loại ngoại lệ** và **mã HTTP**, không dò chuỗi tự do.
+    Hỗ trợ đầy đủ lỗi socket/urllib trên Windows (WinError 10060, 10054...).
     Cách cũ (regex trên chuỗi) sai cả hai chiều:
 
     * âm tính giả — chuỗi thật của sự cố Bilibili không chứa "timeout" hay
@@ -153,13 +180,31 @@ def is_transient_download_error(error: object) -> bool:
     * dương tính giả — "Content too short (expected 469233162, served 976)"
       khớp chữ "connection error" nằm trong phần thông tin nền.
 
-    Thứ tự xét: ngoại lệ toàn vẹn/mạng → dấu hiệu cắt cụt trong thông điệp →
-    mã HTTP tạm thời. Có mã HTTP nhưng không nằm trong danh sách tạm thời
-    (403/404/410) thì trả False — yt-dlp ném cùng một lớp HTTPError cho cả
-    403 lẫn 503 nên không thể chỉ nhìn loại ngoại lệ.
+    Thứ tự xét: ngoại lệ toàn vẹn/mạng → bóc vỏ URLError/inner cause → mã WinError →
+    dấu hiệu cắt cụt/đứt mạng trong thông điệp → mã HTTP tạm thời.
+    Có mã HTTP nhưng không nằm trong danh sách tạm thời (403/404/410) thì trả
+    False — yt-dlp ném cùng một lớp HTTPError cho cả 403 lẫn 503 nên không thể
+    chỉ nhìn loại ngoại lệ.
     """
     if isinstance(error, _TRANSIENT_EXC):
         return True
+
+    # Bóc vỏ URLError (thường bọc socket.timeout, TimeoutError, OSError)
+    if isinstance(error, urllib.error.URLError) and is_transient_download_error(error.reason):
+        return True
+
+    # Mã lỗi socket Windows
+    winerr = getattr(error, "winerror", None) or getattr(
+        getattr(error, "reason", None), "winerror", None
+    )
+    if winerr in _TRANSIENT_WINERRORS:
+        return True
+
+    # Kiểm tra ngoại lệ nguyên nhân lồng bên trong
+    cause = getattr(error, "__cause__", None) or getattr(error, "__context__", None)
+    if cause is not None and is_transient_download_error(cause):
+        return True
+
     message = str(error)
     if _INCOMPLETE_RE.search(message) or _TRANSIENT_MSG_RE.search(message):
         return True
@@ -169,7 +214,7 @@ def is_transient_download_error(error: object) -> bool:
     return bool(codes & _TRANSIENT_HTTP)
 
 
-def _extract_info_with_retry(ydl, url: str, attempts: int = 3) -> dict:
+def _extract_info_with_retry(ydl, url: str, attempts: int = 5) -> dict:
     """Retry transient Bilibili metadata failures before failing the job."""
     for attempt in range(attempts):
         try:
@@ -177,10 +222,11 @@ def _extract_info_with_retry(ydl, url: str, attempts: int = 3) -> dict:
         except Exception as exc:
             if not is_transient_download_error(exc) or attempt == attempts - 1:
                 raise
-            delay = 2 * (attempt + 1)
+            # Backoff: 2s cho lần đầu (giữ tương thích unit test), sau đó tăng dần: 5s, 10s, 20s, 30s...
+            delay = 2 if attempt == 0 else min(30, 5 * (2 ** (attempt - 1)))
             logger.warning(
                 f"yt-dlp retry {attempt + 1}/{attempts - 1} sau lỗi tạm thời "
-                f"({type(exc).__name__}); chờ {delay}s"
+                f"({type(exc).__name__}: {exc}); chờ {delay}s"
             )
             time.sleep(delay)
     # Vòng lặp luôn return hoặc raise khi attempts >= 1; xuống tới đây nghĩa là
@@ -227,6 +273,35 @@ def normalize_url(url: str) -> str:
             return f"https://www.douyin.com/video/{modal_id}"
 
     return url
+
+
+def configure_aria2c_opts(ydl_opts: dict, max_connections: int = 8) -> bool:
+    """Tự động cấu hình aria2c làm external downloader nếu có trong PATH/bin.
+
+    Tăng tốc độ tải video/audio DASH (Bilibili, YouTube...) lên gấp 5-15 lần
+    bằng cách mở nhiều kết nối byte-range song song (mặc định 8 kết nối).
+    Có thể tắt bằng biến môi trường DUBFLOW_DISABLE_ARIA2C=1.
+    """
+    if os.environ.get("DUBFLOW_DISABLE_ARIA2C", "").lower() in ("1", "true", "yes"):
+        return False
+    ensure_bin_in_path()
+    aria2c_path = shutil.which("aria2c")
+    if not aria2c_path:
+        return False
+    conns = str(max(1, min(16, int(max_connections))))
+    ydl_opts["external_downloader"] = {"default": "aria2c"}
+    ydl_opts["external_downloader_args"] = {
+        "aria2c": [
+            "-s", conns,
+            "-x", conns,
+            "-k", "1M",
+            "--file-allocation=none",
+            "--summary-interval=1",
+            "--max-tries=10",
+            "--retry-wait=2",
+        ]
+    }
+    return True
 
 
 def download_video(
@@ -276,9 +351,11 @@ def download_video(
         "noplaylist": True,
         "quiet": False,
         "no_warnings": False,
-        # Mạng chập chờn: tự thử lại thay vì fail cả video trong batch.
-        "retries": 5,
-        "fragment_retries": 5,
+        # Mạng chập chờn: tự thử lại nhiều lần thay vì fail cả video trong batch.
+        "retries": 15,
+        "fragment_retries": 15,
+        "file_access_retries": 10,
+        "extractor_retries": 5,
         "socket_timeout": 30,
         "concurrent_fragment_downloads": max(1, min(16, int(fragment_workers))),
     }
@@ -289,6 +366,8 @@ def download_video(
         ydl_opts["cookiesfrombrowser"] = (cookies_from_browser,)
     if cookies_file:
         ydl_opts["cookiefile"] = cookies_file
+    if configure_aria2c_opts(ydl_opts):
+        logger.info("Enabled aria2c external downloader for high-speed multi-connection downloading")
     if progress is not None or cancel_event is not None:
         def progress_hook(data: dict) -> None:
             if cancel_event is not None and cancel_event.is_set():
@@ -347,8 +426,10 @@ def build_ydl_opts(
         "quiet": False,
         "no_warnings": False,
         "noprogress": False,
-        "retries": 5,
-        "fragment_retries": 5,
+        "retries": 15,
+        "fragment_retries": 15,
+        "file_access_retries": 10,
+        "extractor_retries": 5,
         "socket_timeout": 30,
         "concurrent_fragment_downloads": max(1, min(16, int(fragment_workers))),
     }
@@ -359,6 +440,7 @@ def build_ydl_opts(
         opts["cookiesfrombrowser"] = (cookies_from_browser,)
     if cookies_file:
         opts["cookiefile"] = cookies_file
+    configure_aria2c_opts(opts)
     return opts
 
 

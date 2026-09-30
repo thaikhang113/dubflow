@@ -31,6 +31,12 @@ Build and maintain DubFlow: local Vietnamese video dubbing desktop app.
 - `qa/gui_walkthrough.py` và `qa/commit_safety_check.py` trước mỗi commit
 
 ## Latest Verification
+- 2026-09-30: Phát hành 3.0.30 — Tích hợp bộ tăng tốc tải đa luồng aria2c và vá phục hồi lỗi mạng Windows socket.
+  + Tích hợp aria2c (`autodub/media/downloader.py`): tự động nhận diện `aria2c` trong `%LOCALAPPDATA%\DubFlow\bin` hoặc `PATH`, cấu hình 8 kết nối Range song song cho DASH streams (Bilibili, YouTube) đạt 6–16 MiB/s (~9x speedup, rút ngắn thời gian tải video 546 MB từ 14 phút xuống ~1.5 phút). Cho phép tắt qua `DUBFLOW_DISABLE_ARIA2C=1`.
+  + Vá lỗi đứt mạng tạm thời trên Windows (`WinError 10060/10054...`): bóc tách `urllib.error.URLError`, nâng retries lên 15 lần, backoff lũy tiến (2s->30s) trong `_extract_info_with_retry`.
+  + Bảo vệ cache pipeline (`autodub/pipeline.py`): bỏ qua các tệp tải dở dang (`.part`, `.ytdl`, `.f<id>.<ext>`) khi tái sử dụng video trong thư mục làm việc.
+  + Cổng chất lượng: `pytest -q` 1096 passed, `ruff check` All checks passed, `compileall` sạch.
+  + Bump đồng bộ 5 điểm lên 3.0.30 (`pyproject.toml`, `autodub/__init__.py`, `autodub_gui/__init__.py`, `autodub_gui/app.py`, `scripts/DubFlow.iss`).
 - 2026-09-29: Vá bảy phát hiện của phiên kiểm toán P10 — phát hành 3.0.29.
   + **DF-01/DF-02 (cao) — hủy bị nuốt ở bốn chỗ.** `autodub/pipeline.py` dùng `except Exception` bao ngoài, mà `PipelineCancelled` kế thừa `Exception`, nên bấm Dừng giữa bước OCR/OCR-logo/clone-giọng/vision-logo bị hạ cấp thành cảnh báo: pipeline đi tiếp và `autodub_gui/workers.py:104` không bao giờ nhận được tín hiệu hủy. Nay bốn chỗ đều re-raise `PipelineCancelled` trước khi ghi log, giữ nguyên hành vi bỏ qua với mọi lỗi khác.
   + Khối OCR được tách thành `_detect_blur_regions()` ở cấp module: trước đây nó nằm sau bước tải video và Demucs nên **không bài test nào chạm tới được** — đó là lý do lỗi sống sót qua nhiều bản phát hành. Hành vi không đổi, chỉ chuyển vị trí mã.

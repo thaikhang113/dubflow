@@ -269,3 +269,123 @@ def test_narrator_acquire_progress():
     assert is_progress is True
     assert "[download]  35.4% of ~2.80GiB" in text
 
+
+def test_transient_error_detection():
+    import ssl
+    import urllib.error
+    from yt_dlp.utils import DownloadError
+
+    # Standard network errors
+    assert downloader.is_transient_download_error(ConnectionResetError("peer reset"))
+    assert downloader.is_transient_download_error(TimeoutError("socket timeout"))
+    assert downloader.is_transient_download_error(ssl.SSLEOFError("EOF in SSL"))
+
+    # Windows socket errors
+    win_timeout = urllib.error.URLError(
+        "[WinError 10060] A connection attempt failed because the connected "
+        "party did not properly respond after a period of time"
+    )
+    assert downloader.is_transient_download_error(win_timeout)
+
+    win_reset = urllib.error.URLError(
+        "[WinError 10054] An existing connection was forcibly closed by the remote host"
+    )
+    assert downloader.is_transient_download_error(win_reset)
+
+    win_unreach = OSError(10065, "A socket operation was attempted to an unreachable host")
+    win_unreach.winerror = 10065
+    assert downloader.is_transient_download_error(win_unreach)
+
+    # yt-dlp wrapped DownloadError
+    dl_err = DownloadError(
+        "ERROR: [BiliBili] Unable to download API page: "
+        "<urlopen error [WinError 10060] A connection attempt failed>"
+    )
+    assert downloader.is_transient_download_error(dl_err)
+
+    # Incomplete read / partial download
+    assert downloader.is_transient_download_error(
+        Exception("IncompleteRead(975 bytes read, 469233162 more expected)")
+    )
+
+    # Transient HTTP codes
+    assert downloader.is_transient_download_error(
+        Exception("HTTP Error 412: Precondition Failed")
+    )
+    assert downloader.is_transient_download_error(
+        Exception("HTTP Error 429: Too Many Requests")
+    )
+    assert downloader.is_transient_download_error(
+        Exception("HTTP Error 503: Service Unavailable")
+    )
+
+    # Non-transient errors must NOT be retried
+    assert not downloader.is_transient_download_error(
+        Exception("HTTP Error 404: Not Found")
+    )
+    assert not downloader.is_transient_download_error(
+        Exception("HTTP Error 403: Forbidden")
+    )
+    assert not downloader.is_transient_download_error(
+        Exception("video is private or unavailable")
+    )
+
+
+def test_extract_info_backoff_schedule(monkeypatch):
+    calls = []
+    sleeps = []
+
+    class FailingYdl:
+        def extract_info(self, url, download):
+            calls.append(url)
+            raise ConnectionResetError("Connection lost")
+
+    monkeypatch.setattr(downloader.time, "sleep", sleeps.append)
+
+    with pytest.raises(ConnectionResetError):
+        downloader._extract_info_with_retry(
+            FailingYdl(), "https://example.com", attempts=5
+        )
+
+    assert len(calls) == 5
+    # Backoff schedule: 2s, 5s, 10s, 20s
+    assert sleeps == [2, 5, 10, 20]
+
+
+def test_is_partial_name():
+    assert downloader._is_partial_name("video.mp4.part")
+    assert downloader._is_partial_name("video.mp4.ytdl")
+    assert downloader._is_partial_name("video.f100026.mp4")
+    assert downloader._is_partial_name("BV12c9hBhExH.f30280.m4a")
+    assert not downloader._is_partial_name("video.mp4")
+    assert not downloader._is_partial_name("BV12c9hBhExH.mp4")
+
+
+def test_configure_aria2c_opts(monkeypatch):
+    opts = {}
+    # When aria2c is available
+    monkeypatch.setattr(downloader.shutil, "which", lambda cmd: "C:\\bin\\aria2c.exe" if cmd == "aria2c" else None)
+    monkeypatch.delenv("DUBFLOW_DISABLE_ARIA2C", raising=False)
+
+    enabled = downloader.configure_aria2c_opts(opts, max_connections=8)
+    assert enabled is True
+    assert opts["external_downloader"] == {"default": "aria2c"}
+    assert "-s" in opts["external_downloader_args"]["aria2c"]
+    assert "8" in opts["external_downloader_args"]["aria2c"]
+
+    # When disabled via env var
+    monkeypatch.setenv("DUBFLOW_DISABLE_ARIA2C", "1")
+    opts_disabled = {}
+    enabled_disabled = downloader.configure_aria2c_opts(opts_disabled)
+    assert enabled_disabled is False
+    assert "external_downloader" not in opts_disabled
+
+    # When aria2c binary is not found
+    monkeypatch.delenv("DUBFLOW_DISABLE_ARIA2C", raising=False)
+    monkeypatch.setattr(downloader.shutil, "which", lambda _cmd: None)
+    opts_missing = {}
+    enabled_missing = downloader.configure_aria2c_opts(opts_missing)
+    assert enabled_missing is False
+    assert "external_downloader" not in opts_missing
+
+

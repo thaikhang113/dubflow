@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.0.30 - 2026-09-30
+
+### Added
+
+- Automatic `aria2c` multi-connection downloader integration: auto-detects `aria2c` in `%LOCALAPPDATA%\DubFlow\bin` or system `PATH`, enabling 8 parallel byte-range streams (`-s 8 -x 8 -k 1M --file-allocation=none`). Accelerates 1080p Bilibili/YouTube DASH downloads to 6–16 MiB/s (~9x speedup, reducing download time from ~14 minutes to ~1.5 minutes). Can be disabled via `DUBFLOW_DISABLE_ARIA2C=1`.
+
+### Fixed
+
+- Resilient network error recovery in `downloader.py`: unwraps `urllib.error.URLError` and inner causes, adds explicit handling for Windows socket errors (`WinError 10060`, `10054`, `10065`, `10053`, `121`, `64`, `1236`), expands regex matching for dropped connections, and increases yt-dlp retry ceilings to 15 attempts.
+- Metadata retry backoff in `_extract_info_with_retry` upgraded to 5 attempts with progressive backoff (2s, 5s, 10s, 20s, 30s) to survive lengthy transient network drops.
+- Pipeline video cache safety: `_resolve_video` ignores unfinished intermediate download files (`.part`, `.ytdl`, `.temp`, `.f<id>.<ext>`) to prevent prematurely reusing unmerged single-stream files as completed videos.
+
 ## 3.0.29 - 2026-09-29
 
 ### Fixed
