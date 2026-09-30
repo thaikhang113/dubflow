@@ -68,12 +68,12 @@ def step_install() -> None:
     # nvidia-cublas-cu12: ctranslate2 4.x cần CUDA 12, không phải CUDA 11
     # như torch cu118 trong .venv-gpu. Không có gói này thì GPU fallback về
     # CPU âm thầm hoặc chết với "cublas64_12.dll not found".
-    log("cài faster-whisper (ctranslate2, CPU/GPU) + nvidia-cublas-cu12 ...")
+    log("cài faster-whisper (ctranslate2, CPU/GPU) + nvidia-cublas-cu12 + nvidia-cudnn-cu12 ...")
     retry_call(
         lambda: subprocess.run(
             [VENV_PY, "-m", "pip", "install", "--quiet",
              "--no-cache-dir", "--retries", "5", "--timeout", "120",
-             _WHISPER_SPEC, "nvidia-cublas-cu12"],
+             _WHISPER_SPEC, "nvidia-cublas-cu12", "nvidia-cudnn-cu12"],
             check=True,
         ),
         attempts=3,

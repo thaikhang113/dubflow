@@ -2,6 +2,7 @@ import ctypes
 import json
 import os
 import subprocess
+import sys
 import threading
 from collections import deque
 
@@ -46,43 +47,76 @@ def _ctranslate2_gpu_ready() -> bool:
         return False
 
 
+def _add_dir_to_dll_search(directory: str) -> None:
+    if not os.path.isdir(directory):
+        return
+    norm = os.path.normpath(directory)
+    paths = os.environ.get("PATH", "").split(os.pathsep)
+    if not any(os.path.normpath(p).lower() == norm.lower() for p in paths if p):
+        os.environ["PATH"] = directory + os.pathsep + os.environ.get("PATH", "")
+    try:
+        os.add_dll_directory(directory)
+    except (OSError, AttributeError):
+        pass
+
+
 def _enable_cuda_dlls() -> bool:
     """Cho faster-whisper nạp được cuBLAS/cuDNN trên Windows.
 
     ctranslate2 cần cublas và cudnn, mà venv chính không mang theo — nhưng
-    bản torch trong venv CUDA thì có sẵn. Nạp trước từ đó là Whisper chạy
-    được trên card đồ họa mà không phải cài thêm gì. Trả về True khi các
-    tệp .dll dùng được (ngoài Windows thì coi như hệ thống đã có).
+    bản torch trong venv CUDA hoặc các gói nvidia pip thì có sẵn. Nạp trước
+    từ đó là Whisper chạy được trên card đồ họa mà không phải cài thêm gì.
+    Trả về True khi các tệp .dll dùng được (ngoài Windows thì coi như hệ thống đã có).
     """
     if os.name != "nt":
         return _rocminfo_ready() and _ctranslate2_gpu_ready()
     import glob
 
-    # Thứ tự ưu tiên: nvidia pip package trong .venv-whisper (đúng CUDA 12
-    # mà ctranslate2 4.x cần) → torch/lib của venv GPU. Glob cublas64_*
-    # bừa trong torch/lib cũ có thể nạp cublas64_11 trong khi ctranslate2
-    # biên dịch bằng CUDA 12 — DLL nạp "thành công" nhưng GPU vẫn chết.
+    # Thứ tự ưu tiên:
+    # 1. nvidia pip package trong sys.prefix (.venv) hoặc .venv-whisper (đúng CUDA 12
+    #    mà ctranslate2 4.x cần)
+    # 2. torch/lib của venv GPU.
+    # Tìm chính xác cublas64_12.dll trước vì ctranslate2 4.x biên dịch bằng CUDA 12.
     data = data_root()
-    candidates = [
-        os.path.join(data, ".venv-whisper", "Lib", "site-packages",
-                     "nvidia", "cublas", "bin"),
-        os.path.join(data, ".venv-whisper", "Lib", "site-packages",
-                     "nvidia", "cublas", "lib"),
+    search_dirs = [
+        os.path.join(sys.prefix, "Lib", "site-packages", "nvidia", "cublas", "bin"),
+        os.path.join(data, ".venv-whisper", "Lib", "site-packages", "nvidia", "cublas", "bin"),
+        os.path.join(data, ".venv-whisper", "Lib", "site-packages", "nvidia", "cublas", "lib"),
     ]
     venv = gpu_venv_dir()
     if venv:
-        candidates.append(os.path.join(venv, "Lib", "site-packages",
-                                       "torch", "lib"))
-    for lib_dir in candidates:
+        search_dirs.append(os.path.join(venv, "Lib", "site-packages", "torch", "lib"))
+
+    # Thêm cudnn bin nếu có
+    cudnn_dirs = [
+        os.path.join(sys.prefix, "Lib", "site-packages", "nvidia", "cudnn", "bin"),
+        os.path.join(data, ".venv-whisper", "Lib", "site-packages", "nvidia", "cudnn", "bin"),
+    ]
+    for cd in cudnn_dirs:
+        if os.path.isdir(cd):
+            _add_dir_to_dll_search(cd)
+
+    # Ưu tiên CUDA 12 (cublas64_12.dll)
+    for lib_dir in search_dirs:
+        target_dll = os.path.join(lib_dir, "cublas64_12.dll")
+        if os.path.isfile(target_dll):
+            try:
+                _add_dir_to_dll_search(lib_dir)
+                ctypes.CDLL(target_dll)
+                return True
+            except OSError:
+                continue
+
+    # Fallback cho các phiên bản cublas khác nếu có
+    for lib_dir in search_dirs:
         matches = glob.glob(os.path.join(lib_dir, "cublas64_*.dll"))
-        if not matches:
-            continue
-        try:
-            os.add_dll_directory(lib_dir)
-            ctypes.CDLL(matches[0])
-            return True
-        except OSError:
-            continue
+        for match in matches:
+            try:
+                _add_dir_to_dll_search(lib_dir)
+                ctypes.CDLL(match)
+                return True
+            except OSError:
+                continue
     return False
 
 
@@ -282,22 +316,29 @@ def _transcribe_whisper_subprocess(
     có format Whisper-shaped giống hệt đường in-process.
     """
     # Tìm thư mục cuBLAS cho worker: ưu tiên nvidia pip package trong
-    # .venv-whisper (đúng CUDA 12), sau đó mới đến torch/lib của venv GPU.
+    # sys.prefix hoặc .venv-whisper (đúng CUDA 12), sau đó mới đến torch/lib của venv GPU.
     cuda_dll_dir = ""
     if os.name == "nt":
-        whisper_root = os.path.dirname(
-            os.path.dirname(settings.whisper_venv_python_path()))
-        _nvidia = os.path.join(whisper_root, "Lib", "site-packages",
-                               "nvidia", "cublas", "bin")
-        if os.path.isdir(_nvidia):
-            cuda_dll_dir = _nvidia
-        else:
-            venv = gpu_venv_dir()
-            if venv:
-                _lib = os.path.join(venv, "Lib", "site-packages",
-                                    "torch", "lib")
-                if os.path.isdir(_lib):
-                    cuda_dll_dir = _lib
+        candidates = [
+            os.path.join(sys.prefix, "Lib", "site-packages", "nvidia", "cublas", "bin"),
+        ]
+        whisper_py = settings.whisper_venv_python_path()
+        if whisper_py:
+            whisper_root = os.path.dirname(os.path.dirname(whisper_py))
+            candidates.append(os.path.join(whisper_root, "Lib", "site-packages",
+                                           "nvidia", "cublas", "bin"))
+        candidates.append(os.path.join(data_root(), ".venv-whisper", "Lib",
+                                       "site-packages", "nvidia", "cublas", "bin"))
+        venv = gpu_venv_dir()
+        if venv:
+            candidates.append(os.path.join(venv, "Lib", "site-packages",
+                                           "torch", "lib"))
+        for c in candidates:
+            if os.path.isfile(os.path.join(c, "cublas64_12.dll")) or (
+                os.path.isdir(c) and any(f.startswith("cublas64_") and f.endswith(".dll") for f in os.listdir(c))
+            ):
+                cuda_dll_dir = c
+                break
 
     cmd = [
         settings.whisper_venv_python_path(),
@@ -472,49 +513,69 @@ def _transcribe_whisper(audio_path: str, language: str, settings: Settings,
 
     if is_cancel_requested():
         raise PipelineCancelled("Đã hủy trong lúc nghe-chép")
-    logger.info(f"Starting transcription: {audio_path} (language: {whisper_lang})")
-    raw_segments, info = model.transcribe(
-        audio_path,
-        language=whisper_lang,
-        beam_size=settings.whisper_beam_size,
-        vad_filter=True,
-        vad_parameters={"min_silence_duration_ms": 500},
-        word_timestamps=True,
-    )
-    if whisper_lang is None and getattr(info, "language", None):
-        logger.info(f"Ngôn ngữ tự nhận dạng: {info.language} "
-                    f"(độ tin cậy {getattr(info, 'language_probability', 0):.0%})")
+    def _collect_segments(raw_iter) -> list[dict]:
+        res = []
+        seg_id = 0
+        for seg in raw_iter:
+            if is_cancel_requested():
+                raise PipelineCancelled("Đã hủy trong lúc nghe-chép")
+            text = seg.text.strip()
+            if not text:
+                continue
+            seg_id += 1
+            start = seg.start
+            end = seg.end
+            item = {
+                "id": seg_id,
+                "text": text,
+                "start": round(start, 3),
+                "end": round(end, 3),
+                "duration": round(end - start, 3),
+            }
+            words = getattr(seg, "words", None)
+            if words:
+                item["words"] = [
+                    {"word": w.word, "start": round(w.start, 3),
+                     "end": round(w.end, 3)}
+                    for w in words
+                ]
+            res.append(item)
+            logger.info(f"Segment {seg_id}: [{start:.1f}s-{end:.1f}s] {text[:50]}...")
+        return res
 
-    segments = []
-    segment_id = 0
-    for seg in raw_segments:
-        # Đường in-process không có tiến trình con để nút Dừng giết, nên đây
-        # là điểm dừng duy nhất: model.transcribe trả về một generator và
-        # chỉ chạy tiếp khi vòng lặp này rút phần tử kế tiếp.
-        if is_cancel_requested():
-            raise PipelineCancelled("Đã hủy trong lúc nghe-chép")
-        text = seg.text.strip()
-        if not text:
-            continue
-        segment_id += 1
-        start = seg.start
-        end = seg.end
-        segment = {
-            "id": segment_id,
-            "text": text,
-            "start": round(start, 3),
-            "end": round(end, 3),
-            "duration": round(end - start, 3),
-        }
-        words = getattr(seg, "words", None)
-        if words:
-            segment["words"] = [
-                {"word": w.word, "start": round(w.start, 3),
-                 "end": round(w.end, 3)}
-                for w in words
-            ]
-        segments.append(segment)
-        logger.info(f"Segment {segment_id}: [{start:.1f}s-{end:.1f}s] {text[:50]}...")
+    try:
+        raw_segments, info = model.transcribe(
+            audio_path,
+            language=whisper_lang,
+            beam_size=settings.whisper_beam_size,
+            vad_filter=True,
+            vad_parameters={"min_silence_duration_ms": 500},
+            word_timestamps=True,
+        )
+        if whisper_lang is None and getattr(info, "language", None):
+            logger.info(f"Ngôn ngữ tự nhận dạng: {info.language} "
+                        f"(độ tin cậy {getattr(info, 'language_probability', 0):.0%})")
+        segments = _collect_segments(raw_segments)
+    except Exception as e:
+        if _should_retry_whisper_cpu(e):
+            logger.warning(
+                f"Whisper GPU transcribe lỗi ({e}) — retry bằng CPU")
+            del model
+            _release_vram()
+            from faster_whisper import WhisperModel
+            resolved = settings.resolved_whisper_model(cuda_available=False)
+            model = WhisperModel(resolved, device="cpu", compute_type="int8")
+            raw_segments, info = model.transcribe(
+                audio_path,
+                language=whisper_lang,
+                beam_size=settings.whisper_beam_size,
+                vad_filter=True,
+                vad_parameters={"min_silence_duration_ms": 500},
+                word_timestamps=True,
+            )
+            segments = _collect_segments(raw_segments)
+        else:
+            raise
 
     # The transcript is fully materialised — hand the VRAM back before the
     # TTS step sizes its worker pool. raw_segments (a generator) also pins
