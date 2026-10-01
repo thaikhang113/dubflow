@@ -31,6 +31,12 @@ Build and maintain DubFlow: local Vietnamese video dubbing desktop app.
 - `qa/gui_walkthrough.py` và `qa/commit_safety_check.py` trước mỗi commit
 
 ## Latest Verification
+- 2026-10-01: Phát hành 3.0.31 — Sửa lỗi nạp thư viện CUDA 12 cho Whisper ASR trên Windows và kiểm thử thực tế video Bilibili 34 phút.
+  + Sửa nạp thư viện CUDA 12 (`autodub/speech/transcriber.py`): khắc phục lỗi `cublas64_12.dll` / `cudnn_ops64_9.dll` không tìm thấy trên Windows khi chạy Faster-Whisper. Bổ sung `_add_dir_to_dll_search()` đăng ký cả `os.add_dll_directory()` và biến môi trường `PATH`, ưu tiên môi trường ảo chính và `.venv-whisper`.
+  + Tự động fallback CPU an toàn khi khởi tạo CUDA gặp sự cố (`_transcribe_whisper`).
+  + Cập nhật script cài đặt `scripts/setup_whisper.py` tự động cài đặt `nvidia-cudnn-cu12`.
+  + Kiểm thử thực tế đầu cuối (E2E): xử lý thành công 100% video Bilibili 34 phút 27 giây (1,499 phân đoạn thoại, 615 MB Full HD 1080p) không lỗi.
+  + Bump đồng bộ 5 điểm lên 3.0.31 (`pyproject.toml`, `autodub/__init__.py`, `autodub_gui/__init__.py`, `autodub_gui/app.py`, `scripts/DubFlow.iss`).
 - 2026-09-30: Phát hành 3.0.30 — Tích hợp bộ tăng tốc tải đa luồng aria2c và vá phục hồi lỗi mạng Windows socket.
   + Tích hợp aria2c (`autodub/media/downloader.py`): tự động nhận diện `aria2c` trong `%LOCALAPPDATA%\DubFlow\bin` hoặc `PATH`, cấu hình 8 kết nối Range song song cho DASH streams (Bilibili, YouTube) đạt 6–16 MiB/s (~9x speedup, rút ngắn thời gian tải video 546 MB từ 14 phút xuống ~1.5 phút). Cho phép tắt qua `DUBFLOW_DISABLE_ARIA2C=1`.
   + Vá lỗi đứt mạng tạm thời trên Windows (`WinError 10060/10054...`): bóc tách `urllib.error.URLError`, nâng retries lên 15 lần, backoff lũy tiến (2s->30s) trong `_extract_info_with_retry`.
