@@ -31,6 +31,16 @@ Build and maintain DubFlow: local Vietnamese video dubbing desktop app.
 - `qa/gui_walkthrough.py` và `qa/commit_safety_check.py` trước mỗi commit
 
 ## Latest Verification
+- 2026-10-01: Phát hành 3.0.32 — Nâng cấp VieNeu TTS 3.8.3, tích hợp công cụ AI/MCP xóa phụ đề cứng (VSR) và bôi mờ tùy biến.
+  + Nâng cấp VieNeu TTS 3.8.3: bổ sung nút 1-click "Cập nhật VieNeu TTS" trên GUI (`VoiceSettingsPanel`), hỗ trợ lượng tử hóa INT8 trên CPU (`VIENEU_PRECISION`: `fp32` / `int8`), tăng tốc độ đọc ~1.6x và mở rộng lên 25 giọng đọc mẫu.
+  + Mở rộng hệ thống điều khiển AI (OpenClaw & MCP Server):
+    * `update_vieneu`: cho phép AI tự động kích hoạt nâng cấp TTS và làm mới danh mục giọng.
+    * `remove_video_subtitles`: xóa phụ đề cứng và watermark bằng AI (VSR inpainting STTN/ProPainter) có fallback tự động sang làm mờ Gaussian blur.
+    * `apply_blur_boxes`: bôi mờ theo tọa độ chuẩn hóa và mốc thời gian tùy biến.
+    * `get_vsr_status` & `setup_vsr`: tra cứu trạng thái và tự động cài đặt môi trường VSR.
+    * Đưa `VSR_ENABLED`, `VSR_MODE`, `VIENEU_PRECISION` vào danh sách trắng cấu hình nóng an toàn.
+  + Chuyển đổi giấy phép nguồn mở sang Apache License 2.0.
+  + Bump đồng bộ 5 điểm lên 3.0.32 (`pyproject.toml`, `autodub/__init__.py`, `autodub_gui/__init__.py`, `autodub_gui/app.py`, `scripts/DubFlow.iss`).
 - 2026-10-01: Phát hành 3.0.31 — Sửa lỗi nạp thư viện CUDA 12 cho Whisper ASR trên Windows và kiểm thử thực tế video Bilibili 34 phút.
   + Sửa nạp thư viện CUDA 12 (`autodub/speech/transcriber.py`): khắc phục lỗi `cublas64_12.dll` / `cudnn_ops64_9.dll` không tìm thấy trên Windows khi chạy Faster-Whisper. Bổ sung `_add_dir_to_dll_search()` đăng ký cả `os.add_dll_directory()` và biến môi trường `PATH`, ưu tiên môi trường ảo chính và `.venv-whisper`.
   + Tự động fallback CPU an toàn khi khởi tạo CUDA gặp sự cố (`_transcribe_whisper`).
