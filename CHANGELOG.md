@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.0.31 - 2026-10-01
+
+### Fixed
+
+- CUDA 12 runtime DLL resolution for Faster-Whisper ASR on Windows: resolved `cublas64_12.dll` and `cudnn_ops64_9.dll` missing runtime crashes by implementing `_add_dir_to_dll_search()` in `transcriber.py`, correctly registering virtual environment DLL paths via `os.add_dll_directory()` and `os.environ["PATH"]`.
+- Added graceful CPU fallback on CUDA initialization failures in `_transcribe_whisper` to ensure ASR pipeline never hard-crashes.
+- Updated `scripts/setup_whisper.py` to install `nvidia-cudnn-cu12` runtime dependency alongside `faster-whisper`.
+- Verified end-to-end dubbing pipeline on real-world 34m27s Bilibili video (1,499 segments) with zero errors.
+
 ## 3.0.30 - 2026-09-30
 
 ### Added
