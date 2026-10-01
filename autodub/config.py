@@ -180,6 +180,7 @@ class Settings:
     #: Tên giọng mặc định cho dự án mới (xem autodub.speech.tts.voices).
     vieneu_voice: str = ""
     vieneu_style: str = "tu_nhien"   # "tu_nhien" | "tin_tuc" | "doc_truyen"
+    vieneu_precision: str = "fp32"   # "fp32" | "int8"
     vieneu_clone_enabled: bool = False
     vieneu_clone_source: str = "video"  # "video" | "file"
     vieneu_clone_reference_audio: str = ""
@@ -429,6 +430,8 @@ class Settings:
             vieneu_style=_one_of(env("VIENEU_STYLE", "tu_nhien"),
                                  ("tu_nhien", "tin_tuc", "doc_truyen"),
                                  "tu_nhien"),
+            vieneu_precision=_one_of(env("VIENEU_PRECISION", "fp32"),
+                                     ("fp32", "int8"), "fp32"),
             vieneu_clone_enabled=env_bool("VIENEU_CLONE_ENABLED", "false"),
             vieneu_clone_source=_one_of(env("VIENEU_CLONE_SOURCE", "video"),
                                         ("video", "file"), "video"),

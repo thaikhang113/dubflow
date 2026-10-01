@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.0.32 - 2026-10-01
+
+### Added
+
+- VieNeu TTS 3.8.3 upgrade with in-app 1-click update: added dedicated "Cập nhật VieNeu TTS" button in VoiceSettingsPanel and precision selection combo (`VIENEU_PRECISION`: `fp32` / `int8`) under Performance settings tab, enabling ~1.6x CPU TTS speedup via INT8 quantization and expanding presets to 25 voices.
+- AI Agent & MCP Server Tool expansions:
+  - `update_vieneu`: trigger background VieNeu TTS upgrade and voice list refreshing via prompt or tool call.
+  - `get_vsr_status` & `setup_vsr`: check Video Subtitle Remover (VSR) configuration health and run background installer.
+  - `remove_video_subtitles`: AI-driven hard subtitle and watermark removal using deep learning (STTN/ProPainter) with automatic FFmpeg Gaussian blur fallback.
+  - `apply_blur_boxes`: FFmpeg boxblur/delogo over specified normalized bounding box coordinates and timestamps.
+- OpenClaw batch pipeline support for `blur_regions`, `vsr_enabled`, and `vsr_mode` parameters in job options.
+- Relicensed project under Apache License 2.0.
+
 ## 3.0.31 - 2026-10-01
 
 ### Fixed

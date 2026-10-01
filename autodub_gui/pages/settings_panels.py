@@ -65,7 +65,12 @@ class VoiceSettingsPanel(CollapsibleSection):
         self.btn_library.clicked.connect(self._enroll_library)
         # Khối này nằm trong cột phải khá hẹp, nên nút chiếm trọn bề ngang
         # thay vì bị đẩy bởi khoảng chun — chữ dài không bao giờ bị cắt.
-        for button in (self.btn_enroll, self.btn_library):
+        self.btn_upgrade = GhostButton("Cập nhật VieNeu TTS")
+        self.btn_upgrade.setToolTip(
+            "Nâng cấp gói vieneu lên bản mới nhất và làm mới danh sách giọng "
+            "đọc. Chạy một lần trong nền, không làm gián đoạn ứng dụng.")
+        self.btn_upgrade.clicked.connect(self._upgrade_vieneu)
+        for button in (self.btn_enroll, self.btn_library, self.btn_upgrade):
             self.add_widget(button)
 
         self.status = _hint_label("")
@@ -222,6 +227,58 @@ class VoiceSettingsPanel(CollapsibleSection):
             self.changed.emit()
 
         worker.finished.connect(_done)
+        self._thread = worker
+        worker.start()
+
+    def _upgrade_vieneu(self) -> None:
+        """Nâng cấp gói vieneu lên bản mới nhất và làm mới danh sách giọng."""
+        from autodub.config import Settings
+        from autodub.speech.tts import NOT_INSTALLED_HINT
+        from autodub_gui.workers_setup import SetupScriptWorker
+
+        settings = Settings.load(override=True)
+        if not settings.vieneu_configured():
+            self.status.setText(f"{STATUS_WARN} {NOT_INSTALLED_HINT}")
+            return
+
+        confirmed, _ = ConfirmDialog.ask(
+            self, "Cập nhật VieNeu TTS",
+            "Ứng dụng sẽ nâng cấp gói vieneu lên bản mới nhất và làm mới "
+            "danh sách giọng đọc trong nền. Bạn có muốn tiếp tục?",
+            kind="info", confirm_label="Bắt đầu cập nhật")
+        if not confirmed:
+            return
+
+        self.btn_upgrade.set_loading(True, "Đang cập nhật...")
+        self.status.setText("Đang nâng cấp VieNeu TTS...")
+
+        worker = SetupScriptWorker("scripts/setup_vieneu.py", self, args=["--upgrade"])
+
+        def _on_log(msg: str) -> None:
+            self.status.setText(msg)
+
+        def _on_ok() -> None:
+            self.btn_upgrade.set_loading(False)
+            self._thread = None
+            self.picker.reload()
+            self._refresh_library_hint()
+            self.status.setText(f"{STATUS_OK} Cập nhật VieNeu TTS thành công.")
+            TOASTS.success("Đã cập nhật VieNeu TTS lên phiên bản mới nhất.")
+            self.changed.emit()
+
+        def _on_fail(err: str) -> None:
+            self.btn_upgrade.set_loading(False)
+            self._thread = None
+            self.status.setText("")
+            ConfirmDialog.show_error(
+                self, "Không thể cập nhật VieNeu TTS",
+                "Có lỗi xảy ra khi cập nhật gói vieneu. "
+                "Vui lòng kiểm tra kết nối mạng và thử lại.",
+                detail=err)
+
+        worker.log.connect(_on_log)
+        worker.finished_ok.connect(_on_ok)
+        worker.failed.connect(_on_fail)
         self._thread = worker
         worker.start()
 

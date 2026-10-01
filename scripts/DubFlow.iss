@@ -3,7 +3,7 @@
 #define AppExeName "DubFlow.exe"
 
 #ifndef AppVersion
-#define AppVersion "3.0.31"
+#define AppVersion "3.0.32"
 #endif
 
 [Setup]

@@ -100,6 +100,86 @@ def main():
                                 },
                                 "required": ["updates"]
                             }
+                        },
+                        {
+                            "name": "update_vieneu",
+                            "description": "Upgrade VieNeu TTS package to latest version and refresh voices",
+                            "inputSchema": {"type": "object", "properties": {}}
+                        },
+                        {
+                            "name": "get_vsr_status",
+                            "description": "Get Video Subtitle Remover (VSR) installation and configuration status",
+                            "inputSchema": {"type": "object", "properties": {}}
+                        },
+                        {
+                            "name": "apply_blur_boxes",
+                            "description": "Apply blur boxes (Gaussian blur/delogo) over specified coordinates on a video",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "video_path": {
+                                        "type": "string",
+                                        "description": "Path to input video file"
+                                    },
+                                    "regions": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "x": {"type": "number", "description": "Left coordinate (0.0 - 1.0)"},
+                                                "y": {"type": "number", "description": "Top coordinate (0.0 - 1.0)"},
+                                                "w": {"type": "number", "description": "Width (0.0 - 1.0)"},
+                                                "h": {"type": "number", "description": "Height (0.0 - 1.0)"},
+                                                "t_start": {"type": "number", "description": "Optional start time in seconds"},
+                                                "t_end": {"type": "number", "description": "Optional end time in seconds"}
+                                            },
+                                            "required": ["x", "y", "w", "h"]
+                                        },
+                                        "description": "List of normalized bounding boxes to blur"
+                                    },
+                                    "output_path": {
+                                        "type": "string",
+                                        "description": "Optional output path for blurred video"
+                                    }
+                                },
+                                "required": ["video_path", "regions"]
+                            }
+                        },
+                        {
+                            "name": "remove_video_subtitles",
+                            "description": "Remove hardcoded subtitles or watermarks from a video using AI (VSR inpainting) or blur fallback",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "video_path": {
+                                        "type": "string",
+                                        "description": "Path to input video file"
+                                    },
+                                    "output_path": {
+                                        "type": "string",
+                                        "description": "Optional output path for cleaned video"
+                                    },
+                                    "regions": {
+                                        "type": "array",
+                                        "items": {"type": "object"},
+                                        "description": "Optional list of subtitle/watermark regions to remove. Defaults to bottom caption area"
+                                    },
+                                    "mode": {
+                                        "type": "string",
+                                        "description": "VSR inpainting mode: 'sttn-det', 'sttn', or 'propainter'"
+                                    },
+                                    "fallback_to_blur": {
+                                        "type": "boolean",
+                                        "description": "Whether to fallback to blur if VSR is not installed/fails (default true)"
+                                    }
+                                },
+                                "required": ["video_path"]
+                            }
+                        },
+                        {
+                            "name": "setup_vsr",
+                            "description": "Download and install/repair Video Subtitle Remover (VSR) backend in background",
+                            "inputSchema": {"type": "object", "properties": {}}
                         }
                     ]
                 }

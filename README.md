@@ -1,184 +1,201 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/thaikhang113/dubflow/main/autodub_gui/assets/logo.png" alt="DubFlow Logo" width="120" />
-  <h1>DubFlow</h1>
+  <img src="https://raw.githubusercontent.com/thaikhang113/dubflow/main/autodub_gui/assets/logo.png" alt="DubFlow Logo" width="150" />
+  <h1>🎙️ DubFlow</h1>
   <p><b>Hệ thống Lồng tiếng Tiếng Việt Tự động (AI Dubbing) & Xử lý Video Toàn diện</b></p>
   
-  [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-  [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-green.svg)](https://www.python.org/)
-  [![PySide6](https://img.shields.io/badge/GUI-PySide6-red.svg)](https://doc.qt.io/qtforpython/)
-  [![MCP Support](https://img.shields.io/badge/AI_Control-MCP_Ready-purple.svg)](#6-ai-control--mcp-server)
+  <p>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=for-the-badge" alt="License"></a>
+    <img src="https://img.shields.io/badge/Python-3.10%2B-green.svg?style=for-the-badge&logo=python" alt="Python">
+    <img src="https://img.shields.io/badge/PySide6-GUI-red.svg?style=for-the-badge&logo=qt" alt="PySide6">
+    <img src="https://img.shields.io/badge/PyTorch-Deep%20Learning-EE4C2C.svg?style=for-the-badge&logo=pytorch" alt="PyTorch">
+    <a href="#-ai-control--mcp-server"><img src="https://img.shields.io/badge/AI_Control-MCP_Ready-8A2BE2.svg?style=for-the-badge&logo=openai" alt="MCP Support"></a>
+  </p>
+  
+  <p><i>Được tái cấu trúc và phát triển nâng cao từ ý tưởng gốc của mã nguồn <a href="https://github.com/ttthanh2044/voxdub">VoxDub</a> bởi tác giả <b>ttthanh2044</b>.</i></p>
 </div>
 
 <hr />
 
-## 🌟 1. Giới thiệu & Cảm hứng (Inspiration)
+## 📑 Mục lục
+- [Giới thiệu](#-giới-thiệu)
+- [Tính năng Nổi bật](#-tính-năng-nổi-bật)
+- [Kiến trúc Hệ thống](#-kiến-trúc-hệ-thống)
+- [Hướng dẫn Sử dụng](#-hướng-dẫn-sử-dụng)
+- [AI Control & MCP Server](#-ai-control--mcp-server)
+- [Cài đặt & Triển khai](#-cài-đặt--triển-khai)
+- [Dành cho Developer](#-dành-cho-developer)
+
+## 🌟 Giới thiệu
 
 **DubFlow** là một ứng dụng Desktop mã nguồn mở (hỗ trợ Windows/Linux) được thiết kế để tự động hóa hoàn toàn quy trình lồng tiếng (dubbing) video nước ngoài sang Tiếng Việt. 
 
-Dự án này được **xây dựng và phát triển lại từ ý tưởng gốc của mã nguồn [VoxDub](https://github.com/ttthanh2044/voxdub)** của tác giả `ttthanh2044`. DubFlow kế thừa tầm nhìn của VoxDub nhưng được tái cấu trúc (refactor) toàn diện về cả Kiến trúc phần mềm (Pipeline Architecture), Giao diện người dùng (Modern Dark UI/UX) và Khả năng tự động hóa (AI/MCP Control).
-
-**Tại sao chọn DubFlow?**
-- 🚀 **Tự động 100%**: Chỉ cần ném link (YouTube, TikTok, Douyin, Bilibili) hoặc file MP4, phần mềm sẽ tự bóc băng, dịch, lồng tiếng và mix nhạc nền.
-- 💻 **Chạy hoàn toàn trên máy cá nhân (Local)**: Đảm bảo quyền riêng tư, không lo rò rỉ dữ liệu.
-- 🤖 **AI-Native**: Hỗ trợ giao thức MCP, cho phép các AI Assistant (Claude, Gemini) trực tiếp điều khiển app thay con người!
-- 🎨 **UI/UX Chuyên nghiệp**: Giao diện Modern Dark Theme (chuẩn Cursor/Linear) tối giản, tinh tế, tích hợp Timeline chuyên nghiệp.
+Dự án này được **xây dựng và phát triển lại từ ý tưởng gốc của mã nguồn [VoxDub](https://github.com/ttthanh2044/voxdub)** của tác giả `ttthanh2044`. DubFlow kế thừa tầm nhìn của VoxDub nhưng được tái cấu trúc toàn diện về cả Kiến trúc phần mềm, Giao diện người dùng (Modern Dark UI/UX) và Khả năng tự động hóa (AI/MCP Control).
 
 ---
 
-## 🏗️ 2. Kiến trúc Hệ thống (System Architecture)
+## ✨ Tính năng Nổi bật
 
-Hệ thống được chia làm 3 lớp (layers) rõ rệt, kết nối bằng cơ chế caching theo file để tránh phải chạy lại từ đầu nếu có lỗi:
+- 🚀 **Tự động 100%**: Chỉ cần cung cấp link (YouTube, TikTok, Douyin, Bilibili) hoặc file MP4, hệ thống tự động tải, bóc băng, dịch thuật, lồng tiếng và mix nhạc nền.
+- 💻 **Bảo mật Tối đa (Local Processing)**: Hoạt động hoàn toàn trên máy cá nhân, đảm bảo quyền riêng tư và không lo rò rỉ dữ liệu video/âm thanh.
+- 🤖 **AI-Native & MCP**: Hỗ trợ giao thức Model Context Protocol (MCP), cho phép các AI Assistant (Claude, Gemini, Cursor) trực tiếp điều khiển phần mềm thay con người.
+- 🎨 **Giao diện Modern Dark Theme**: Giao diện tối giản, tinh tế (chuẩn Cursor/Linear) tích hợp Timeline chỉnh sửa phụ đề/âm thanh chuyên nghiệp.
+- 🛠 **Xử lý Hàng loạt (Batch)**: Tối ưu cho Content Creator với khả năng xử lý hàng chục video cùng lúc, lưu trạng thái tự động để chạy tiếp khi khởi động lại.
+
+---
+
+## 🏗 Kiến trúc Hệ thống
+
+Hệ thống được chia làm 3 phân lớp (layers) rõ rệt, kết nối bằng cơ chế caching theo file để tối ưu hóa việc chạy lại tiến trình khi gặp sự cố:
 
 ```mermaid
 graph TD
-    subgraph Lớp GUI & AI Control
-        UI[PySide6 Desktop UI]
-        MCP[MCP Server / AI Agent]
-        API[OpenClaw API]
+    %% Định nghĩa Style
+    classDef ui fill:#2b2b2b,stroke:#666,stroke-width:2px,color:#fff
+    classDef core fill:#0b3d91,stroke:#4a90e2,stroke-width:2px,color:#fff
+    classDef ai fill:#276b52,stroke:#41a37c,stroke-width:2px,color:#fff
+
+    subgraph Lớp_GUI_và_Điều_khiển ["🖥️ Lớp GUI & AI Control"]
+        UI[PySide6 Desktop UI]:::ui
+        MCP[MCP Server / AI Agent]:::ui
+        API[OpenClaw API]:::ui
         UI <--> API
         MCP <--> API
     end
 
-    subgraph Lớp Core Pipeline
-        PIPE[autodub/pipeline.py]
+    subgraph Lớp_Core_Pipeline ["⚙️ Lớp Core Pipeline"]
+        PIPE((autodub/pipeline.py)):::core
         API --> PIPE
-        PIPE --> DL[Downloader]
-        PIPE --> SP[Speech Processing]
-        PIPE --> TR[Translation]
-        PIPE --> MIX[Video/Audio Mixer]
+        PIPE --> DL[Downloader]:::core
+        PIPE --> SP[Speech Processing]:::core
+        PIPE --> TR[Translation]:::core
+        PIPE --> MIX[Video/Audio Mixer]:::core
     end
 
-    subgraph Lớp AI Models & Tools
-        DL -.-> YTDLP[yt-dlp / Chromium]
-        SP -.-> WHISP[Whisper / Paraformer ASR]
-        SP -.-> DEMUCS[Demucs Audio Splitter]
-        TR -.-> OAI[OpenAI Compatible API]
-        MIX -.-> FFMPEG[FFmpeg Engine]
-        MIX -.-> VIENEU[VieNeu TTS]
+    subgraph Lớp_AI_Models_Tools ["🧠 Lớp AI Models & Tools"]
+        DL -.-> YTDLP[yt-dlp / Chromium]:::ai
+        SP -.-> WHISP[Whisper / Paraformer ASR]:::ai
+        SP -.-> DEMUCS[Demucs Audio Splitter]:::ai
+        TR -.-> OAI[OpenAI Compatible API]:::ai
+        MIX -.-> FFMPEG[FFmpeg Engine]:::ai
+        MIX -.-> VIENEU[VieNeu TTS]:::ai
     end
 ```
 
-### Luồng xử lý dữ liệu (Data Flow)
-1. **Input**: Tải video / Tách âm thanh `original_audio.wav`.
-2. **Tách nhạc nền**: Dùng Demucs để chia thành `vocals.wav` (Giọng nói) và `no_vocals.wav` (Nhạc nền).
-3. **ASR (Bóc băng)**: Whisper/Paraformer chuyển `vocals.wav` thành văn bản (Subtitle gốc).
-4. **Translate**: Dịch ngữ cảnh (hỗ trợ thuật ngữ, prompt tùy chỉnh) sang Tiếng Việt.
-5. **TTS (Lồng tiếng)**: VieNeu tạo ra `audio_vi_full.wav` với thời lượng khớp chính xác (Time-stretch) với câu gốc.
-6. **Mix**: Trộn nhạc nền + Giọng Việt + In phụ đề cứng + Xóa chữ gốc (OCR Blur) -> `dubbed_video.mp4`.
+### 🔄 Luồng xử lý Dữ liệu (Data Flow)
+1. 📥 **Input**: Tải video hoặc đọc file MP4, trích xuất âm thanh gốc (`original_audio.wav`).
+2. 🎵 **Tách nhạc nền**: Sử dụng mô hình Demucs để phân tách thành `vocals.wav` (Giọng nói) và `no_vocals.wav` (Nhạc nền).
+3. 📝 **ASR (Bóc băng)**: Dùng Whisper/Paraformer để nhận diện `vocals.wav` thành văn bản (Subtitle gốc).
+4. 🌐 **Translate**: Dịch thuật theo ngữ cảnh (hỗ trợ Glossary, Prompt tùy chỉnh) sang Tiếng Việt.
+5. 🎙️ **TTS (Lồng tiếng)**: VieNeu TTS tạo file `audio_vi_full.wav` với thời lượng khớp chính xác (Time-stretch) với câu gốc.
+6. 🎬 **Mix & Render**: Trộn nhạc nền + Giọng Việt + In phụ đề cứng + Xóa chữ gốc (OCR Blur) -> xuất ra `dubbed_video.mp4`.
 
 ---
 
-## 📖 3. Hướng dẫn sử dụng từng chức năng
+## 📖 Hướng dẫn Sử dụng
 
-### 3.1. Tạo Dự án Lồng tiếng (Single Project)
-Đây là tính năng cốt lõi. Bạn làm theo các bước sau:
-1. Mở thẻ **Lồng tiếng**.
-2. Dán đường link video (hoặc chọn file từ máy).
-3. Cấu hình các thông số:
-   - **Xử lý nhạc nền**: Chọn *Demucs* (chất lượng cao) hoặc *Duck* (nhanh).
-   - **Phụ đề**: Chọn xuất file `.srt` rời hoặc *Hardsub* (in thẳng vào video).
-   - **Che chữ gốc (OCR Blur)**: Bật tính năng này nếu video gốc có phụ đề cứng, AI sẽ tự động khoanh vùng và làm mờ chữ gốc.
-4. Nhấn **Bắt đầu** và theo dõi tiến trình.
+### 1. Tạo Dự án Lồng tiếng (Single Project)
+- Mở thẻ **Lồng tiếng**.
+- Dán đường link video (hoặc tải lên file từ máy tính).
+- Cấu hình thông số:
+  - **Nhạc nền**: *Demucs* (chất lượng cao) hoặc *Duck* (nhanh).
+  - **Phụ đề**: File `.srt` rời hoặc *Hardsub* (in cứng vào video).
+  - **OCR Blur**: Bật để tự động làm mờ phụ đề gốc của video.
+- Nhấn **Bắt đầu** và thư giãn.
 
-### 3.2. Chế độ Xử lý Hàng loạt (Batch Processing)
-Dành cho người làm nội dung số (Reup/Creator):
-1. Chuyển sang thẻ **Hàng loạt (Batch)**.
-2. Dán nhiều link, mỗi link một dòng. Hỗ trợ cú pháp ghi chú và ép kiểu giọng đọc:
-   ```text
-   https://youtu.be/abc123 | nam
-   https://www.douyin.com/video/789 | nu
-   # Đây là video dự phòng
-   ```
-3. Nhấn bắt đầu. Tiến trình sẽ được lưu lại (State). Nếu tắt máy, lần sau mở lên app sẽ tự chạy tiếp.
+### 2. Chế độ Xử lý Hàng loạt (Batch Processing)
+- Chuyển sang thẻ **Hàng loạt (Batch)**.
+- Dán danh sách link, hỗ trợ cấu hình giọng đọc ngay trên từng dòng:
+  ```text
+  https://youtu.be/abc123 | nam
+  https://www.douyin.com/video/789 | nu
+  # Đây là dòng ghi chú
+  ```
+- Tiến trình được lưu tự động (State Preservation).
 
-### 3.3. Trình chỉnh sửa (Editor / Timeline)
-Sau khi AI dịch xong, bạn có thể chỉnh sửa thủ công để văn phong tự nhiên hơn:
-- **Giao diện 2 cột**: Cột trái là phụ đề gốc, cột phải là phụ đề Việt.
-- **Nghe thử từng câu**: Bấm vào nút Play bên cạnh mỗi câu để nghe giọng AI đọc xem đã chuẩn chưa.
-- **Chỉnh sửa**: Click vào ô chữ để gõ lại. Khi lưu, AI sẽ chỉ tạo lại giọng đọc cho những câu bạn vừa sửa (rất tiết kiệm thời gian).
-- **Xuất file**: Bạn có thể xuất lại Video, hoặc chỉ xuất âm thanh (MP3/WAV) và phụ đề (.ass, .srt).
+### 3. Trình chỉnh sửa (Editor / Timeline)
+- **Giao diện 2 cột**: Dễ dàng đối chiếu phụ đề gốc và bản dịch tiếng Việt.
+- **Preview Âm thanh**: Nghe thử từng câu AI đọc trực tiếp trên timeline.
+- **Tiết kiệm tài nguyên**: Chỉnh sửa bản dịch và lưu lại, hệ thống chỉ tạo lại (render) âm thanh cho những câu vừa thay đổi.
+- **Export Đa định dạng**: Xuất lại Video, MP3/WAV, hoặc phụ đề (.ass, .srt).
 
-### 3.4. Thư viện Giọng nói AI (Voices)
-- Hỗ trợ công cụ **VieNeu TTS**.
-- Bạn có thể tải thêm Preset (có sẵn trong `voices/preset_voices_vn/`).
-- Hỗ trợ **Voice Cloning** (Sao chép giọng): Cung cấp một đoạn âm thanh ngắn (3-10 giây) của một người, AI sẽ clone giọng người đó để đọc tiếng Việt. *(Lưu ý: Chỉ sử dụng cho mục đích hợp pháp, không giả mạo).*
+### 4. Thư viện Giọng nói AI (Voices)
+- Hỗ trợ công cụ **VieNeu TTS** chất lượng cao.
+- Có sẵn nhiều Preset trong thư mục `voices/preset_voices_vn/`.
+- Hỗ trợ **Voice Cloning**: Sao chép giọng đọc chỉ từ 3-10 giây âm thanh mẫu. *(Vui lòng chỉ sử dụng mục đích hợp pháp).*
 
-### 3.5. Dịch thuật Chuyên sâu
-Tại thẻ **Cài đặt**, bạn có thể tinh chỉnh AI Dịch thuật:
-- Cấu hình API tương thích OpenAI (`/chat/completions`).
-- Thiết lập **Chủ đề** (VD: *Review phim, Khoa học vũ trụ*).
-- Thiết lập **Danh xưng** (VD: *Tôi - Các bạn, Huynh - Muội*).
-- Thêm **Thuật ngữ (Glossary)** để ép AI dịch các từ chuyên ngành đúng ý bạn.
+### 5. Dịch thuật Chuyên sâu
+Tại thẻ **Cài đặt**, bạn có thể:
+- Cấu hình API Endpoint tương thích chuẩn OpenAI (`/chat/completions`).
+- Thiết lập **Chủ đề** (*VD: Khoa học vũ trụ, Review phim*).
+- Thiết lập **Danh xưng** (*VD: Tôi - Các bạn, Huynh - Đệ*).
+- Thêm **Thuật ngữ (Glossary)** để AI dịch chính xác các từ chuyên ngành.
 
 ---
 
-## 🤖 4. AI Control & MCP Server (Tính năng Độc quyền)
+## 🤖 AI Control & MCP Server
 
-DubFlow là một trong những ứng dụng tiên phong hỗ trợ **Điều khiển hoàn toàn bởi AI (AI-Native)** thông qua giao thức MCP (Model Context Protocol).
+DubFlow là một trong những ứng dụng tiên phong hỗ trợ **Điều khiển hoàn toàn bởi AI (AI-Native)** thông qua giao thức **[Model Context Protocol (MCP)](https://modelcontextprotocol.io/)**.
 
-Bạn có thể kết nối DubFlow với **Claude Desktop**, **Cursor**, hoặc **Cline**. Sau đó, bạn chỉ cần chat:
+Kết nối DubFlow với các trợ lý ảo như **Claude Desktop**, **Cursor**, hoặc **Cline**. Sau đó, bạn chỉ cần ra lệnh bằng ngôn ngữ tự nhiên:
 > *"Claude, tải video tiktok này về, đổi giọng nam miền Nam rồi lồng tiếng tiếng Việt cho tôi."*
 
-**Cách cài đặt:**
-Thêm đoạn sau vào file cấu hình của Claude Desktop (thường ở `%APPDATA%\Claude\claude_desktop_config.json`):
+### Cách cài đặt vào Claude Desktop:
+Thêm đoạn sau vào file cấu hình `%APPDATA%\Claude\claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
     "dubflow": {
-      "command": "C:/Đường/Dẫn/Tới/DubFlow/.venv/Scripts/python.exe",
-      "args": ["C:/Đường/Dẫn/Tới/DubFlow/mcp_server.py"]
+      "command": "C:/Absolute/Path/To/DubFlow/.venv/Scripts/python.exe",
+      "args": ["C:/Absolute/Path/To/DubFlow/mcp_server.py"]
     }
   }
 }
 ```
-*Lưu ý: Đổi đường dẫn cho khớp với thư mục cài đặt thực tế của bạn.*
-
-Hệ thống cung cấp sẵn một API linh hoạt (`OpenClaw API` port `38643`) để AI tương tác trực tiếp mà không cần bạn phải động tay vào chuột!
+*(Đảm bảo thay thế đường dẫn thực tế của bạn)*
 
 ---
 
-## ⚙️ 5. Cài đặt & Triển khai (Setup)
+## ⚙️ Cài đặt & Triển khai
 
-### Yêu cầu hệ thống
+### Yêu cầu Hệ thống
 - **Hệ điều hành**: Windows 10/11 hoặc Linux.
-- **Phần cứng**: Khuyến nghị có GPU NVIDIA (RAM >= 8GB) để chạy Whisper và Demucs nhanh hơn. Nếu không có GPU, phần mềm sẽ tự chuyển sang chạy bằng CPU (chậm hơn).
+- **Phần cứng**: Khuyến nghị GPU NVIDIA (VRAM >= 8GB) để chạy Whisper & Demucs tối ưu. Nếu không có GPU, phần mềm tự động fallback sang CPU.
 - **Phần mềm**: Python 3.10+ và FFmpeg.
 
-### Cách cài đặt từ Source
-1. Clone repo: `git clone https://github.com/thaikhang113/dubflow.git`
-2. Chạy file cài đặt tự động:
-   - **Windows**: mở `cai_dat_all.bat`
-   - **Linux**: chạy `bash cai_dat_all.sh`
+### Cài đặt từ Source
+```bash
+# 1. Clone repository
+git clone https://github.com/thaikhang113/dubflow.git
+cd dubflow
 
-   Script sẽ tự động tạo Virtual Environment (`.venv`), cài các thư viện PyTorch, PySide6, và tải sẵn các model cần thiết.
-3. Chạy phần mềm:
-   - **Windows**: bấm `chay_app.bat`
-   - **Linux**: chạy `bash chay_app.sh`
-   - Hoặc dùng chung một lệnh: `python -m autodub_gui`
+# 2. Chạy script cài đặt (tự động tạo .venv và tải models)
+cai_dat_all.bat  # Trên Windows
+bash cai_dat_all.sh  # Trên Linux
 
-*(Phần mềm tự động phát hiện module còn thiếu và sẽ hiển thị Preflight Check cảnh báo ngay khi khởi động).*
+# 3. Khởi động ứng dụng
+chay_app.bat  # Trên Windows
+bash chay_app.sh  # Trên Linux
+# Hoặc lệnh Python: python -m autodub_gui
+```
+*(Hệ thống tích hợp Preflight Check để cảnh báo thư viện/module còn thiếu khi khởi động).*
 
 ---
 
-## 💻 6. Dành cho Developer (Contribution)
+## 💻 Dành cho Developer
 
-### Cấu trúc mã nguồn
-- `autodub/`: Chứa toàn bộ Backend Core Logic (tách biệt hoàn toàn khỏi giao diện).
-  - `media/`: Downloader, Demucs, FFmpeg wrapper.
-  - `speech/`: ASR (Whisper/Paraformer) và TTS (VieNeu).
-  - `openclaw_runtime.py`: Máy chủ HTTP nội bộ xử lý lệnh gọi từ GUI và MCP.
-- `autodub_gui/`: Lớp Frontend (PySide6).
-  - `tokens.py`, `theme.py`: Định nghĩa toàn bộ Design System.
-- `mcp_server.py`: Cầu nối giao tiếp với các AI Client ngoài.
-
-### Đóng gói (Build Release)
-Bạn có thể tự đóng gói thành file `.exe` cho Windows:
+### Đóng gói Ứng dụng (Build Release)
+Bạn có thể tự đóng gói thành file `.exe` độc lập cho Windows:
 ```powershell
 python scripts/build_exe.py --no-test
 ```
 
-### Đóng góp mã (Contributing)
-Mọi Pull Request cải thiện UI/UX, thêm model TTS mới hoặc sửa lỗi đều được hoan nghênh. Xin vui lòng không commit các file API keys, cookies, hoặc dung lượng quá lớn vào repo.
+### Đóng góp Mã nguồn (Contributing)
+Mọi đóng góp từ cộng đồng (Pull Request) cải thiện UI/UX, tích hợp model TTS mới hay sửa lỗi đều rất được hoan nghênh. 
+⚠️ **Lưu ý**: Xin không commit các file chứa API keys, thư mục model dung lượng lớn, hoặc file tạm vào repository.
 
 ---
-**Giấy phép (License)**: Dự án phát hành dưới giấy phép MIT. Các model AI (Whisper, Demucs, VieNeu) đi kèm có thể phụ thuộc vào giấy phép riêng của từng tác giả. Vui lòng kiểm tra kỹ trước khi thương mại hóa.
+
+<div align="center">
+  <p><b>Lưu ý Bản quyền</b></p>
+  <p>Các mô hình AI đi kèm (Whisper, Demucs, VieNeu) có thể phụ thuộc vào giấy phép riêng của từng tác giả. Vui lòng kiểm tra kỹ trước khi thương mại hóa.</p>
+</div>

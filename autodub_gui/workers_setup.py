@@ -621,9 +621,10 @@ class SetupScriptWorker(QThread):
     finished_ok = Signal()
     failed      = Signal(str)
 
-    def __init__(self, script_rel: str, parent=None):
+    def __init__(self, script_rel: str, parent=None, args: list[str] | tuple[str, ...] | None = None):
         super().__init__(parent)
         self._script_rel = script_rel   # ví dụ: "scripts/setup_vieneu.py"
+        self._args = list(args or ())
 
     def run(self) -> None:
         try:
@@ -645,7 +646,7 @@ class SetupScriptWorker(QThread):
             self.progress.emit(2)
 
             proc = subprocess.Popen(
-                [python_exe, script_path],
+                [python_exe, script_path, *self._args],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,

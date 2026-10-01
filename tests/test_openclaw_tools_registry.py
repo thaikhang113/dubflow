@@ -193,3 +193,101 @@ def test_whitelist_never_contains_a_secret_or_path_key():
     forbidden = ("ENDPOINT", "API_KEY", "TOKEN", "COOKIES", "PATH", "DIR")
     for key in _WRITABLE:
         assert not any(word in key for word in forbidden), key
+
+
+def test_accepts_vieneu_precision_round_trip(tmp_path):
+    """Cập nhật VIENEU_PRECISION sang int8 và kiểm tra lại."""
+    result = _call({"VIENEU_PRECISION": "int8"})
+    assert result["ok"] is True
+    assert result["updated_keys"] == ["VIENEU_PRECISION"]
+
+    reloaded = Settings.load(override=True)
+    assert reloaded.vieneu_precision == "int8"
+
+
+def test_rejects_invalid_vieneu_precision(tmp_path):
+    """Từ chối giá trị precision không thuộc fp32 hoặc int8."""
+    result = _call({"VIENEU_PRECISION": "int4"})
+    assert result["ok"] is False
+    assert _env_text(tmp_path) == ""
+
+
+def test_update_vieneu_dispatch(monkeypatch):
+    """Gọi công cụ update_vieneu và kiểm tra thực thi."""
+    from unittest.mock import MagicMock
+    import subprocess
+
+    mock_run = MagicMock(return_value=MagicMock(returncode=0, stdout="OK", stderr=""))
+    monkeypatch.setattr(subprocess, "run", mock_run)
+
+    res = dispatch_tool("update_vieneu", {}, settings=Settings())
+    assert res["ok"] is True
+    assert mock_run.called
+    cmd = mock_run.call_args[0][0]
+    assert "--upgrade" in cmd
+
+
+def test_accepts_vsr_settings_round_trip(tmp_path):
+    """Cập nhật VSR_ENABLED và VSR_MODE sang .env và kiểm tra lại."""
+    result = _call({"VSR_ENABLED": "false", "VSR_MODE": "propainter"})
+    assert result["ok"] is True
+    assert set(result["updated_keys"]) == {"VSR_ENABLED", "VSR_MODE"}
+
+    reloaded = Settings.load(override=True)
+    assert reloaded.vsr_enabled is False
+    assert reloaded.vsr_mode == "propainter"
+
+
+def test_rejects_invalid_vsr_mode(tmp_path):
+    """Từ chối giá trị mode VSR không hợp lệ."""
+    result = _call({"VSR_MODE": "invalid_mode"})
+    assert result["ok"] is False
+    assert _env_text(tmp_path) == ""
+
+
+def test_get_vsr_status_tool():
+    """Kiểm tra công cụ get_vsr_status trả về thông tin cấu hình VSR."""
+    res = dispatch_tool("get_vsr_status", {}, settings=Settings())
+    assert res["ok"] is True
+    assert "vsr" in res
+    assert "configured" in res["vsr"]
+    assert "enabled" in res["vsr"]
+    assert "mode" in res["vsr"]
+
+
+def test_setup_vsr_dispatch(monkeypatch):
+    """Gọi công cụ setup_vsr và kiểm tra thực thi."""
+    from unittest.mock import MagicMock
+    import subprocess
+
+    mock_run = MagicMock(return_value=MagicMock(returncode=0, stdout="OK", stderr=""))
+    monkeypatch.setattr(subprocess, "run", mock_run)
+
+    res = dispatch_tool("setup_vsr", {}, settings=Settings())
+    assert res["ok"] is True
+    assert mock_run.called
+    cmd = mock_run.call_args[0][0]
+    assert "setup_vsr.py" in str(cmd)
+
+
+def test_apply_blur_boxes_validation():
+    """Kiểm tra xác thực đầu vào của apply_blur_boxes khi tệp không tồn tại."""
+    res = dispatch_tool(
+        "apply_blur_boxes",
+        {"video_path": "non_existent_video_12345.mp4", "regions": [{"x": 0.1, "y": 0.8, "w": 0.8, "h": 0.1}]},
+        settings=Settings(),
+    )
+    assert res["ok"] is False
+    assert "Không tìm thấy" in res["error"]
+
+
+def test_remove_video_subtitles_validation():
+    """Kiểm tra xác thực đầu vào của remove_video_subtitles khi thiếu đường dẫn."""
+    res = dispatch_tool(
+        "remove_video_subtitles",
+        {"video_path": ""},
+        settings=Settings(),
+    )
+    assert res["ok"] is False
+    assert "video_path" in res["error"]
+

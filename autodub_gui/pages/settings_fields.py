@@ -1,4 +1,4 @@
-﻿"""Khai báo mọi mục trong trang Cài đặt.
+"""Khai báo mọi mục trong trang Cài đặt.
 
 Mỗi mục được mô tả một lần ở đây rồi dùng lại cho việc dựng ô nhập, nạp giá
 trị, lưu lại và khôi phục mặc định. Nhờ vậy không bao giờ có chuyện thêm ô
@@ -102,6 +102,11 @@ _VSR_MODES = [
     ("LAMA", "lama"),
     ("ProPainter — cần máy mạnh", "propainter"),
     ("OpenCV — nhẹ hơn", "opencv"),
+]
+
+_VIENEU_PRECISIONS = [
+    ("FP32 — Chuẩn, chất lượng gốc", "fp32"),
+    ("INT8 — Tăng tốc CPU, tiết kiệm RAM", "int8"),
 ]
 
 
@@ -270,6 +275,10 @@ FIELDS: tuple[Field, ...] = (
           TAB_PERF, "Hiệu năng", "0",
           "Đặt 0 để tự chọn. Mỗi luồng tốn khoảng 1,5 GB bộ nhớ.",
           minimum=0, maximum=8, step=1, decimals=0),
+    Field("VIENEU_PRECISION", COMBO, "Độ chính xác VieNeu",
+          TAB_PERF, "Hiệu năng", "fp32",
+          "Mặc định fp32 cho chất lượng chuẩn. Chọn int8 để tăng tốc 30–50% trên CPU thế hệ mới.",
+          options=_VIENEU_PRECISIONS),
     Field("HQ_BACKGROUND", CHECK, "Giữ nhạc nền chất lượng cao",
           TAB_PERF, "Hiệu năng", "true",
           "Tắt đi thì chạy nhanh hơn nhưng nhạc nền kém hơn một chút."),

@@ -44,28 +44,29 @@ def step_venv() -> None:
     subprocess.run([sys.executable, "-m", "venv", VENV_DIR], check=True)
 
 
-def step_install() -> None:
-    probe = subprocess.run([VENV_PY, "-c", "import vieneu"],
-                           capture_output=True, check=False)
-    if probe.returncode == 0:
-        log("package vieneu đã cài — bỏ qua")
-        return
-    log("cài vieneu (ONNX, không cần GPU) ...")
+def step_install(upgrade: bool = False) -> None:
+    if not upgrade:
+        probe = subprocess.run([VENV_PY, "-c", "import vieneu"],
+                               capture_output=True, check=False)
+        if probe.returncode == 0:
+            log("package vieneu đã cài — bỏ qua")
+            return
+    log("cài đặt hoặc nâng cấp vieneu (ONNX, không cần GPU) ...")
     # Chặn trần major: bản 2.x có thể đổi API worker (vieneu_worker.py gọi
     # thẳng) — nâng trần sau khi đã thử, đừng để pip tự nhảy phiên bản lớn.
+    pip_cmd = [VENV_PY, "-m", "pip", "install", "--quiet",
+               "--no-cache-dir", "--retries", "5", "--timeout", "120"]
+    if upgrade:
+        pip_cmd.append("--upgrade")
+    pip_cmd.append(_VIENEU_SPEC)
     retry_call(
-        lambda: subprocess.run(
-            [VENV_PY, "-m", "pip", "install", "--quiet",
-             "--no-cache-dir", "--retries", "5", "--timeout", "120",
-             _VIENEU_SPEC],
-            check=True,
-        ),
+        lambda: subprocess.run(pip_cmd, check=True),
         attempts=3,
     )
 
 
-def step_model_and_voices() -> None:
-    if is_nonempty_file(VOICES_JSON) and is_nonempty_file(MARKER):
+def step_model_and_voices(refresh: bool = False) -> None:
+    if not refresh and is_nonempty_file(VOICES_JSON) and is_nonempty_file(MARKER):
         log("model + voices.json đã có — bỏ qua")
         return
     log("tải model VieNeu-TTS-v3-Turbo (~300 MB, lần đầu hơi lâu) ...")
@@ -99,13 +100,20 @@ print("model OK,", len(voices), "giọng")
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Cài đặt hoặc cập nhật VieNeu-TTS")
+    parser.add_argument("--upgrade", action="store_true",
+                        help="nâng cấp vieneu lên bản mới nhất trong khoảng hỗ trợ")
+    args = parser.parse_args()
+
     log("Cài đặt VieNeu-TTS — giọng đọc tiếng Việt chạy CPU")
     log("Model: pnnbao-ump/VieNeu-TTS-v3-Turbo (kiểm tra license trên "
         "HuggingFace trước khi dùng thương mại)")
     step_venv()
-    step_install()
-    step_model_and_voices()
-    log("XONG — mở app, giọng đọc VieNeu được dùng tự động (14 giọng nam/nữ).")
+    step_install(upgrade=args.upgrade)
+    step_model_and_voices(refresh=args.upgrade)
+    log("XONG — mở app, giọng đọc VieNeu được dùng tự động.")
 
 
 if __name__ == "__main__":

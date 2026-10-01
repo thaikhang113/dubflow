@@ -127,6 +127,7 @@ class _VieNeuWorker:
             _WORKER_SCRIPT,
             "--voice", self._owner.voice_name,
             "--style", settings.vieneu_style,
+            "--precision", getattr(settings, "vieneu_precision", "fp32"),
             "--model-dir", settings.vieneu_model_dir_path(),
             "--custom-voices", settings.vieneu_custom_voices_path(),
             "--intra-threads", str(self._owner.intra_threads),

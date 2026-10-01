@@ -335,6 +335,9 @@ def main() -> None:
                         help="ONNX intra-op threads (0 = library default). "
                              "Set to cores//num_workers when several workers "
                              "share the CPU.")
+    parser.add_argument("--precision", default="fp32",
+                        choices=("fp32", "int8"),
+                        help="độ chính xác mô hình: fp32 hoặc int8 (tăng tốc trên CPU hỗ trợ VNNI)")
     parser.add_argument("--custom-voices", default="",
                         help="JSON file with user-enrolled voices "
                              "(models/vieneu/custom_voices.json)")
@@ -387,7 +390,10 @@ def main() -> None:
 
     try:
         from vieneu import Vieneu
-        tts = Vieneu(backend="onnx")
+        vieneu_kwargs = {"backend": "onnx"}
+        if getattr(args, "precision", "fp32") == "int8":
+            vieneu_kwargs["precision"] = "int8"
+        tts = Vieneu(**vieneu_kwargs)
         if args.embed_batch:
             embed_batch(tts, args, proto_out)
             return
@@ -426,7 +432,9 @@ def main() -> None:
               file=proto_out, flush=True)
         return
 
-    print(json.dumps({"ready": True, "backend": "onnx", "voice": args.voice}),
+    print(json.dumps({"ready": True, "backend": "onnx",
+                      "precision": getattr(args, "precision", "fp32"),
+                      "voice": args.voice}),
           file=proto_out, flush=True)
 
     import numpy as np

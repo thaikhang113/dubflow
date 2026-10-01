@@ -33,7 +33,7 @@ _OPTION_KEYS = {
     "ocr_enabled", "target", "translate_enabled", "translate_batch_size",
     "translate_cps_budget", "translate_domain", "translate_context",
     "translate_pronouns", "translate_glossary", "translate_style",
-    "translate_note", "generate_metadata", "branding",
+    "translate_note", "generate_metadata", "branding", "vsr_enabled", "vsr_mode",
 }
 _REQUEST_KEYS = {
     "source_lang", "voice", "bg_mode", "bg_duck_db", "skip_video",
@@ -44,6 +44,7 @@ _SETTINGS_KEYS = {
     "translate_enabled", "translate_batch_size", "translate_cps_budget",
     "translate_domain", "translate_context", "translate_pronouns",
     "translate_glossary", "translate_style_notes", "generate_metadata",
+    "vsr_enabled", "vsr_mode",
 }
 _STYLE_NOTES = {
     "natural": "",
@@ -157,6 +158,13 @@ def _options(payload: dict) -> dict:
     branding = options.get("branding", {})
     if not isinstance(branding, dict):
         raise TypeError("branding phải là object")
+    if "blur_regions" in options:
+        regions = options["blur_regions"]
+        if not isinstance(regions, list):
+            raise TypeError("blur_regions phải là danh sách (list)")
+        for r in regions:
+            if not isinstance(r, dict):
+                raise TypeError("Mỗi vùng trong blur_regions phải là một object")
     return dict(options)
 
 
@@ -173,6 +181,8 @@ def _defaults(settings: Settings) -> dict:
         "translate_batch_size": settings.translate_batch_size,
         "translate_cps_budget": settings.translate_cps_budget,
         "generate_metadata": settings.generate_metadata,
+        "vsr_enabled": settings.vsr_enabled,
+        "vsr_mode": settings.vsr_mode,
     }
 
 

@@ -28,6 +28,7 @@ _SETTINGS_KEYS = {
     "translate_enabled", "translate_batch_size", "translate_cps_budget",
     "translate_domain", "translate_context", "translate_pronouns",
     "translate_glossary", "translate_style_notes", "generate_metadata",
+    "vsr_enabled", "vsr_mode",
 }
 
 

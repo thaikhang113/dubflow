@@ -274,3 +274,28 @@ def test_submit_rolls_back_jobs_when_manifest_write_fails(monkeypatch, tmp_path)
         json.loads(path.read_text(encoding="utf-8"))["status"] == "cancelled"
         for path in statuses
     )
+
+
+def test_submit_accepts_blur_regions_and_vsr_options(tmp_path):
+    """Kiểm tra submit nhận các tùy chọn blur_regions và vsr_enabled."""
+    blur_boxes = [{"x": 0.1, "y": 0.8, "w": 0.8, "h": 0.15, "source": "subtitle"}]
+    result = handle(
+        {
+            "action": "submit",
+            "links": ["https://example.com/test_video"],
+            "options": {
+                "blur_regions": blur_boxes,
+                "vsr_enabled": True,
+                "vsr_mode": "sttn",
+            },
+        },
+        queue_root=str(tmp_path),
+        settings=Settings(),
+    )
+    assert result["ok"] is True
+    job_id = result["job_ids"][0]
+    job = json.loads((tmp_path / "inbox" / f"{job_id}.json").read_text(encoding="utf-8"))
+    assert job["request"]["blur_regions"] == blur_boxes
+    assert job["settings"]["vsr_enabled"] is True
+    assert job["settings"]["vsr_mode"] == "sttn"
+
