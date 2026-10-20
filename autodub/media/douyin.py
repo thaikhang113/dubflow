@@ -523,6 +523,8 @@ def _download_via_playwright(
                     stream_url, final_path, cookies_file, progress, cancel_event)
                 logger.info(f"Stream downloaded: {size:,}B")
                 break
+            except PipelineCancelled:
+                raise
             except (requests.RequestException, RuntimeError) as exc:
                 last_error = exc
                 logger.warning(f"Progressive stream failed: {exc}")
@@ -598,6 +600,11 @@ def download_douyin(
                 share_info["uri"], final_path, cookies_file, progress, cancel_event)
             logger.info(f"Direct download OK: {size:,}B (uri={share_info['uri']})")
             downloaded = True
+        except PipelineCancelled:
+            # Người dùng đã bấm Dừng trong lúc tải luồng trực tiếp; nhánh dưới
+            # sẽ coi đó là "tải trực tiếp lỗi" rồi mở trình duyệt headless —
+            # chậm hơn nhiều và vẫn là chạy tiếp sau khi đã hủy.
+            raise
         except (requests.RequestException, RuntimeError) as exc:
             logger.warning(f"Direct play download failed: {exc}; "
                            "falling back to browser capture.")

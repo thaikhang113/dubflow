@@ -7,6 +7,8 @@ import os
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from autodub.progress import PipelineCancelled
+
 VSR_MODE = "sttn-det"
 
 def _planned_vsr_backend() -> str:
@@ -81,6 +83,11 @@ def run_vsr_or_fallback(
         if not os.path.isfile(output_path) or os.path.getsize(output_path) <= 0:
             raise RuntimeError("VSR không tạo được video đầu ra.")
         return VSRResult(output_path, True)
+    except PipelineCancelled:
+        # Người dùng bấm Dừng: PipelineCancelled là lớp con của Exception nên
+        # nhánh dưới sẽ NUỐT lệnh hủy thành "VSR lỗi — dùng đường dự phòng" và
+        # pipeline chạy tiếp bước dài nhất. Ném tiếp để lệnh hủy đi tới nơi gọi.
+        raise
     except Exception as exc:
         return VSRResult(fallback(), False, str(exc))
 

@@ -81,6 +81,11 @@ class DemucsCache:
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL, encoding="utf-8", errors="replace",
                 env=env)
+            # Worker sống suốt cả lô video nên phải ghi danh: không có nó,
+            # nút Dừng không giết được tiến trình --serve này. Scope lấy từ
+            # contextvar mà pipeline khôi phục lại trên luồng nền.
+            from autodub.cancel import register
+            register(self._proc)
             ready = json.loads(self._read_line(_SEPARATE_TIMEOUT))
         except Exception as e:
             logger.warning(f"Demucs cache không khởi động được ({e}) — "
@@ -165,6 +170,8 @@ class DemucsCache:
         except Exception:
             p.kill()
         finally:
+            from autodub.cancel import unregister
+            unregister(p)
             for s in (p.stdin, p.stdout):
                 if s is not None:
                     try:

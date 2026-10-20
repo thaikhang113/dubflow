@@ -55,9 +55,26 @@ def build_translation_prompt(
     segments: list[dict],
     context: dict[str, str] | None = None,
     previous: list[dict] | None = None,
+    *,
+    source_lang: str = "zh-CN",
+    target: Any | None = None,
+    cps_budget: float | None = None,
 ) -> str:
-    context = context or {}
-    previous = previous or []
+    """Prompt cho đường dịch bằng API.
+
+    Dùng CHUNG bộ hướng dẫn với đường dịch tay
+    (:func:`autodub.text.translate_hint.build_translation_prompt`) để hai
+    đường không còn lệch chất lượng: cùng style rules, cùng luật fidelity /
+    prosody / max_chars. Khác biệt duy nhất là ``compact_output=True`` —
+    đầu ra ``{"segments": [{id, text_vi}]}`` đúng thứ `translate()` parse.
+    Ngữ cảnh và các câu trước vẫn gửi kèm dạng JSON như cũ.
+    """
+    from autodub.languages import get_target
+    from autodub.text.translate_hint import CHARS_PER_SECOND_BUDGET
+    from autodub.text.translate_hint import (
+        build_translation_prompt as build_shared_prompt,
+    )
+
     payload = [
         {
             "id": int(item["id"]),
@@ -69,16 +86,23 @@ def build_translation_prompt(
         }
         for item in segments
     ]
-    return (
-        "Bạn là biên dịch viên Trung-Việt cho video lồng tiếng. "
-        "Dịch tự nhiên để nghe, giữ đúng ý, nhân vật, xưng hô và sắc thái. "
-        "Không giải thích, không thêm câu. Trả đúng JSON dạng "
-        '{"segments":[{"id":number,"text_vi":"..."}]}. '
-        "Giữ id, không bỏ câu, không để trống text_vi.\n\n"
-        f"Ngữ cảnh: {json.dumps(context, ensure_ascii=False)}\n"
-        f"Câu trước để giữ mạch: {json.dumps(previous, ensure_ascii=False)}\n"
-        f"Các câu cần dịch: {json.dumps(payload, ensure_ascii=False)}"
-    )
+    parts = [build_shared_prompt(
+        target or get_target("vi"),
+        source_lang,
+        cps_budget=(CHARS_PER_SECOND_BUDGET if cps_budget is None
+                    else cps_budget),
+        compact_output=True,
+    )]
+    if context:
+        parts.append("### VIDEO CONTEXT (HIGHEST PRIORITY)\n"
+                     + json.dumps(context, ensure_ascii=False))
+    if previous:
+        parts.append("### PREVIOUS LINES — continuity reference ONLY, do NOT "
+                     "translate or repeat them\n"
+                     + json.dumps(previous, ensure_ascii=False))
+    parts.append("### SEGMENTS TO TRANSLATE\n"
+                 + json.dumps(payload, ensure_ascii=False))
+    return "\n\n".join(parts)
 
 
 class OpenAICompatibleProvider:
@@ -215,10 +239,16 @@ class OpenAICompatibleProvider:
         segments: list[dict],
         context: dict[str, str] | None = None,
         previous: list[dict] | None = None,
+        *,
+        source_lang: str = "zh-CN",
+        cps_budget: float | None = None,
     ) -> list[dict]:
         if not self.endpoint or not self.model:
             raise OpenAICompatibleError("Thiếu endpoint hoặc model dịch.")
-        prompt = build_translation_prompt(segments, context, previous)
+        prompt = build_translation_prompt(
+            segments, context, previous,
+            source_lang=source_lang, cps_budget=cps_budget,
+        )
         timeout = max(180, min(1800, 120 + len(prompt) // 16))
         payload = {
             "model": self.model,

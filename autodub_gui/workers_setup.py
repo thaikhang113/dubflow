@@ -593,6 +593,7 @@ _SCRIPT_LINES_ESTIMATE = {
     "setup_whisper.py":   25,
     "setup_paraformer.py": 30,
     "setup_demucs.py":    35,
+    "setup_vsr.py":       30,
 }
 
 

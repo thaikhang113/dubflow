@@ -15,8 +15,9 @@ from dataclasses import dataclass, field, replace
 
 from autodub.config import Settings
 from autodub.languages import TargetLang, get_target
-from autodub.progress import ProgressReporter
-from autodub.utils import save_json_atomic, seg_wav_path, setup_logging
+from autodub.progress import PipelineCancelled, ProgressReporter
+from autodub.utils import (load_voice_map, save_json_atomic, save_voice_map,
+    seg_wav_path, setup_logging)
 from autodub.workdir import data_dir, data_path
 
 logger = setup_logging("autodub.editor")
@@ -36,6 +37,10 @@ class EditorState:
 
 
 RENDER_OPTS_NAME = "render_opts.json"
+#: Khóa trong render_opts.json giữ bảng giọng theo nhân vật người dùng đã
+#: gán trong trình chỉnh sửa — dạng {"speaker_01": "Tên giọng", ...}.
+#: Vắng khóa này (mọi dự án cũ) nghĩa là giữ nguyên một giọng cho cả video.
+SPEAKER_VOICES_KEY = "speaker_voices"
 _VIDEO_EXTS = (".mp4", ".mkv", ".webm", ".mov", ".avi")
 
 
@@ -356,6 +361,7 @@ def resynth_segment(
     would reload the whole TTS model every time (see :func:`resynth_segments`).
     """
     from autodub.speech.tts import get_synthesizer
+    from autodub.speech.tts import voices as voice_catalog
     from autodub.text.translate_hint import annotate_slots, ensure_terminal_punct
 
     target = get_target(target_key)
@@ -403,6 +409,8 @@ def resynth_segment(
             target_duration=seg.get("slot", seg["duration"]),
         ).to_dict()
 
+    _record_voice(seg_dir, seg["id"], voice_catalog.resolve(settings, voice))
+
     for stale in _stale_derived_paths(work_dir, target, seg["id"]):
         if os.path.exists(stale):
             _remove_with_retry(stale)
@@ -413,11 +421,45 @@ def resynth_segment(
     return result
 
 
+def _record_voice(seg_dir: str, seg_id: int, voice: str) -> None:
+    """Ghi lại giọng vừa đọc câu ``seg_id`` vào bản đồ giọng của thư mục."""
+    mapping = load_voice_map(seg_dir)
+    if mapping.get(str(seg_id)) == voice:
+        return
+    mapping[str(seg_id)] = voice
+    try:
+        save_voice_map(seg_dir, mapping)
+    except OSError as e:
+        # Không ghi được bản đồ chỉ khiến lần chạy sau đọc lại câu này —
+        # không đáng để hỏng cả thao tác sửa câu.
+        logger.warning(f"Không ghi được bản đồ giọng: {e}")
+
+
+def _segment_voices(segments: list[dict],
+                    speaker_voices: dict[str, str] | None) -> dict:
+    """Giọng đọc thật của từng câu: giọng riêng của câu, không thì của nhân vật.
+
+    Lựa chọn thủ công trên từng câu luôn thắng bảng giọng theo nhân vật,
+    đúng như thứ tự ưu tiên bên pipeline.
+    """
+    mapping = speaker_voices if isinstance(speaker_voices, dict) else {}
+    result = {}
+    for segment in segments:
+        own = str(segment.get("voice", "")).strip()
+        if own:
+            result[segment.get("id")] = own
+            continue
+        speaker = str(segment.get("speaker_id") or "").strip()
+        result[segment.get("id")] = str(mapping.get(speaker) or "").strip()
+    return result
+
+
 def resynth_segments(
     work_dir: str, seg_ids: list[int], settings: Settings,
     target_key: str = "vi", voice: str | None = None,
     reporter: ProgressReporter | None = None,
     on_progress=None,
+    speaker_voices: dict[str, str] | None = None,
 ) -> dict[int, dict]:
     """Re-run TTS for several segments (used by "save all"). Cancellable.
 
@@ -427,6 +469,11 @@ def resynth_segments(
 
     ``on_progress(done, total, seg_id)`` fires after each segment finishes —
     a plain callback so GUI workers can emit per-segment signals.
+
+    ``speaker_voices`` là bảng giọng theo nhân vật (``{speaker_id: tên
+    giọng}``). Câu nào chưa có khóa ``voice`` riêng thì lấy giọng của
+    nhân vật mình — nhờ vậy đổi giọng cho một nhân vật trong Trình chỉnh
+    sửa là đọc lại được ngay, không phải sửa tay từng câu.
     """
     from autodub.speech.tts import get_synthesizer
     from autodub.speech.tts import voices as voice_catalog
@@ -442,7 +489,7 @@ def resynth_segments(
     path = _transcript_path(work_dir, target)
     with open(path, encoding="utf-8") as f:
         segments = json.load(f)
-    voice_of = {s.get("id"): str(s.get("voice", "")).strip() for s in segments}
+    voice_of = _segment_voices(segments, speaker_voices)
     main_voice = voice_catalog.resolve(settings, voice)
     by_voice: dict[str, list[int]] = {}
     for seg_id in seg_ids:
@@ -634,6 +681,13 @@ def _refresh_ocr_regions(
         opts["blur_regions"] = refreshed
         save_render_opts(work_dir, opts)
         return refreshed
+    except PipelineCancelled:
+        # Bấm Dừng giữa lúc OCR: detect_regions_with_logo chạy worker qua
+        # run_registered nên ném PipelineCancelled. Nếu để nhánh dưới bắt,
+        # lệnh hủy bị hạ cấp thành cảnh báo "Không refresh được OCR khi xuất
+        # lại", các box OCR cũ bị giữ lại và ghi xuống đĩa, rồi quá trình
+        # xuất lại vẫn đi tiếp thay vì dừng theo ý người dùng.
+        raise
     except Exception as exc:
         logger.warning("Không refresh được OCR khi xuất lại: %s", exc)
         # Keep previous OCR boxes when OCR is unavailable, so an export
@@ -1145,6 +1199,26 @@ def _renumber_and_rename(work_dir: str, segments: list[dict],
             renames.append((source,
                             os.path.join(seg_dir, f"seg_{position:05d}.wav")))
     _apply_renames(renames)
+    _renumber_voice_map(seg_dir, old_ids)
+
+
+def _renumber_voice_map(seg_dir: str, old_ids: list[int]) -> None:
+    """Dời khoá bản đồ giọng theo số câu mới (wav vừa được đổi tên)."""
+    if not os.path.isdir(seg_dir):
+        return
+    mapping = load_voice_map(seg_dir)
+    if not mapping:
+        return
+    renamed: dict[str, str] = {}
+    for position, old_id in enumerate(old_ids, start=1):
+        if old_id < 0:
+            continue
+        voice = mapping.get(str(old_id))
+        if voice:
+            renamed[str(position)] = voice
+    # Câu bị xoá không còn trong ``old_ids`` → khoá của nó cũng biến mất.
+    if renamed != mapping:
+        save_voice_map(seg_dir, renamed)
 
 
 def _apply_renames(renames: list[tuple[str, str]]) -> None:
@@ -1172,6 +1246,13 @@ def _drop_segment_audio(work_dir: str, seg_id: int) -> None:
     path = seg_wav_path(seg_dir, seg_id)
     if os.path.isfile(path):
         _remove_with_retry(path)
+    mapping = load_voice_map(seg_dir)
+    if str(seg_id) in mapping:
+        mapping.pop(str(seg_id))
+        try:
+            save_voice_map(seg_dir, mapping)
+        except OSError as e:
+            logger.warning(f"Không ghi được bản đồ giọng: {e}")
 
 
 def _invalidate_derived(work_dir: str, target: TargetLang) -> None:

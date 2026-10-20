@@ -22,6 +22,7 @@ import subprocess
 
 from autodub.utils import ffmpeg_timeout_s, setup_logging
 from autodub.cancel import run_registered
+from autodub.progress import PipelineCancelled
 
 logger = setup_logging("autodub.retime")
 
@@ -226,6 +227,11 @@ def apply_video_speed(
         logger.info(f"Video đã chậm xong ({new_duration or 0:.0f} giây) — "
                     "giọng đọc vẫn giữ tốc độ tự nhiên")
         return out_video, out_bg, scale
+    except PipelineCancelled:
+        # Người dùng bấm Dừng: ffmpeg encode chạy qua run_registered nên lệnh
+        # hủy tới đây dưới dạng PipelineCancelled. Nuốt nó = pipeline vẫn chạy
+        # tiếp trên video gốc dù người dùng đã dừng (và timeline đã co giãn dở).
+        raise
     except Exception as e:
         logger.warning(f"Làm chậm video lỗi ({e}) — dùng video gốc")
         return None
@@ -288,6 +294,9 @@ def defer_video_speed(
             f"đỡ nguyên một lần mã hóa (video {orig_duration:.0f} giây thành "
             f"~{orig_duration * scale:.0f} giây)")
         return out_bg, scale, fps
+    except PipelineCancelled:
+        # Cùng lý do như apply_video_speed: ffmpeg chạy qua run_registered.
+        raise
     except Exception as e:
         logger.warning(f"Không gộp được làm chậm vào lượt xuất ({e}) — "
                        "dùng đường làm chậm rời")

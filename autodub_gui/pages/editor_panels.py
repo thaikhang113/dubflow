@@ -879,6 +879,195 @@ class VoicePanel(CollapsibleSection):
         return {"voice_speed": self.speed.value()}
 
 
+class SpeakerPanel(CollapsibleSection):
+    """Giọng đọc riêng cho từng nhân vật do bước nhận diện giọng nói tìm ra.
+
+    Mỗi dòng là một nhân vật kèm số câu họ nói và một ô chọn giọng. Đổi ô
+    chọn của nhân vật nào thì giọng đó được ghim cho mọi câu của nhân vật
+    ấy; để nguyên «Giọng chung của video» nghĩa là nhân vật đó vẫn đọc bằng
+    giọng chung — hành vi cũ được giữ nguyên hoàn toàn.
+    """
+
+    changed = Signal()
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__("Giọng theo nhân vật", expanded=False,
+                         parent=parent)
+        self.rows_layout = QVBoxLayout()
+        self.rows_layout.setContentsMargins(0, 0, 0, 0)
+        self.rows_layout.setSpacing(tokens.SP_2)
+        self.add_layout(self.rows_layout)
+
+        self.empty_label = QLabel("")
+        self.empty_label.setWordWrap(True)
+        self.empty_label.setStyleSheet(
+            f"color: {tokens.TEXT_MUTED}; font-size: {tokens.FS_META}px; "
+            f"background: transparent;")
+        self.add_widget(self.empty_label)
+
+        self.status = QLabel("")
+        self.status.setWordWrap(True)
+        self.status.setStyleSheet(
+            f"color: {tokens.TEXT_MUTED}; font-size: {tokens.FS_META}px; "
+            f"background: transparent;")
+        self.add_widget(self.status)
+
+        self._combos: dict[str, LabeledCombo] = {}
+        self._voices: list[str] = []
+        self._default_voice = ""
+        self.setVisible(False)
+
+    def reload(self, settings=None) -> None:
+        """Nạp danh mục giọng để các ô chọn có đủ lựa chọn.
+
+        Gọi lại sau khi người dùng vừa học thêm một giọng mới, y như bảng
+        «Giọng đọc» của video.
+        """
+        from autodub.config import Settings
+
+        try:
+            from autodub.speech.tts import voices as catalog
+            entries = catalog.catalog(settings or Settings.load())
+            self._voices = [v.name for v in entries]
+        except Exception:
+            self._voices = []
+
+    def set_speakers(self, speakers: list[dict], default_voice: str) -> None:
+        """Dựng lại danh sách nhân vật.
+
+        Mỗi phần tử là một dict có speaker_id, voice và (tuỳ chọn) segments
+        là số câu nhân vật đó nói.
+        """
+        self._clear_rows()
+        self._default_voice = (default_voice or "").strip()
+        usable = [s for s in speakers
+                  if str(s.get("speaker_id") or "").strip()]
+        self.setVisible(bool(usable))
+        if not usable:
+            self.empty_label.setText("")
+            return
+        assigned = 0
+        for entry in usable:
+            speaker = str(entry["speaker_id"]).strip()
+            count = int(entry.get("segments") or 0)
+            # Đăng ký tên giọng TRƯỚC khi dựng danh sách chọn: _voice_key thêm
+            # giọng lạ (học ở máy khác) vào self._voices, còn _options() đọc
+            # self._voices. Gọi ngược thứ tự thì giọng không nằm trong danh mục
+            # sẽ không chọn được, và set_key âm thầm rơi về mục đầu — đúng thứ
+            # docstring của _voice_key nói là không được phép xảy ra.
+            voice_key = self._voice_key(entry.get("voice"))
+            combo = LabeledCombo(
+                self._row_label(speaker, count),
+                self._options(),
+                "Chọn giọng đọc riêng cho nhân vật này. Để nguyên "
+                "«Giọng chung của video» thì nhân vật vẫn đọc bằng giọng "
+                "chung, không khác gì trước đây.")
+            combo.set_key(voice_key)
+            combo.changed.connect(
+                lambda name=speaker: self._on_row_changed(name))
+            self.rows_layout.addWidget(combo)
+            self._combos[speaker] = combo
+            if self._is_assigned(entry.get("voice")):
+                assigned += 1
+        self._refresh_status(assigned, len(usable))
+
+    def _row_label(self, speaker: str, count: int) -> str:
+        label = f"Nhân vật {speaker}"
+        if count:
+            label += f" — {count} câu"
+        return label
+
+    def _options(self) -> list[tuple[str, str]]:
+        options = [("Giọng chung của video", "")]
+        options.extend((name, name) for name in self._voices)
+        return options
+
+    def _voice_key(self, voice) -> str:
+        """Giọng lạ (đã học ở máy khác) vẫn phải hiện đúng tên.
+
+        Danh mục giọng có thể thiếu tên đang ghim trong dự án; thêm nó vào
+        danh sách chọn để người dùng không bị mất thông tin, chứ không âm
+        thầm rơi về giọng chung.
+        """
+        name = str(voice or "").strip()
+        if not name:
+            return ""
+        if name not in self._voices:
+            self._voices.append(name)
+        return name
+
+    def _is_assigned(self, voice) -> bool:
+        return bool(str(voice or "").strip())
+
+    def _refresh_status(self, assigned: int, total: int) -> None:
+        if assigned:
+            self.status.setText(
+                f"{assigned}/{total} nhân vật có giọng riêng. Bấm «Lưu tất "
+                "cả và đọc lại» để tạo lại giọng cho các câu vừa đổi.")
+            return
+        self.empty_label.setText(
+            f"Đã nhận diện {total} nhân vật trong video này. Chọn giọng cho "
+            "từng người ở trên nếu bạn muốn mỗi nhân vật một giọng đọc.")
+        self.status.setText("")
+
+    def _on_row_changed(self, speaker: str) -> None:
+        assigned = sum(1 for combo in self._combos.values()
+                       if combo.current_key())
+        self._refresh_status(assigned, len(self._combos))
+        self.changed.emit()
+
+    def speaker_voices(self) -> dict[str, str]:
+        """Bảng giọng theo nhân vật để ghim vào dự án.
+
+        Chỉ trả về nhân vật THẬT SỰ được gán giọng riêng — nhân vật để
+        nguyên giọng chung không xuất hiện, nhờ vậy tệp cấu hình không phình
+        và lần chạy sau giữ đúng hành vi cũ.
+        """
+        return {name: combo.current_key()
+                for name, combo in self._combos.items()
+                if combo.current_key()}
+
+    def set_speaker_voices(self, mapping: dict) -> None:
+        """Ghim lại bảng giọng đã lưu trong dự án lên các ô chọn."""
+        mapping = mapping if isinstance(mapping, dict) else {}
+        for name, combo in self._combos.items():
+            voice = str(mapping.get(name) or "").strip()
+            key = self._voice_key(voice) if voice else ""
+            # Nạp lại danh sách chọn TRƯỚC khi chọn: giọng đã ghim mà máy này
+            # không có trong danh mục (dự án tạo ở máy khác) phải xuất hiện làm
+            # một lựa chọn, nếu không set_key sẽ không tìm thấy và ô chọn âm
+            # thầm rơi về «Giọng chung» — mất lựa chọn của người dùng.
+            combo.set_options(self._options())
+            combo.set_key(key)
+
+    def _clear_rows(self) -> None:
+        self._combos.clear()
+        while self.rows_layout.count():
+            item = self.rows_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+                widget.deleteLater()
+
+
+def speaker_map_speakers(payload) -> tuple[list[dict], str]:
+    """Lấy danh sách nhân vật từ nội dung speaker_map.json.
+
+    Trả về (danh sách nhân vật, giọng chung). Tệp thiếu hay hỏng đều cho
+    kết quả rỗng — bảng này là tuỳ chọn, không được làm gãy trình sửa.
+    """
+    if not isinstance(payload, dict):
+        return [], ""
+    default_voice = str(payload.get("default_voice") or "").strip()
+    speakers = payload.get("speakers")
+    if not isinstance(speakers, list):
+        return [], default_voice
+    rows = [entry for entry in speakers
+            if isinstance(entry, dict)
+            and str(entry.get("speaker_id") or "").strip()]
+    return rows, default_voice
+
+
 class BackgroundPanel(CollapsibleSection):
     """Xử lý nhạc nền của dự án."""
 

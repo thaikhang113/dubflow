@@ -23,6 +23,7 @@ import json
 import os
 from concurrent.futures import ThreadPoolExecutor
 
+from autodub.progress import PipelineCancelled
 from autodub.utils import save_json_atomic, seg_wav_path, setup_logging
 
 logger = setup_logging("autodub.align")
@@ -201,6 +202,11 @@ def align_segments(
         text_words = str(seg.get(text_field, "")).split()
         try:
             asr = _asr_words(model, wav)
+        except PipelineCancelled:
+            # Canh phụ đề là bước TÙY CHỌN nhưng lệnh hủy thì không: nuốt nó
+            # ở đây là pipeline tiếp tục nghe hàng trăm clip nữa rồi mới xuất
+            # video mà người dùng đã dừng.
+            raise
         except Exception as e:
             logger.debug(f"ASR alignment câu {sid} lỗi ({e}) — ước lượng")
             return None
@@ -210,8 +216,21 @@ def align_segments(
         return sid, key, float(seg["start"]), mapped
 
     if n_workers > 1:
-        with ThreadPoolExecutor(max_workers=n_workers) as pool:
+        pool = ThreadPoolExecutor(max_workers=n_workers)
+        cancelled = False
+        try:
             done = list(pool.map(_one, todo))
+        except PipelineCancelled:
+            # pool.map phát lại ngoại lệ của _one cho nơi gọi, nhưng thoát ra
+            # ngay sẽ bỏ rơi các luồng còn đang nghe dở clip của video đã hủy.
+            # Đánh dấu rồi để finally đóng pool (chờ chúng kết thúc) trước khi
+            # ném lệnh hủy đi tiếp.
+            cancelled = True
+        finally:
+            pool.shutdown(wait=True)
+        if cancelled:
+            raise PipelineCancelled(
+                "Đã hủy trong lúc canh phụ đề theo giọng đọc")
     else:
         done = [_one(item) for item in todo]
 

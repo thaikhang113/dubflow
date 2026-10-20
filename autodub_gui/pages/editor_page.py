@@ -38,6 +38,8 @@ from autodub_gui.pages.editor_commands import (
     SplitSegmentCommand,
 )
 from autodub_gui.pages.editor_export import VoiceAndExportMixin
+from autodub.pipeline import SPEAKER_MAP_NAME
+from autodub.editor import SPEAKER_VOICES_KEY
 from autodub_gui.pages.editor_panels import (
     AudioPanel,
     BackgroundPanel,
@@ -45,9 +47,11 @@ from autodub_gui.pages.editor_panels import (
     ExportPanel,
     OverviewPanel,
     QCPanel,
+    SpeakerPanel,
     SubtitleListPanel,
     VoicePanel,
     debounce_timer,
+    speaker_map_speakers,
 )
 from autodub_gui.system_open import open_file, open_folder
 from autodub_gui.ui.buttons import PrimaryButton
@@ -101,6 +105,10 @@ class EditorPage(VoiceAndExportMixin, BasePage):
         self._dirty_ids: set[int] = set()
         self._sub_dirty_ids: set[int] = set()
         self._structural_edit = False
+        # Ảnh chụp bảng giọng theo nhân vật tại lần «Lưu tất cả và đọc
+        # lại» gần nhất. Bảng lệch khỏi ảnh chụp nghĩa là người dùng đã
+        # đổi giọng nhưng video chưa được đọc lại theo giọng mới.
+        self._speaker_voices_applied: dict[str, str] | None = None
         self._undo = QUndoStack(self)
         self._undo.setUndoLimit(_UNDO_LIMIT)
         self._preview = VoicePreview(self)
@@ -268,6 +276,11 @@ class EditorPage(VoiceAndExportMixin, BasePage):
         self.voice_panel.preview_requested.connect(self._preview_voice)
         self.voice_panel.resynth_all_requested.connect(self._save_all_and_resynth)
         self.voice_panel.changed.connect(self._save_render_opts)
+        # Bảng giọng theo nhân vật nằm ngay dưới bảng giọng chung: người
+        # dùng thấy cả hai trong cùng một mục «Giọng đọc», không phải mở
+        # thêm cửa sổ nào khác.
+        self.speaker_panel = SpeakerPanel()
+        self.speaker_panel.changed.connect(self._save_render_opts)
         self.background_panel = BackgroundPanel()
         self.background_panel.changed.connect(self._save_render_opts)
         self.export_panel = ExportPanel()
@@ -289,7 +302,8 @@ class EditorPage(VoiceAndExportMixin, BasePage):
 
         for widget in (self.overview, self.subtitles, self.qc_panel,
                        self.audio_panel, self.voice_panel,
-                       self.background_panel, self.export_panel):
+                       self.speaker_panel, self.background_panel,
+                       self.export_panel):
             self.panels.addWidget(self._scrollable(widget))
         layout.addWidget(self.panels)
         # Mở sẵn mục Phụ đề vì đó là chỗ người dùng làm việc nhiều nhất.
@@ -631,6 +645,7 @@ class EditorPage(VoiceAndExportMixin, BasePage):
             settings, opts.get("voice") or self._project.voice)
         self.voice_panel.set_project_voice(project_voice)
         self.overview.set_voice(project_voice)
+        self._load_speaker_panel(settings, opts, project_voice)
         self.voice_panel.speed.set_value(
             float(opts.get("voice_speed", settings.voice_speed)))
         self.export_panel.set_source_info(0, 0, 0)
@@ -656,6 +671,72 @@ class EditorPage(VoiceAndExportMixin, BasePage):
             or opts.get("subtitle_preset") or settings.subtitle_preset)
         self._apply_style_to_player()
 
+    def _load_speaker_panel(self, settings, opts: dict,
+                             project_voice: str) -> None:
+        """Nạp bảng giọng theo nhân vật: nhân vật nào, giọng nào.
+
+        Danh sách nhân vật lấy từ speaker_map.json do pipeline ghi lúc chạy
+        (số câu mỗi người nằm sẵn trong đó). Dự án chạy trước khi có tính
+        năng này không có tệp ấy thì bảng tự ẩn — không có gì để gán.
+        """
+        self.speaker_panel.reload(settings)
+        payload = self._read_speaker_map()
+        speakers, default_voice = speaker_map_speakers(payload)
+        self.speaker_panel.set_speakers(speakers,
+                                        default_voice or project_voice)
+        # Bảng giọng theo nhân vật có thể đã được ghim trong render_opts
+        # (người dùng đổi rồi chưa đọc lại) — ưu tiên bản đã ghim.
+        saved = opts.get(SPEAKER_VOICES_KEY)
+        if isinstance(saved, dict) and saved:
+            self.speaker_panel.set_speaker_voices(saved)
+        # Vừa đọc bảng từ đĩa: đó chính là bảng đang có hiệu lực trong
+        # các tệp giọng của dự án. Chụp lại làm mốc so sánh khi xuất.
+        self.mark_speaker_voices_applied()
+
+    def mark_speaker_voices_applied(self) -> None:
+        """Ghi nhớ bảng giọng theo nhân vật vừa được đọc lại thành công.
+
+        Gọi sau mỗi lần «Lưu tất cả và đọc lại» và mỗi lần mở dự án. Từ
+        đó về sau, bảng khác ảnh chụp này nghĩa là có giọng chưa được
+        đọc lại, và trình xuất phải cảnh báo trước khi xuất video.
+        """
+        panel = getattr(self, "speaker_panel", None)
+        if panel is None:
+            return
+        self._speaker_voices_applied = dict(panel.speaker_voices())
+
+    def has_unapplied_speaker_voices(self) -> bool:
+        """Bảng giọng theo nhân vật có khác bản đã đọc lại gần nhất không.
+
+        So sánh theo giá trị nên đổi giọng rồi đổi ngược về như cũ sẽ
+        được coi là không đổi — không làm phiền người dùng. Dự án không
+        có nhân vật nào thì bảng rỗng và hàm luôn trả về False, luồng
+        xuất giữ nguyên như trước.
+        """
+        panel = getattr(self, "speaker_panel", None)
+        if panel is None:
+            return False
+        applied = getattr(self, "_speaker_voices_applied", None)
+        if applied is None:
+            return False
+        return dict(panel.speaker_voices()) != dict(applied)
+
+    def _read_speaker_map(self) -> dict:
+        """Đọc speaker_map.json của dự án; thiếu hay hỏng thì trả {}."""
+        import json
+
+        from autodub.workdir import data_path
+
+        path = data_path(self._work_dir, SPEAKER_MAP_NAME)
+        if not os.path.isfile(path):
+            return {}
+        try:
+            with open(path, encoding="utf-8") as f:
+                payload = json.load(f)
+        except (OSError, ValueError):
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
     def _has_separated_audio(self) -> bool:
         from autodub.workdir import data_path
 
@@ -672,6 +753,14 @@ class EditorPage(VoiceAndExportMixin, BasePage):
         opts.update(self.background_panel.values())
         opts.update(self.voice_panel.values())
         opts.update(self.export_panel.values())
+        # Bảng giọng theo nhân vật là tùy chọn của RIÊNG dự án này: ghim
+        # vào render_opts để lần mở sau hiện đúng, và để lượt xuất biết
+        # nhân vật nào đọc giọng nào.
+        speaker_voices = self.speaker_panel.speaker_voices()
+        if speaker_voices:
+            opts[SPEAKER_VOICES_KEY] = speaker_voices
+        else:
+            opts.pop(SPEAKER_VOICES_KEY, None)
         opts["blur_regions"] = list(getattr(self, "_blur_regions", []))
         opts.update(getattr(self, "_branding_options", {}))
         if getattr(self, "_subtitle_style", None):

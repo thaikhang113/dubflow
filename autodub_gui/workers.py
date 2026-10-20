@@ -155,7 +155,8 @@ class SaveAllWorker(QThread):
     def __init__(self, settings: Settings, work_dir: str, edits: dict[int, str],
                  target_key: str, voice: str | None, parent=None,
                  force_all: bool = False,
-                 force_ids: set[int] | None = None):
+                 force_ids: set[int] | None = None,
+                 speaker_voices: dict[str, str] | None = None):
         super().__init__(parent)
         self._settings = settings
         self._work_dir = work_dir
@@ -166,6 +167,9 @@ class SaveAllWorker(QThread):
         # Câu chỉ đổi giọng (không sửa chữ) vẫn phải đọc lại — text không đổi
         # nên save_segment_texts không trả về chúng; force_ids bù lại chỗ thiếu đó.
         self._force_ids: set[int] = set(force_ids or [])
+        # Bảng giọng theo nhân vật của dự án (nếu người dùng đã gán). Câu
+        # nào chưa có giọng riêng sẽ đọc bằng giọng của nhân vật mình.
+        self._speaker_voices = dict(speaker_voices or {})
         self._cancel_event = threading.Event()
 
     def cancel(self) -> None:
@@ -197,7 +201,8 @@ class SaveAllWorker(QThread):
                     self._work_dir, changed, self._settings,
                     self._target_key, self._voice, reporter,
                     on_progress=lambda done, total, sid:
-                        self.seg_done.emit(sid, done, total))
+                        self.seg_done.emit(sid, done, total),
+                    speaker_voices=self._speaker_voices)
                 self.finished_ok.emit(changed)
         except PipelineCancelled:
             self.cancelled.emit()
@@ -232,6 +237,10 @@ class QualityRepairWorker(QThread):
         from autodub.editor import repair_over_budget_translations, resynth_segments
         from autodub.progress import ProgressReporter
 
+        # Cờ hủy của phạm vi "gui" là trạng thái dùng chung cả tiến trình và
+        # không tự tắt: một lần bấm Dừng ở lượt trước sẽ làm lượt này chết ngay
+        # ở bước kiểm tra hủy đầu tiên. Phải xoá trước khi bắt đầu.
+        clear_cancel_request()
         handler = attach_gui_logging(self.log)
         try:
             with cancel_scope("gui"):
@@ -284,6 +293,8 @@ class RebuildWorker(QThread):
         from autodub.editor import rebuild_output
         from autodub.progress import ProgressReporter
 
+        # Xoá cờ hủy còn sót từ lượt trước (xem DubWorker.run).
+        clear_cancel_request()
         handler = attach_gui_logging(self.log)
         reporter = ProgressReporter(self.progress.emit, self._cancel_event)
         try:
@@ -335,6 +346,8 @@ class SubtitleWorker(QThread):
         from autodub.editor import rebuild_subtitles
         from autodub.progress import ProgressReporter
 
+        # Xoá cờ hủy còn sót từ lượt trước (xem DubWorker.run).
+        clear_cancel_request()
         handler = attach_gui_logging(self.log)
         reporter = ProgressReporter(self.progress.emit, self._cancel_event)
         try:
@@ -386,6 +399,8 @@ class SegmentPreviewWorker(QThread):
     def run(self) -> None:
         from autodub.editor import render_segment_preview
 
+        # Xoá cờ hủy còn sót từ lượt trước (xem DubWorker.run).
+        clear_cancel_request()
         handler = attach_gui_logging(self.log)
         try:
             with cancel_scope("gui"):
@@ -837,6 +852,8 @@ class TimelineThumbnailWorker(QThread):
 
         from autodub.workdir import data_path
 
+        # Xoá cờ hủy còn sót từ lượt trước (xem DubWorker.run).
+        clear_cancel_request()
         try:
             with cancel_scope("gui"):
                 if not self._video or not __import__("os").path.isfile(self._video):

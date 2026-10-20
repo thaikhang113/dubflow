@@ -169,7 +169,7 @@ Since this text will be read aloud by a TTS voice, format all numbers as SPOKEN 
   * CRITICAL: NEVER output an empty string, pure punctuation, or "..." (TTS engines will crash or reject pure punctuation)."""
 
 def _pace(target: TargetLang, cps_budget: float = CHARS_PER_SECOND_BUDGET) -> str:
-    return f"Vietnamese: ~{cps_budget:g} chars/sec natural spoken pace"
+    return f"~{cps_budget:g} chars/sec natural spoken pace"
 
 
 def build_user_context_block(settings) -> str:

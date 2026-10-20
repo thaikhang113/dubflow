@@ -12,6 +12,7 @@ from autodub.media.ocr_regions import (
     detections_to_regions,
     merge_regions,
 )
+from autodub.progress import PipelineCancelled
 from autodub.utils import setup_logging
 
 logger = setup_logging("autodub.ocr")
@@ -160,6 +161,11 @@ def detect_regions_with_logo(
     try:
         detections = _run_engine_detections(
             video_path, duration, settings, backend=primary)
+    except PipelineCancelled:
+        # _run_engine_detections chạy worker qua run_registered: bấm Dừng là
+        # PipelineCancelled. Nếu để nhánh dưới bắt, lệnh hủy bị hạ cấp thành
+        # "OCR không sẵn sàng — chuyển backend" rồi pipeline đi tiếp.
+        raise
     except Exception as exc:
         if fallback is None:
             raise
@@ -201,6 +207,10 @@ def detect_regions_with_logo(
                 min_confidence=settings.ocr_min_confidence,
                 subtitle_y_min=getattr(settings, "ocr_subtitle_y_min", 0.65),
             )
+        except PipelineCancelled:
+            # Lượt quét dự phòng này CŨNG chạy worker qua run_registered; nuốt
+            # lệnh hủy ở đây là pipeline chạy tiếp trên video người dùng đã dừng.
+            raise
         except Exception as exc:
             logger.warning(f"DeepSeek-OCR fallback bỏ qua: {exc}")
     return subtitle_regions, logo_regions

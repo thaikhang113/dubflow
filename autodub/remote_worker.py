@@ -19,6 +19,9 @@ _REQUEST_KEYS = {
     "clone_source", "clone_reference_audio", "bg_mode", "bg_duck_db",
     "skip_video", "output_dir", "resume_dir", "subtitle_mode",
     "blur_regions", "subtitle_style", "mirror", "ocr_enabled", "target",
+    # Giọng đọc riêng theo nhân vật, {"speaker_01": "Tên giọng", ...}. Thiếu
+    # khoá này thì job remote mang bảng giọng bị _validate_job từ chối.
+    "speaker_voices",
 }
 _BRANDING_KEYS = {
     "logo_path", "intro_path", "outro_path", "vision_enabled",
@@ -29,6 +32,8 @@ _SETTINGS_KEYS = {
     "translate_domain", "translate_context", "translate_pronouns",
     "translate_glossary", "translate_style_notes", "generate_metadata",
     "vsr_enabled", "vsr_mode",
+    # Cửa sổ ngữ cảnh gửi kèm mỗi lượt dịch (0..50 câu).
+    "translate_context_sentences",
 }
 
 

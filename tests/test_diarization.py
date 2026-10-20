@@ -128,3 +128,56 @@ def test_assign_voice_names_falls_back_per_missing_speaker():
         "Clone A", "Preset", "Preset"
     ]
     assert fallback_speakers == ["speaker_02", "speaker_03"]
+
+def test_load_speaker_map_round_trips(tmp_path):
+    from autodub.speech.diarization import (
+        load_speaker_map,
+        speaker_segment_counts,
+    )
+
+    path = tmp_path / "speaker_map.json"
+    path.write_text(json.dumps({
+        "version": 1,
+        "default_voice": "Giọng chung",
+        "speakers": [
+            {"speaker_id": "speaker_01", "voice": "Minh",
+             "assigned": True, "segments": 3},
+            {"speaker_id": "speaker_02", "voice": "",
+             "assigned": False, "segments": 2},
+        ],
+    }), encoding="utf-8")
+
+    # Nhân vật chưa được gán giọng thì không có mặt trong bảng: mã gọi
+    # không phải phân biệt "không có giọng" với "giọng rỗng".
+    assert load_speaker_map(str(path)) == {"speaker_01": "Minh"}
+
+    segments = [
+        {"speaker_id": "speaker_01"},
+        {"speaker_id": "speaker_01"},
+        {"speaker_id": "speaker_02"},
+        {"id": 4},
+    ]
+    assert speaker_segment_counts(segments) == {
+        "speaker_01": 2,
+        "speaker_02": 1,
+    }
+
+
+def test_load_speaker_map_tolerates_broken_files(tmp_path):
+    from autodub.speech.diarization import load_speaker_map
+
+    missing = tmp_path / "khong-co.json"
+    assert load_speaker_map(str(missing)) == {}
+
+    broken = tmp_path / "hong.json"
+    broken.write_text("{khong phai json", encoding="utf-8")
+    assert load_speaker_map(str(broken)) == {}
+
+    wrong = tmp_path / "sai.json"
+    wrong.write_text('{"speakers": "khong phai list"}',
+                      encoding="utf-8")
+    assert load_speaker_map(str(wrong)) == {}
+
+    empty = tmp_path / "rong.json"
+    empty.write_text(json.dumps([]), encoding="utf-8")
+    assert load_speaker_map(str(empty)) == {}

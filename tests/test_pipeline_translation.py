@@ -244,7 +244,7 @@ def test_auto_translation_splits_a_failed_large_batch(monkeypatch):
         def __init__(self, *args):
             pass
 
-        def translate(self, segments, context=None, previous=None):
+        def translate(self, segments, context=None, previous=None, **kwargs):
             calls.append(len(segments))
             if len(segments) > 2:
                 raise openai_compatible.OpenAICompatibleError("request timeout")

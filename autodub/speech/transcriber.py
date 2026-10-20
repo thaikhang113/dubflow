@@ -261,6 +261,12 @@ def transcribe(audio_path: str, language: str, settings: Settings,
             try:
                 from autodub.speech.paraformer_transcriber import transcribe_paraformer
                 segments = transcribe_paraformer(audio_path, settings)
+            except PipelineCancelled:
+                # transcribe_paraformer ném PipelineCancelled khi nút Dừng giết
+                # worker; để nhánh dưới bắt thì lệnh hủy bị hạ cấp thành
+                # "Paraformer lỗi" rồi pipeline chạy tiếp bước nghe-chép dài
+                # nhất bằng Whisper sau khi người dùng đã dừng.
+                raise
             except Exception as e:
                 logger.warning(f"Paraformer lỗi ({e}) — chuyển sang Whisper")
     if segments is None:
@@ -271,6 +277,11 @@ def transcribe(audio_path: str, language: str, settings: Settings,
             try:
                 segments = _transcribe_whisper_subprocess(
                     audio_path, language, settings)
+            except PipelineCancelled:
+                # _transcribe_whisper_subprocess ném PipelineCancelled khi
+                # nút Dừng giết worker; nếu để nhánh dưới bắt thì lệnh hủy bị
+                # coi là "worker lỗi" và pipeline chạy lại bằng CPU/in-process.
+                raise
             except Exception as e:
                 if _should_retry_whisper_cpu(e):
                     logger.warning(
@@ -278,6 +289,9 @@ def transcribe(audio_path: str, language: str, settings: Settings,
                     try:
                         segments = _transcribe_whisper_subprocess(
                             audio_path, language, settings, force_cpu=True)
+                    except PipelineCancelled:
+                        # Cùng lý do như lần thử GPU ở trên.
+                        raise
                     except Exception as cpu_error:
                         logger.warning(
                             f"Whisper CPU subprocess lỗi ({cpu_error}) "

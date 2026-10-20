@@ -7,6 +7,8 @@ import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from autodub.progress import PipelineCancelled
+
 
 @dataclass(frozen=True)
 class Video2XResult:
@@ -53,6 +55,11 @@ def run_video2x_or_fallback(
         if not os.path.isfile(output_path) or os.path.getsize(output_path) <= 0:
             raise RuntimeError("Video2X không tạo được file đầu ra.")
         return Video2XResult(output_path, True)
+    except PipelineCancelled:
+        # Bấm Dừng giết tiến trình con của run_registered → PipelineCancelled.
+        # Nhánh dưới biến nó thành "Video2X lỗi" rồi trả về đường gốc, pipeline
+        # chạy tiếp. Ném tiếp để lệnh hủy không bị nuốt.
+        raise
     except Exception as exc:
         try:
             if os.path.isfile(output_path):

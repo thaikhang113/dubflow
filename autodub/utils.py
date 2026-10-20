@@ -246,6 +246,33 @@ def seg_wav_path(seg_dir: str, seg_id: int) -> str:
     return new
 
 
+#: Tên tệp bản đồ giọng nằm cạnh các wav trong ``segments/``: ``{seg_id: giọng}``.
+VOICE_MAP_NAME = ".voice_map.json"
+
+
+def load_voice_map(seg_dir: str) -> dict[str, str]:
+    """Đọc bản đồ ``{seg_id: tên giọng}`` của các clip đã đọc trong ``seg_dir``.
+
+    Thiếu tệp, tệp hỏng hoặc sai kiểu → ``{}``: mọi clip bị coi là "chưa rõ
+    giọng" và sẽ được đọc lại. Đó là hướng sai an toàn — dùng lại clip của
+    giọng cũ mới là lỗi người dùng nhìn thấy (video mang giọng khác cài đặt).
+    """
+    path = os.path.join(seg_dir, VOICE_MAP_NAME)
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {str(k): str(v) for k, v in data.items()}
+
+
+def save_voice_map(seg_dir: str, mapping: dict[str, str]) -> None:
+    """Ghi bản đồ giọng nguyên tử — hỏng giữa chừng không mất bản đồ cũ."""
+    save_json_atomic(mapping, os.path.join(seg_dir, VOICE_MAP_NAME))
+
+
 def ffmpeg_timeout_s(duration_s: float | None, floor: int = 300) -> int:
     """Trần thời gian cho một lệnh ffmpeg xử lý ``duration_s`` giây media.
 

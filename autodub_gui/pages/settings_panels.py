@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from autodub_gui import tokens
-from autodub_gui.status_text import STATUS_OK, STATUS_WARN
+from autodub_gui.status_text import STATUS_ERROR, STATUS_OK, STATUS_WARN
 from autodub_gui.ui.buttons import GhostButton
 from autodub_gui.ui.collapsible import CollapsibleSection
 from autodub_gui.ui.modal import ConfirmDialog
@@ -385,6 +385,10 @@ class MaintenancePanel(CollapsibleSection):
             ("Xóa dữ liệu đã lưu tạm", self._clear_cache),
             ("Xuất nhật ký chẩn đoán", self._export_diagnostics),
         )
+        self.btn_clear_cache: GhostButton | None = None
+        # Luồng xoá dữ liệu tạm đang chạy (nếu có) — giữ tham chiếu để cleanup
+        # chờ nó xong, không thì Qt huỷ QThread đang chạy và crash cứng.
+        self._cache_worker: QThread | None = None
         for text, handler in buttons:
             row = QHBoxLayout()
             button = GhostButton(text)
@@ -392,6 +396,10 @@ class MaintenancePanel(CollapsibleSection):
             row.addWidget(button)
             row.addStretch()
             self.add_layout(row)
+            # Giữ tham chiếu nút xoá dữ liệu tạm: nút này chạy việc trong nền
+            # nên cần bật/tắt trạng thái "đang xóa" của chính nó.
+            if handler == self._clear_cache:
+                self.btn_clear_cache = button
         self.status = _hint_label(
             "Dữ liệu lưu tạm gồm ảnh đại diện và dạng sóng đã tính sẵn. "
             "Xóa đi chỉ làm lần mở sau chậm hơn một chút, không mất video nào.")
@@ -425,8 +433,40 @@ class MaintenancePanel(CollapsibleSection):
             kind="warning", confirm_label="Xóa dữ liệu tạm")
         if not confirmed:
             return
-        removed = self._remove_cache_files()
-        TOASTS.success(f"Đã xóa {removed} tệp lưu tạm.")
+        # Quét + xoá chạy trong luồng nền: os.walk trên thư mục kết quả có thể
+        # đi qua hàng nghìn tệp, làm đứng hình giao diện nếu chạy trên luồng
+        # GUI. Cùng khuôn với _Cleaner của DiskUsagePanel ngay dưới đây.
+        if self.btn_clear_cache is not None:
+            self.btn_clear_cache.set_loading(True, "Đang xóa")
+
+        class _CacheCleaner(QThread):
+            def __init__(self, parent, remove):
+                super().__init__(parent)
+                self._remove = remove
+                self.removed = 0
+
+            def run(self) -> None:
+                try:
+                    self.removed = self._remove()
+                except Exception:
+                    self.removed = 0
+
+        worker = _CacheCleaner(self, self._remove_cache_files)
+
+        def _done() -> None:
+            if self.btn_clear_cache is not None:
+                self.btn_clear_cache.set_loading(False)
+            self._cache_worker = None
+            TOASTS.success(f"Đã xóa {worker.removed} tệp lưu tạm.")
+
+        worker.finished.connect(_done)
+        self._cache_worker = worker
+        worker.start()
+
+    def cleanup(self) -> None:
+        """Chờ lượt xoá dữ liệu tạm đang chạy xong trước khi teardown."""
+        if self._cache_worker is not None and self._cache_worker.isRunning():
+            self._cache_worker.wait(10_000)
 
     def _remove_cache_files(self) -> int:
         from autodub_gui.projects import INDEX_FILE, THUMB_FILE
@@ -655,6 +695,123 @@ class DiskUsagePanel(CollapsibleSection):
 
     def cleanup(self) -> None:
         """Chờ luồng đo/dọn đĩa xong trước khi teardown."""
+        if self._thread is not None and self._thread.isRunning():
+            self._thread.wait(10_000)
+
+
+class VsrPanel(CollapsibleSection):
+    """Cài đặt bộ xóa phụ đề cứng VSR ngay trong ứng dụng, không cần mở terminal.
+
+    Ứng dụng chạy nền ``scripts/setup_vsr.py`` qua :class:`SetupScriptWorker`
+    — đúng khuôn mẫu của nút "Cập nhật VieNeu TTS" — và đọc lại trạng thái cài
+    đặt bằng các hàm ``vsr_*`` của :class:`autodub.config.Settings`.
+    """
+
+    changed = Signal()
+
+    def __init__(self, settings_provider=None, parent: QWidget | None = None):
+        super().__init__("Xóa phụ đề cứng bằng AI (VSR)", expanded=False,
+                         parent=parent)
+        self._settings_provider = settings_provider
+        self.btn_install = GhostButton("Cài đặt AI xóa phụ đề VSR")
+        self.btn_install.setToolTip(
+            "Ứng dụng tự tạo môi trường riêng, tải bộ xóa phụ đề cứng và cài "
+            "các gói cần thiết trong nền. Chạy một lần, không làm gián đoạn "
+            "ứng dụng. Quá trình này cần mạng và có thể mất vài phút.")
+        self.btn_install.clicked.connect(self._install_vsr)
+        self.add_widget(self.btn_install)
+        self.status = _hint_label("")
+        self.add_widget(self.status)
+        self._thread: QThread | None = None
+        self.refresh()
+
+    # -- Trạng thái -----------------------------------------------------
+    def _settings(self):
+        if callable(self._settings_provider):
+            return self._settings_provider()
+        from autodub.config import Settings
+
+        return Settings.load(override=True)
+
+    def refresh(self) -> None:
+        """Cập nhật dòng trạng thái và nhãn nút theo tình hình cài đặt thật."""
+        try:
+            settings = self._settings()
+            installed = bool(settings.vsr_configured())
+        except Exception as exc:                       # noqa: BLE001
+            self.status.setText(f"{STATUS_WARN} Không đọc được cấu hình VSR "
+                                f"({exc}).")
+            return
+        if installed:
+            self.btn_install.setText("Cài đặt lại AI xóa phụ đề VSR")
+            self.status.setText(
+                f"{STATUS_OK} Đã cài VSR — video sẽ tự động xóa phụ đề cứng "
+                "khi bạn bật VSR_ENABLED.")
+        elif not settings.vsr_enabled:
+            self.btn_install.setText("Cài đặt AI xóa phụ đề VSR")
+            self.status.setText(
+                f"{STATUS_WARN} VSR đang tắt (VSR_ENABLED=false) nên ứng "
+                "dụng chưa cần bộ này.")
+        else:
+            self.btn_install.setText("Cài đặt AI xóa phụ đề VSR")
+            self.status.setText(
+                f"{STATUS_WARN} Chưa cài VSR — bấm nút trên để ứng dụng tự "
+                "cài trong nền, không cần mở terminal.")
+
+    # -- Nút bấm --------------------------------------------------------
+    def _install_vsr(self) -> None:
+        """Chạy scripts/setup_vsr.py trong nền và báo tiến trình lên giao diện."""
+        from autodub_gui.workers_setup import SetupScriptWorker
+
+        if self._thread is not None and self._thread.isRunning():
+            TOASTS.info("VSR đang được cài — chờ quá trình hiện tại xong đã.")
+            return
+
+        confirmed, _ = ConfirmDialog.ask(
+            self, "Cài đặt AI xóa phụ đề VSR",
+            "Ứng dụng sẽ tự tạo môi trường riêng, tải bộ xóa phụ đề cứng và "
+            "cài các gói cần thiết trong nền. Quá trình này cần mạng và có "
+            "thể mất vài phút. Bạn có muốn bắt đầu?",
+            kind="info", confirm_label="Bắt đầu cài đặt")
+        if not confirmed:
+            return
+
+        self.btn_install.set_loading(True, "Đang cài đặt...")
+        self.status.setText("Đang cài đặt AI xóa phụ đề VSR...")
+
+        worker = SetupScriptWorker("scripts/setup_vsr.py", self)
+
+        def _on_log(msg: str) -> None:
+            self.status.setText(msg)
+
+        def _on_ok() -> None:
+            self.btn_install.set_loading(False)
+            self._thread = None
+            self.refresh()
+            TOASTS.success("Đã cài xong AI xóa phụ đề VSR.")
+            self.changed.emit()
+
+        def _on_fail(err: str) -> None:
+            self.btn_install.set_loading(False)
+            self._thread = None
+            self.refresh()
+            self.status.setText(f"{STATUS_ERROR} Cài đặt VSR thất bại.")
+            ConfirmDialog.show_error(
+                self, "Không cài được AI xóa phụ đề VSR",
+                "Ứng dụng không cài xong bộ xóa phụ đề cứng. Hãy kiểm tra kết "
+                "nối mạng rồi bấm nút cài đặt lại. Kết quả dịch và video của "
+                "bạn không bị ảnh hưởng.",
+                detail=err)
+
+        worker.log.connect(_on_log)
+        worker.finished_ok.connect(_on_ok)
+        worker.failed.connect(_on_fail)
+        self._thread = worker
+        worker.start()
+
+    # -- Vòng đời -------------------------------------------------------
+    def cleanup(self) -> None:
+        """Chờ lượt cài đặt đang chạy kết thúc trước khi teardown."""
         if self._thread is not None and self._thread.isRunning():
             self._thread.wait(10_000)
 

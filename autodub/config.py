@@ -271,6 +271,10 @@ class Settings:
     translate_enabled: bool = True
     # Số câu mỗi lượt gửi lên endpoint (trần cứng của app là 40).
     translate_batch_size: int = 20
+    # Số câu TRƯỚC đó gửi kèm làm ngữ cảnh cho mỗi lượt dịch. Cửa sổ càng
+    # rộng thì đại từ xưng hô (tôi/bạn, anh/em) càng bám mạch giữa các đoạn,
+    # đổi lại prompt dài hơn. 0 = tắt hẳn phần ngữ cảnh này.
+    translate_context_sentences: int = 12
     translation_endpoint: str = ""
     translation_api_key: str = ""
     translation_model: str = ""
@@ -485,6 +489,9 @@ class Settings:
                               not in ("0", "false", "no"),
             translate_batch_size=max(1, min(40,
                 env_int("TRANSLATE_BATCH_SIZE", "20"))),
+            # Cửa sổ ngữ cảnh: 0..50 câu trước mỗi lượt dịch (0 = không gửi).
+            translate_context_sentences=max(0, min(50,
+                env_int("TRANSLATE_CONTEXT_SENTENCES", "12"))),
             translation_endpoint=env("TRANSLATION_ENDPOINT").strip(),
             translation_api_key=env("TRANSLATION_API_KEY").strip(),
             translation_model=env("TRANSLATION_MODEL").strip(),

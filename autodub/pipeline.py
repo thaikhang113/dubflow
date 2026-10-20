@@ -29,7 +29,8 @@ from datetime import datetime, timezone
 from autodub.config import Settings
 from autodub.languages import TargetLang, get_target, resolve_source_lang
 from autodub.progress import PipelineCancelled, ProgressFn, ProgressReporter
-from autodub.utils import ensure_dir, seg_wav_path, setup_logging
+from autodub.utils import (ensure_dir, load_voice_map, save_voice_map, seg_wav_path,
+    setup_logging, VOICE_MAP_NAME)
 from autodub.workdir import data_dir, data_path, youtube_dir
 
 logger = setup_logging("autodub.pipeline")
@@ -64,6 +65,10 @@ _POST_TARGET = _PostTarget()
 
 
 _MAX_API_TRANSLATION_BATCH = 40
+
+#: Tên tệp bản đồ giọng theo nhân vật, đặt cạnh các tệp trạng thái khác trong
+#: thư mục dự án (speaker_profiles.json, render_opts.json, ...).
+SPEAKER_MAP_NAME = "speaker_map.json"
 
 
 @dataclass(frozen=True)
@@ -111,6 +116,118 @@ def _plan_tts_voice_groups(
     )
 
 
+def _clean_speaker_voices(value) -> dict[str, str]:
+    """Chuẩn hóa bảng giọng theo nhân vật thành ``{speaker_id: tên giọng}``.
+
+    Bỏ qua mọi cặp rỗng và khoảng trắng thừa: bảng này đến từ tệp JSON trên
+    đĩa hoặc từ yêu cầu chạy, nên phải chịu được dữ liệu bẩn mà không làm
+    hỏng cả lượt lồng tiếng. Giá trị trả về luôn là dict mới, không giữ
+    tham chiếu tới đối tượng của caller.
+    """
+    if not isinstance(value, dict):
+        return {}
+    cleaned: dict[str, str] = {}
+    for speaker, voice in value.items():
+        speaker = str(speaker or "").strip()
+        voice = str(voice or "").strip()
+        if speaker and voice:
+            cleaned[speaker] = voice
+    return cleaned
+
+
+def _apply_speaker_voices(
+    segments: list[dict], speaker_voices: dict[str, str],
+) -> list[dict]:
+    """Gán giọng riêng của từng nhân vật vào các câu thoại của nhân vật đó.
+
+    Đây là điểm nối giữa bản đồ giọng theo nhân vật và bộ máy TTS vốn đã
+    hiểu khóa ``voice`` của từng câu: chỉ cần điền khóa đó là mỗi nhân vật
+    được đọc bằng một giọng khác nhau.
+
+    Hai điều kiện để giữ đúng hành vi cũ:
+
+    - ``speaker_voices`` rỗng thì trả về nguyên danh sách, không sao chép.
+    - Câu đã tự mang khóa ``voice`` (người dùng gán tay trong Trình chỉnh
+      sửa) được giữ nguyên — lựa chọn thủ công luôn thắng bản đồ chung.
+    """
+    if not speaker_voices:
+        return segments
+    result: list[dict] = []
+    for segment in segments:
+        speaker = str(segment.get("speaker_id") or "").strip()
+        voice = speaker_voices.get(speaker)
+        if not voice or str(segment.get("voice") or "").strip():
+            result.append(segment)
+            continue
+        item = dict(segment)
+        item["voice"] = voice
+        result.append(item)
+    return result
+
+
+def _speaker_map_payload(
+    segments: list[dict],
+    speaker_voices: dict[str, str],
+    effective_voice: str,
+    target: TargetLang,
+    *,
+    counts: dict[str, int] | None = None,
+) -> dict:
+    """Nội dung tệp ``speaker_map.json`` — bản đồ nhân vật → giọng đọc.
+
+    Ghi lại cả giọng chung của video để giao diện biết nhân vật nào đang
+    dùng giọng chung, và đếm số câu của từng nhân vật để người dùng chọn
+    giọng có căn cứ (nhân vật nói 2 câu khác hẳn nhân vật nói 500 câu).
+    """
+    if counts is None:
+        counts = {}
+        for segment in segments:
+            speaker = str(segment.get("speaker_id") or "").strip()
+            if speaker:
+                counts[speaker] = counts.get(speaker, 0) + 1
+    return {
+        "version": 1,
+        "default_voice": effective_voice,
+        "target": target.code,
+        "speakers": [
+            {
+                "speaker_id": speaker,
+                "voice": speaker_voices.get(speaker, effective_voice),
+                "assigned": speaker in speaker_voices,
+                "segments": counts[speaker],
+            }
+            for speaker in sorted(counts)
+        ],
+    }
+
+
+def _write_speaker_map(
+    work_dir: str, segments: list[dict], speaker_voices: dict[str, str],
+    effective_voice: str, target: TargetLang,
+) -> str:
+    """Ghi ``speaker_map.json`` vào thư mục dự án; trả về đường dẫn.
+
+    Lỗi ghi đĩa KHÔNG được làm hỏng lượt lồng tiếng: tệp này chỉ phục vụ
+    việc hiển thị và chỉnh sửa về sau, còn giọng đọc đã nằm sẵn trong từng
+    câu thoại.
+    """
+    from autodub.speech.diarization import speaker_segment_counts
+    from autodub.utils import save_json_atomic
+
+    path = data_path(work_dir, SPEAKER_MAP_NAME, create_dir=True)
+    payload = _speaker_map_payload(segments, speaker_voices, effective_voice,
+                                   target, counts=speaker_segment_counts(
+                                       segments))
+    try:
+        save_json_atomic(payload, path)
+        logger.info(
+            f"Đã ghi bản đồ giọng theo nhân vật: {path} "
+            f"({len(payload['speakers'])} nhân vật)")
+    except OSError as e:
+        logger.warning(f"Không ghi được {SPEAKER_MAP_NAME}: {e}")
+    return path
+
+
 def _context_from_settings(settings) -> dict[str, str]:
     if settings is None:
         return {}
@@ -138,13 +255,33 @@ def _payload_segment(seg: dict, cps: float) -> dict:
         out["max_chars"] = max(12, int(window * cps))
     return out
 
+#: Trần ký tự cho MỘT câu ngữ cảnh. Cửa sổ rộng (TRANSLATE_CONTEXT_SENTENCES)
+#: vẫn phải giữ prompt trong hạn mức token của endpoint: một câu thoại hiếm
+#: khi dài quá vài trăm ký tự, nên cắt ở đây chỉ chạm tới dòng bất thường.
+_CONTEXT_CHARS_PER_LINE = 300
+
+
 def _prev_context(segments: list[dict], start: int, target: TargetLang,
-                  count: int = 3) -> list[dict]:
+                  count: int = 12) -> list[dict]:
+    """Các câu NGAY TRƯỚC vị trí ``start``, dùng làm ngữ cảnh cho lượt dịch.
+
+    Mục đích: giữ mạch xưng hô và sắc thái giữa các đoạn. Bản dịch chạy theo
+    lô, mỗi lô là một lượt gọi model riêng, nên nếu không gửi kèm phần đã dịch
+    thì đại từ nhân xưng lệch nhau giữa các lô (tôi/bạn ở đoạn này, anh/em ở
+    đoạn kia). Số câu gửi kèm do TRANSLATE_CONTEXT_SENTENCES quyết định.
+
+    ``count=0`` trả về danh sách rỗng — tắt hẳn phần ngữ cảnh.
+    """
+    count = max(0, int(count))
+    if count == 0:
+        return []
     result = []
     for seg in segments[max(0, start - count):start]:
-        item = {"id": seg.get("id"), "text": str(seg.get("text", ""))[:300]}
+        item = {"id": seg.get("id"),
+                "text": str(seg.get("text", ""))[:_CONTEXT_CHARS_PER_LINE]}
         if seg.get(target.text_field):
-            item[target.text_field] = str(seg[target.text_field])[:300]
+            item[target.text_field] = str(
+                seg[target.text_field])[:_CONTEXT_CHARS_PER_LINE]
         result.append(item)
     return result
 
@@ -270,6 +407,10 @@ class DubRequest:
     clone_voice: bool = False
     clone_source: str = "video"       # "video" | "file"
     clone_reference_audio: str | None = None
+    #: Giọng đọc RIÊNG cho từng nhân vật do bước nhận diện giọng nói phát
+    #: hiện, dạng {"speaker_01": "Tên giọng", ...}. Rỗng (mặc định) nghĩa là
+    #: giữ nguyên hành vi cũ: cả video đọc bằng MỘT giọng duy nhất.
+    speaker_voices: dict[str, str] = field(default_factory=dict)
     bg_mode: str = "demucs"            # "demucs" | "duck" | "none"
     bg_duck_db: float = -12.0
     skip_video: bool = False
@@ -672,11 +813,19 @@ class DubPipeline:
         # back, and each step alone peaks lower on RAM/VRAM.
         rep.check_cancelled()
         from concurrent.futures import ThreadPoolExecutor
+        from autodub.cancel import CURRENT_CANCEL_SCOPE, cancel_scope
+        # ThreadPoolExecutor KHÔNG mang contextvar sang luồng mới, nên phạm vi
+        # hủy phải chép tay. Thiếu nó, Demucs chạy ở luồng nền ghi danh với
+        # scope None và nút Dừng (scope "gui") không giết được worker --serve.
+        bg_scope = CURRENT_CANCEL_SCOPE.get()
+
+        def _bg_work():
+            with cancel_scope(bg_scope):
+                return self._resolve_background(
+                    req.bg_mode, req.bg_duck_db, hq_audio_path, work_dir)
+
         bg_executor = ThreadPoolExecutor(max_workers=1)
-        bg_future = bg_executor.submit(
-            self._resolve_background, req.bg_mode, req.bg_duck_db,
-            hq_audio_path, work_dir,
-        )
+        bg_future = bg_executor.submit(_bg_work)
         # Giữ trên self, shutdown trong finally của run() — xem chú thích ở đó.
         self._bg_executor = bg_executor
         self._active_bg_future = bg_future
@@ -809,6 +958,35 @@ class DubPipeline:
                 logger.warning(
                     f"Clone giọng không khả dụng ({exc}) — dùng preset voice")
                 rep.emit("tts", "warning", detail=f"Clone fallback: {exc}")
+
+        # --- Giọng đọc theo nhân vật (tùy chọn, mặc định TẮT).
+        # Bản đồ giọng được rót vào khóa "voice" của từng câu ngay trước bước
+        # TTS — bộ máy TTS vốn đã đọc được nhiều giọng theo khóa đó. Bản đồ
+        # rỗng thì hàm trả lại đúng danh sách cũ, không sao chép, nên hành vi
+        # một giọng của mọi lượt chạy cũ được giữ nguyên.
+        #
+        # Nguồn của bảng có HAI chỗ: bảng người dùng gán trong Trình chỉnh sửa
+        # nằm ở render_opts của dự án trên đĩa; bảng truyền thẳng trong
+        # DubRequest (nếu có) đến từ yêu cầu chạy và mới hơn. Chỉ đọc
+        # req.speaker_voices là đủ cho lượt chạy đầu, nhưng chạy tiếp một dự
+        # án cũ sẽ làm bảng trên đĩa biến mất trong im lặng — các câu đã gán
+        # giọng riêng bị đọc lại bằng một giọng chung. Vì vậy gộp từ đĩa vào
+        # trước rồi để bản trong yêu cầu đè lên.
+        from autodub.editor import SPEAKER_VOICES_KEY, load_render_opts
+        speaker_voices = _clean_speaker_voices(
+            load_render_opts(work_dir).get(SPEAKER_VOICES_KEY))
+        speaker_voices.update(_clean_speaker_voices(req.speaker_voices))
+        if speaker_voices:
+            segments = _apply_speaker_voices(segments, speaker_voices)
+            assigned = len({
+                s.get("speaker_id") for s in segments
+                if s.get("voice") and s.get("speaker_id")
+            })
+            logger.info(
+                f"Giọng theo nhân vật: đã gán {len(speaker_voices)} giọng "
+                f"cho {assigned} nhân vật")
+        _write_speaker_map(work_dir, segments, speaker_voices,
+                           effective_voice, target)
 
         # Khởi động sớm bộ giọng: việc nạp model (vài giây trên CPU) nấp sau
         # bước dịch. VieNeu chạy CPU nên không tranh card đồ họa với bất cứ
@@ -1165,6 +1343,16 @@ class DubPipeline:
                 logger.warning("Vision logo detection skipped: %s", exc)
         if detected_logo and not source_logo_exists:
             blur_regions.append({**detected_logo, "source": "logo"})
+        # Giọng theo nhân vật của dự án sống sót qua các lượt chạy lại.
+        # Bảng người dùng gán trong trình chỉnh sửa nằm trong render_opts;
+        # bản trong trạng thái (nếu có) mới hơn nên thắng. Thiếu cả hai thì
+        # bảng rỗng — đúng hành vi một giọng như trước đây.
+        from autodub.editor import SPEAKER_VOICES_KEY, load_render_opts
+        saved_speaker_voices = _clean_speaker_voices(
+            load_render_opts(work_dir).get(SPEAKER_VOICES_KEY))
+        merged_speaker_voices = dict(saved_speaker_voices)
+        merged_speaker_voices.update(_clean_speaker_voices(
+            state.get("speaker_voices")))
         # DubRequest tối thiểu — _build_report chỉ đọc url/voice từ đây.
         req = DubRequest(url=state.get("url"), voice=state.get("voice"),
                          skip_video=bool(state.get("skip_video")),
@@ -1178,7 +1366,8 @@ class DubPipeline:
                          logo_region=logo_region,
                          logo_opacity=float(state.get("logo_opacity", 1.0)),
                          logo_scale=float(state.get("logo_scale", 0.2)),
-                         vision_enabled=state.get("vision_enabled"))
+                         vision_enabled=state.get("vision_enabled"),
+                         speaker_voices=merged_speaker_voices)
 
         # --- Step 7: Merge video (optional) ---
         # Ghim tên giọng THẬT đã dùng (kể cả khi người dùng để mặc định),
@@ -1480,6 +1669,9 @@ class DubPipeline:
         )
         checkpoint = TranslateCheckpoint(checkpoint_path, target.text_field)
         batch_size = max(1, min(40, int(settings.translate_batch_size)))
+        # Số câu trước mỗi lô được gửi kèm làm ngữ cảnh (0 = tắt).
+        context_sentences = max(0, min(50, int(getattr(
+            settings, "translate_context_sentences", 12))))
         batches = _api_translation_batches(segments, batch_size)
         tasks = [
             TranslationTask(index=index, segments=batch, job_id=f"legacy-{index}")
@@ -1507,14 +1699,19 @@ class DubPipeline:
                 settings.translation_api_key,
                 settings.translation_model,
             )
+            # Cửa sổ ngữ cảnh do TRANSLATE_CONTEXT_SENTENCES quyết định:
+            # mỗi lô là một lượt gọi model riêng, gửi kèm càng nhiều câu
+            # trước thì xưng hô càng bám mạch qua các lô.
             previous = _prev_context(
-                segments, task.index * batch_size, target)
+                segments, task.index * batch_size, target,
+                context_sentences)
 
             def translate_batch(items: list[dict]) -> list[dict]:
                 request = [_payload_segment(item, cps) for item in items]
                 try:
                     returned = batch_provider.translate(
-                        request, context, previous)
+                        request, context, previous,
+                        source_lang=source_lang, cps_budget=cps)
                     merged = merge_translations(
                         items, returned, target.text_field)
                 except (OpenAICompatibleError, TranslateError) as exc:
@@ -2045,7 +2242,12 @@ class DubPipeline:
 
     # Cached segment wavs are only reusable if they were rendered under the
     # same grouping scheme. Bump when the text-to-wav mapping changes.
-    RENDER_MODE = "per_fragment_v1"
+    #
+    # v2_voice: bản cũ không ghi lại GIỌNG đã đọc mỗi câu, nên đổi giọng rồi
+    # chạy tiếp vẫn dùng lại clip của giọng cũ. Đổi tên scheme để lần chạy đầu
+    # sau khi nâng cấp xoá sạch cache cũ một lần; từ đây trở đi
+    # `.voice_map.json` giữ danh tính giọng cho từng câu.
+    RENDER_MODE = "per_fragment_v2_voice"
 
     def _ensure_render_mode(self, work_dir: str, seg_dir: str) -> None:
         """Invalidate segment wavs cached under an older render scheme.
@@ -2076,6 +2278,12 @@ class DubPipeline:
             for f in os.listdir(seg_dir):
                 if f.endswith(".wav"):
                     os.remove(os.path.join(seg_dir, f))
+            # Bản đồ giọng mô tả các wav vừa xoá — giữ lại thì lần chạy sau
+            # tưởng clip mới cũng do giọng cũ đọc.
+            try:
+                os.remove(os.path.join(seg_dir, VOICE_MAP_NAME))
+            except OSError:
+                pass
             for d in os.listdir(data_dir(work_dir)):
                 if d.startswith(("segments_fit", "segments_slow",
                                  "segments_speed", "segments_post",
@@ -2169,6 +2377,24 @@ class DubPipeline:
                     extra_synths[name] = s
                 return s
 
+        # Danh tính giọng của từng câu — khoá của bản đồ giọng. Cùng phép
+        # quy đổi với ``_synth_for`` nên bản đồ và synth luôn khớp nhau.
+        def _voice_of(seg: dict) -> str:
+            seg_voice = str(seg.get("voice", "")).strip()
+            if not seg_voice:
+                return run_voice
+            return voice_catalog.resolve(self.settings, seg_voice)
+
+        # Clip cũ chỉ dùng lại được khi ĐÚNG giọng đã đọc nó. Bản đồ thiếu
+        # hoặc lệch → đọc lại: video mang giọng cũ là lỗi người dùng thấy được.
+        voice_map = load_voice_map(seg_dir)
+
+        def _reusable(seg: dict) -> bool:
+            seg_path = seg_wav_path(seg_dir, seg["id"])
+            if not (os.path.exists(seg_path) and os.path.getsize(seg_path) > 0):
+                return False
+            return voice_map.get(str(seg["id"])) == _voice_of(seg)
+
         total = len(segments)
         # Mỗi câu một dòng nhật ký sẽ ngập giao diện khi video dài — lấy mẫu
         # để video 10 nghìn câu chỉ sinh khoảng 100 dòng tiến độ.
@@ -2183,10 +2409,7 @@ class DubPipeline:
         # Đếm trước phần việc thật: câu đã có clip từ lần chạy trước thì
         # không phải đọc lại. Người dùng cần thấy "còn phải đọc bao nhiêu",
         # không phải tổng số câu — nhất là khi chạy tiếp một dự án cũ.
-        cached_n = sum(
-            1 for seg in segments
-            if os.path.exists(seg_wav_path(seg_dir, seg["id"]))
-            and os.path.getsize(seg_wav_path(seg_dir, seg["id"])) > 0)
+        cached_n = sum(1 for seg in segments if _reusable(seg))
         seg_voices = {str(s.get("voice", "")).strip()
                       for s in segments if str(s.get("voice", "")).strip()}
         n_voices = len({run_voice} | {
@@ -2203,11 +2426,15 @@ class DubPipeline:
         results: list[dict | None] = [None] * total
         count_lock = threading.Lock()
         done_count = 0
+        # Bản đồ giọng chỉ được ghi khi có clip mới, và ghi một lần sau khi
+        # pool xong (hoặc khi huỷ) — mỗi câu một lần ghi là quá nhiều I/O.
+        voice_lock = threading.Lock()
+        voice_dirty = [False]
 
         def _one(seg: dict) -> dict:
             rep.check_cancelled()
             seg_path = seg_wav_path(seg_dir, seg["id"])
-            if os.path.exists(seg_path) and os.path.getsize(seg_path) > 0:
+            if _reusable(seg):
                 # Chỉ cần thời lượng: đọc header WAV, đừng nạp cả sóng âm —
                 # resume video nghìn câu nhanh hơn hàng chục lần.
                 return {
@@ -2216,13 +2443,17 @@ class DubPipeline:
                     "speed_adjusted": False,
                     "rate_applied": "cached",
                 }
-            return _synth_for(seg).synthesize(
+            result = _synth_for(seg).synthesize(
                 text=seg[text_field],
                 output_path=seg_path,
                 # Engines always render at natural pace now — timing is
                 # handled globally by VIDEO_SPEED/VOICE_SPEED, never per clip.
                 target_duration=None,
             ).to_dict()
+            with voice_lock:
+                voice_map[str(seg["id"])] = _voice_of(seg)
+                voice_dirty[0] = True
+            return result
 
         try:
             with ThreadPoolExecutor(max_workers=n_threads) as pool:
@@ -2258,6 +2489,13 @@ class DubPipeline:
                         f.cancel()
                     raise
         finally:
+            # Ghi bản đồ giọng kể cả khi huỷ: các wav vừa đọc xong vẫn nằm
+            # trên đĩa, lần chạy sau phải biết chúng thuộc giọng nào.
+            if voice_dirty[0]:
+                try:
+                    save_voice_map(seg_dir, voice_map)
+                except OSError as e:
+                    logger.warning(f"Không ghi được bản đồ giọng: {e}")
             # Release worker subprocesses even on error/cancel — a leaked
             # pool pins GBs of VRAM in a long-lived GUI process.
             for extra in extra_synths.values():

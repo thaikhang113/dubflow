@@ -146,6 +146,48 @@ def select_reference_segments(
     }
 
 
+def load_speaker_map(path: str) -> dict[str, str]:
+    """Đọc bản đồ giọng theo nhân vật do pipeline ghi ra (speaker_map.json).
+
+    Trả về dict rỗng khi tệp không tồn tại, hỏng, hoặc sai định dạng: bản đồ
+    này chỉ là tuỳ chọn, không được phép làm gãy trình chỉnh sửa. Chỉ nhận
+    giá trị chuỗi không rỗng để phần còn lại của mã khỏi phải kiểm tra lại.
+    """
+    try:
+        with open(path, encoding="utf-8") as stream:
+            payload = json.load(stream)
+    except (OSError, ValueError, TypeError):
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    speakers = payload.get("speakers")
+    if not isinstance(speakers, list):
+        return {}
+    result: dict[str, str] = {}
+    for entry in speakers:
+        if not isinstance(entry, dict):
+            continue
+        speaker = str(entry.get("speaker_id") or "").strip()
+        voice = str(entry.get("voice") or "").strip()
+        if speaker and voice:
+            result[speaker] = voice
+    return result
+
+
+def speaker_segment_counts(segments: list[dict]) -> dict[str, int]:
+    """Đếm số câu thoại của từng nhân vật đã nhận diện được.
+
+    Giao diện dùng con số này để người dùng chọn giọng có căn cứ: nhân vật
+    chỉ nói một hai câu khác hẳn nhân vật xuất hiện suốt video.
+    """
+    counts: dict[str, int] = {}
+    for segment in segments:
+        speaker = str(segment.get("speaker_id") or "").strip()
+        if speaker:
+            counts[speaker] = counts.get(speaker, 0) + 1
+    return counts
+
+
 def save_diarization_cache(path: str, payload: dict) -> None:
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     temp = path + ".tmp"

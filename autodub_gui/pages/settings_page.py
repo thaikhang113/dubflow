@@ -33,7 +33,11 @@ from autodub_gui.env_store import (
 )
 from autodub_gui.pages import BasePage
 from autodub_gui.pages import settings_fields as spec
-from autodub_gui.pages.settings_panels import DiskUsagePanel, MaintenancePanel
+from autodub_gui.pages.settings_panels import (
+    DiskUsagePanel,
+    MaintenancePanel,
+    VsrPanel,
+)
 from autodub_gui.ui.buttons import GhostButton, PrimaryButton
 from autodub_gui.ui.collapsible import CollapsibleSection
 from autodub_gui.ui.inputs import (
@@ -267,7 +271,10 @@ class SettingsPage(BasePage):
         if tab == spec.TAB_ADVANCED:
             self.maintenance = MaintenancePanel(self._current_settings)
             self.disk_panel = DiskUsagePanel(self._current_settings)
-            return [self.maintenance, self.disk_panel]
+            # Bộ xóa phụ đề cứng VSR: người dùng cài bằng một nút bấm, không
+            # phải mở terminal.
+            self.vsr_panel = VsrPanel(self._current_settings)
+            return [self.maintenance, self.disk_panel, self.vsr_panel]
         return []
 
     def _build_footer(self) -> QHBoxLayout:
@@ -486,7 +493,7 @@ class SettingsPage(BasePage):
 
     # -- Vòng đời ------------------------------------------------------
     def cleanup(self) -> None:
-        for name in ("disk_panel",):
+        for name in ("disk_panel", "vsr_panel"):
             panel = getattr(self, name, None)
             if panel is not None and hasattr(panel, "cleanup"):
                 panel.cleanup()

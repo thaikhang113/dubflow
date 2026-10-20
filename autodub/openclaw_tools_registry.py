@@ -63,6 +63,37 @@ def _as_float(low: float, high: float) -> Callable[[Any], str]:
     return coerce
 
 
+def _as_int(low: int, high: int) -> Callable[[Any], str]:
+    """Ép giá trị về số NGUYÊN trong khoảng, trả về chuỗi để ghi .env.
+
+    Khác ``_as_float``: 7.5 không được làm tròn ngầm mà bị từ chối, vì
+    người gọi tưởng đã đặt 7.5 thì nhận 7 sẽ khó hiểu.
+    """
+
+    def coerce(value: Any) -> str:
+        if isinstance(value, bool):
+            raise ValueError(f"cần số nguyên, nhận {value!r}")
+        if isinstance(value, int):
+            number = value
+        elif isinstance(value, float):
+            if not math.isfinite(value) or value != int(value):
+                raise ValueError(f"cần số nguyên, nhận {value!r}")
+            number = int(value)
+        elif isinstance(value, str):
+            text = value.strip()
+            try:
+                number = int(text)
+            except ValueError:
+                raise ValueError(f"cần số nguyên, nhận {value!r}") from None
+        else:
+            raise ValueError(f"cần số nguyên, nhận {value!r}")
+        if not low <= number <= high:
+            raise ValueError(f"phải trong khoảng {low}-{high}, nhận {number}")
+        return str(number)
+
+    return coerce
+
+
 def _as_choice(*allowed: str) -> Callable[[Any], str]:
     def coerce(value: Any) -> str:
         if not isinstance(value, str):
@@ -96,6 +127,7 @@ _WRITABLE: dict[str, Callable[[Any], str]] = {
     "TRANSLATE_ENABLED": _as_bool,
     "TRANSLATE_DOMAIN": _as_text,
     "TRANSLATE_CONTEXT": _as_text,
+    "TRANSLATE_CONTEXT_SENTENCES": _as_int(0, 50),
     "SUBTITLE_MODE": _as_choice("none", "soft", "burn"),
     "QUALITY_PRESET": _as_choice("fast", "balanced", "quality"),
     "VIENEU_VOICE": _as_text,
@@ -116,6 +148,8 @@ def get_settings(*args, settings: Settings | None = None, **kwargs) -> dict[str,
             "translate_enabled": settings.translate_enabled,
             "translate_domain": settings.translate_domain,
             "translate_context": settings.translate_context,
+            "translate_context_sentences": getattr(
+                settings, "translate_context_sentences", 12),
             "subtitle_mode": settings.subtitle_mode,
             "quality_preset": settings.quality_preset,
             "vieneu_voice": settings.vieneu_voice,

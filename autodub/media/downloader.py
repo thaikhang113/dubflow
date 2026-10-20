@@ -219,6 +219,11 @@ def _extract_info_with_retry(ydl, url: str, attempts: int = 5) -> dict:
     for attempt in range(attempts):
         try:
             return ydl.extract_info(url, download=True)
+        except PipelineCancelled:
+            # progress_hook ném PipelineCancelled khi người dùng bấm Dừng;
+            # nếu để nhánh dưới bắt thì lệnh hủy bị coi là lỗi tạm thời rồi
+            # ngủ 2–30 s và THỬ LẠI tải trong khi người dùng đã dừng.
+            raise
         except Exception as exc:
             if not is_transient_download_error(exc) or attempt == attempts - 1:
                 raise

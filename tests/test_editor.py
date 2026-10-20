@@ -9,6 +9,7 @@ import pytest
 
 from autodub import editor
 from autodub.config import Settings
+from autodub.progress import PipelineCancelled
 from autodub.editor import (
     EditorError,
     _branding_options,
@@ -408,6 +409,33 @@ def test_refresh_ocr_regions_uses_ocr_for_stable_source_logo(
     )
 
     assert [region["source"] for region in result] == ["ocr", "logo"]
+
+def test_refresh_ocr_regions_lets_cancel_through(work_dir, monkeypatch):
+    """Bấm Dừng giữa lúc OCR phải đi XUYÊN QUA _refresh_ocr_regions."""
+    settings = Settings(ocr_enabled=True)
+    old_ocr = {
+        "x": 0.2, "y": 0.8, "w": 0.3, "h": 0.1, "source": "ocr"}
+    save_render_opts(work_dir, {
+        "ocr_enabled": True,
+        "blur_regions": [old_ocr],
+    })
+    monkeypatch.setattr(
+        editor, "_probe_ocr_video", lambda _path: (1920, 1080, 4.0))
+
+    def cancelled(*_args, **_kwargs):
+        # detect_regions_with_logo đã biết ném PipelineCancelled khi người
+        # dùng bấm Dừng (autodub/media/ocr.py:164-168 re-raise).
+        raise PipelineCancelled()
+
+    monkeypatch.setattr(
+        "autodub.media.ocr.detect_regions_with_logo", cancelled)
+
+    state = load_work_dir(work_dir)
+    with pytest.raises(PipelineCancelled):
+        _refresh_ocr_regions(work_dir, settings, state, [old_ocr])
+
+    # Lệnh hủy không được biến thành cảnh báo: không ghi lại box cũ.
+    assert load_render_opts(work_dir)["blur_regions"] == [old_ocr]
 
 
 # --------------------------- batch save --------------------------- #

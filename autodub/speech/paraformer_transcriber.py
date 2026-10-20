@@ -17,8 +17,10 @@ import threading
 from collections import deque
 
 from autodub.config import Settings
+from autodub.cancel import is_cancel_requested
 from autodub.cancel import register as register_process
 from autodub.cancel import unregister as unregister_process
+from autodub.progress import PipelineCancelled
 from autodub.utils import asr_timeout_s, bundled_file, setup_logging
 
 logger = setup_logging("autodub.paraformer")
@@ -159,6 +161,12 @@ def transcribe_paraformer(audio_path: str, settings: Settings) -> list[dict]:
                 pass
 
     tail = "\n".join(stderr_tail)
+    # Nút Dừng giết tiến trình con đang chạy, nên worker thoát giữa chừng
+    # KHÔNG phải lỗi. Nói đúng là đã hủy, thay vì để nơi gọi
+    # (transcriber.transcribe) hạ cấp thành "Paraformer lỗi — chuyển Whisper"
+    # rồi chạy tiếp bước dài nhất của pipeline sau khi người dùng đã bấm Dừng.
+    if is_cancel_requested():
+        raise PipelineCancelled("Đã hủy trong lúc nghe-chép (Paraformer)")
     if not done:
         raise RuntimeError(
             f"Paraformer worker thoát bất thường (exit {proc.returncode})"

@@ -138,7 +138,8 @@ class VoiceAndExportMixin:
         worker = SaveAllWorker(settings, self._work_dir, edits,
                                self.target_key(), voice, self,
                                force_all=resynth_all,
-                               force_ids=force_ids)
+                               force_ids=force_ids,
+                               speaker_voices=self._speaker_voices())
         # Chỉ coi giọng mới là "đã áp dụng" khi lần đọc lại này phủ đủ mọi
         # câu; đọc lại một câu lẻ bằng giọng mới thì video vẫn chưa đổi giọng.
         self._resynth_covers_voice = resynth_all
@@ -159,6 +160,9 @@ class VoiceAndExportMixin:
         worker.start()
 
     def _on_resynth_cancelled(self) -> None:
+        # KHÔNG gọi REGISTRY.finish_job ở đây: _start_resynth không chiếm khoá
+        # việc-chung (chỉ _export làm việc đó), nên nhả khoá tại đây sẽ xoá
+        # nhầm việc của trang khác đang chạy.
         self.voice_panel.finish_progress("Đã dừng theo yêu cầu.")
         self.restore_video(getattr(self, "_resynth_resume_pos", None))
         self._resynth_resume_pos = None
@@ -167,6 +171,9 @@ class VoiceAndExportMixin:
         self._dirty_ids.clear()
         self._structural_edit = False
         self._refresh_banner()
+        # Giọng theo nhân vật vừa được đọc lại cho mọi câu cần đổi, nên
+        # bảng hiện tại trở thành bản đang có hiệu lực trong video.
+        self.mark_speaker_voices_applied()
         self.restore_video(getattr(self, "_resynth_resume_pos", None))
         self._resynth_resume_pos = None
         # Đổi giọng cả video xong thì giọng mới thành giọng thật của dự án —
@@ -178,6 +185,18 @@ class VoiceAndExportMixin:
             f"Đã đọc lại {len(changed)} câu. Bấm Xuất video để ghép vào phim."
             if changed else "Không có câu nào cần đọc lại.")
         TOASTS.success("Đã tạo xong giọng đọc mới.")
+
+    def _speaker_voices(self) -> dict[str, str]:
+        """Bảng giọng theo nhân vật đang chọn trong Trình chỉnh sửa.
+
+        Trả về bảng rỗng khi chưa nhận diện được nhân vật nào hoặc người
+        dùng để nguyên «Giọng chung của video» cho mọi người — lúc đó
+        toàn bộ video vẫn đọc bằng một giọng như trước đây.
+        """
+        panel = getattr(self, "speaker_panel", None)
+        if panel is None:
+            return {}
+        return panel.speaker_voices()
 
     def _pin_project_voice(self, voice: str) -> None:
         """Ghi tên giọng đã dùng thật vào tùy chọn của dự án."""
@@ -346,6 +365,17 @@ class VoiceAndExportMixin:
                 f"Bạn đã chọn giọng {self.voice_panel.picker.voice()} nhưng "
                 "chưa bấm «Lưu tất cả và đọc lại». Nếu xuất bây giờ, video "
                 f"vẫn dùng giọng {self.voice_panel.project_voice()}.",
+                kind="warning", confirm_label="Cứ xuất với giọng cũ",
+                cancel_label="Để tôi đọc lại đã")
+            if not confirmed:
+                self._show_tab("voice")
+                return
+        if self.has_unapplied_speaker_voices():
+            confirmed, _ = ConfirmDialog.ask(
+                self, "Giọng nhân vật mới chưa được áp dụng",
+                "Bạn đã đổi giọng cho một số nhân vật nhưng chưa bấm "
+                "«Lưu tất cả và đọc lại». Nếu xuất bây giờ, video vẫn "
+                "dùng giọng cũ cho các nhân vật đó. Bạn muốn làm gì?",
                 kind="warning", confirm_label="Cứ xuất với giọng cũ",
                 cancel_label="Để tôi đọc lại đã")
             if not confirmed:
@@ -535,6 +565,11 @@ class VoiceAndExportMixin:
         self._sync_overlay(path)
 
     def _on_export_cancelled(self) -> None:
+        # Phải nhả khoá việc đang chạy: _export đã gọi REGISTRY.start_job, mà
+        # đường huỷ không đi qua _on_export_done/_failed. Quên ở đây thì
+        # is_busy() kẹt True và người dùng không chạy được việc khác cho tới
+        # khi khởi động lại ứng dụng.
+        REGISTRY.finish_job(False, "bạn đã bấm dừng")
         self.export_panel.set_status(
             "Đã dừng theo yêu cầu. File export tạm có thể còn trong thư mục dự án.")
         self._refresh_export_recovery()

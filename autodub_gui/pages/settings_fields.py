@@ -415,6 +415,14 @@ FIELDS: tuple[Field, ...] = (
           "hơn, và một lô nhỏ hỏng thì chỉ phải dịch lại chừng đó câu.",
           minimum=1, maximum=40, step=1, decimals=0),
 
+    # Cửa sổ ngữ cảnh: số câu TRƯỚC mỗi lô được gửi kèm để giữ mạch xưng hô.
+    # 0 = tắt hẳn phần ngữ cảnh này.
+    Field("TRANSLATE_CONTEXT_SENTENCES", NUMBER, "Số câu ngữ cảnh gửi kèm",
+          TAB_TRANSLATE, "Ngữ cảnh video", "12",
+          "Mỗi lượt dịch gửi kèm bấy nhiêu câu trước đó để giữ mạch xưng hô "
+          "và cách gọi nhân vật. Càng nhiều thì đại từ càng nhất quán giữa "
+          "các đoạn, đổi lại prompt dài hơn. Đặt 0 để tắt.",
+          suffix=" câu", minimum=0, maximum=50, step=1, decimals=0),
     Field("TRANSLATE_DOMAIN", TEXT, "Chủ đề video", TAB_TRANSLATE,
           "Ngữ cảnh video", "",
           "Càng cụ thể thì bản dịch càng đúng ngữ cảnh. Để trống thì model tự "
