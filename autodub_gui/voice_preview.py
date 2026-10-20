@@ -15,6 +15,8 @@ import threading
 
 from PySide6.QtCore import QObject, QThread, QUrl, Signal
 
+from autodub.utils import cache_root
+
 try:
     from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
     HAS_MEDIA = True
@@ -30,7 +32,7 @@ _CACHE_VERSION = 1
 
 
 def _cache_dir() -> str:
-    return os.path.join(os.path.expanduser("~"), ".voxdub_cache", "previews")
+    return os.path.join(cache_root(), "previews")
 
 
 def _safe_name(voice: str) -> str:

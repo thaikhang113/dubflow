@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.0.33 - 2026-10-20
+
+### Added
+
+- Per-speaker voice assignments in the editor, persisted across resume and remote jobs.
+- Configurable translation continuity context and in-app VSR setup.
+
+### Fixed
+
+- API and manual translation now share fidelity, prosody and duration-aware prompt rules.
+- TTS cache records the rendered voice per segment; changing a voice regenerates only affected clips. Older untracked voice caches are rebuilt once.
+- Stop releases the editor export lock, resets stale GUI cancellation flags and terminates the persistent Demucs worker in the correct cancellation scope.
+- Speaker voice selectors preserve saved voices absent from the local catalog.
+- Maintenance cache cleanup runs off the GUI thread.
+- Cache paths remain absolute when the user-home environment is missing; normal home-based caches keep their existing location.
+- Package, GUI, installer and lockfile versions are synchronized to 3.0.33.
+
 ## 3.0.32 - 2026-10-01
 
 ### Added

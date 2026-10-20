@@ -73,6 +73,21 @@ def data_root() -> str:
     return os.path.join(base, "dubflow")
 
 
+def cache_root() -> str:
+    """Thư mục đệm dùng chung: ảnh UI, câu mẫu nghe thử, hồ sơ CapCut, nháp GUI.
+
+    os.path.expanduser("~") trả về nguyên chuỗi "~" khi máy không có
+    HOME/USERPROFILE/HOMEDRIVE/HOMEPATH (hay gặp ở tiến trình dịch vụ, CI và
+    môi trường bị lược biến). Ghép thẳng vào đường dẫn thì mọi tệp đệm rơi vào
+    một thư mục tên "~" ngay trong thư mục làm việc hiện tại. Thư mục đệm vốn
+    dùng rồi bỏ nên thay bằng thư mục tạm của hệ thống là đủ.
+    """
+    home = os.path.expanduser("~")
+    if home == "~" or not os.path.isabs(home):
+        home = tempfile.gettempdir()
+    return os.path.join(home, ".voxdub_cache")
+
+
 #: Venv Demucs được cài riêng để không kéo torch vào môi trường app chính.
 DEMUCS_VENVS = (".venv-demucs", ".venv-gpu")
 

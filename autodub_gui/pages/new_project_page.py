@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 
 from autodub.media.subtitle import PRESET_CHOICES
 from autodub.pipeline import DubRequest, DubResult
+from autodub.utils import cache_root
 from autodub_gui import dub_constants as consts
 from autodub_gui import icons, tokens
 from autodub_gui.log_text import Narrator, error_line
@@ -74,7 +75,7 @@ _EXPORT_INDEX = 5
 
 def cache_dir() -> str:
     """Thư mục lưu bản nháp và dữ liệu tạm của giao diện."""
-    path = os.path.join(os.path.expanduser("~"), ".voxdub_cache")
+    path = cache_root()
     os.makedirs(path, exist_ok=True)
     return path
 

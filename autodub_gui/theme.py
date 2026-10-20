@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os as _os
 
+from autodub.utils import cache_root as _cache_root
 from autodub_gui import tokens as _t
 
 # -- Tên cũ giữ cho tương thích ngược (gỡ dần ở Giai đoạn 8) ----------
@@ -62,7 +63,7 @@ def _triangle_asset(name: str, w: int, h: int, color: str, *,
     from PySide6.QtCore import Qt as _Qt
     from PySide6.QtGui import QColor, QImage, QPainter, QPolygonF
 
-    folder = _os.path.join(_os.path.expanduser("~"), ".voxdub_cache", "ui")
+    folder = _os.path.join(_cache_root(), "ui")
     _os.makedirs(folder, exist_ok=True)
     path = _os.path.join(folder, f"{name}.png")
     image = QImage(w, h, QImage.Format.Format_ARGB32)

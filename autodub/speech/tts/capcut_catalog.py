@@ -16,7 +16,7 @@ import os
 import uuid
 
 from autodub.speech.tts.capcut_api.config import DEFAULT_DEVICE, catalog_file
-from autodub.utils import save_json_atomic
+from autodub.utils import cache_root, save_json_atomic
 
 #: Ngôn ngữ duy nhất app dùng — Voice.json còn nhiều giọng ngoại ngữ khác.
 LANG = "vi-VN"
@@ -96,7 +96,7 @@ def lookup(name: str) -> dict | None:
 
 def device_file() -> str:
     """Nơi cất hồ sơ thiết bị CapCut (ghi được cả khi chạy từ bản đóng gói)."""
-    return os.path.join(os.path.expanduser("~"), ".voxdub_cache",
+    return os.path.join(cache_root(),
                         "capcut_device.json")
 
 

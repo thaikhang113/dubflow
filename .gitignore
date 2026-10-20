@@ -91,6 +91,8 @@ docs/analysis/
 
 # Cache của công cụ (xóa rồi tạo lại, không cần commit)
 .ruff_cache/
+~/
+.voxdub_cache/
 undefined/
 
 # Thư mục do công cụ khác tạo trên máy này
