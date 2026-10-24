@@ -31,6 +31,12 @@ Build and maintain DubFlow: local Vietnamese video dubbing desktop app.
 - `qa/gui_walkthrough.py` và `qa/commit_safety_check.py` trước mỗi commit
 
 ## Latest Verification
+- 2026-10-25: Phát hành 3.0.34 — Vá cầu OpenClaw, giữ nguyên giá trị `.env`, nút Dừng cắt được các lượt ffmpeg song song và lượt xuất phụ đề.
+  + OpenClaw: `_manifest_path` kiểm tra đường dẫn ĐÃ GIẢI nên `..\..\openclaw` không còn đọc/ghi được ngoài `batches/` (trước đó đọc được cả `openclaw.json` giữ token); manifest thiếu `job_ids` trả 4xx thay vì 500; import hỏng trả 500 thay vì ngắt kết nối.
+  + `.env`: chỉ trích dẫn khi python-dotenv thực sự cần, nên glossary/context không còn bị cắt tại ` #` và giá trị bắt đầu bằng dấu nháy không còn mất.
+  + Hủy: ba pool ffmpeg (`slow_segments`, `postprocess_voice_clips`, atempo) và lượt căn phụ đề sao chép scope hủy sang luồng công nhân; clip hậu kỳ ghi qua tệp tạm nên bản dở không bị tái dùng.
+  + `mcp_server.py` đọc `openclaw.json` của app đang chạy thay vì đường dẫn phát triển cố định — hết 401.
+  + Xác minh: `python -m pytest -q` → 1274 passed, 1 skipped; `ruff check` sạch; probe trước/sau ở `qa/work/probe_p34_scope_threadpool.py`, `qa/work/probe_p34_cfg_roundtrip.py`, `qa/work/probe_p34_http_traversal.py`.
 - 2026-10-01: Phát hành 3.0.32 — Nâng cấp VieNeu TTS 3.8.3, tích hợp công cụ AI/MCP xóa phụ đề cứng (VSR) và bôi mờ tùy biến.
   + Nâng cấp VieNeu TTS 3.8.3: bổ sung nút 1-click "Cập nhật VieNeu TTS" trên GUI (`VoiceSettingsPanel`), hỗ trợ lượng tử hóa INT8 trên CPU (`VIENEU_PRECISION`: `fp32` / `int8`), tăng tốc độ đọc ~1.6x và mở rộng lên 25 giọng đọc mẫu.
   + Mở rộng hệ thống điều khiển AI (OpenClaw & MCP Server):
