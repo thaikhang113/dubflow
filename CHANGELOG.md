@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.0.34 - 2026-10-25
+
+### Fixed
+
+- Stop now terminates the parallel ffmpeg passes (slow segments, voice post-processing, tempo fit) and the optional subtitle alignment; each pool copies the calling thread's cancellation scope into its workers.
+- Voice post-processing writes the raw-clip fallback atomically, so an interrupted run cannot leave a truncated file at the reusable clip path.
+- The subtitle export worker releases its ffmpeg work when the user presses Stop.
+- The OpenClaw bridge rejects batch ids that resolve outside its queue directory, answers malformed batch manifests with 404 instead of 500, and returns an error body when its tool module cannot be imported instead of dropping the connection.
+- Free-text `.env` values (translation glossary, context, style notes, domain) survive a save/load round trip: everything after ` #` used to be dropped silently and a value starting with a quote used to be lost entirely.
+- Deleting a project no longer freezes the window; the delete runs on a worker thread and failures surface as a toast.
+- The MCP bridge reads the running app's own `openclaw.json` instead of a fixed development path, so its tool calls no longer fail with 401.
+- Package, GUI, installer and lockfile versions are synchronized to 3.0.34.
+
 ## 3.0.33 - 2026-10-20
 
 ### Added
