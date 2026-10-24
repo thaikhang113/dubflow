@@ -50,9 +50,12 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _authorized(self) -> bool:
         value = self.headers.get("Authorization", "")
+        # So sánh dạng bytes: compare_digest từ chối chuỗi str có ký tự ngoài
+        # ASCII (header rác từ client), và lỗi TypeError đó làm socketserver
+        # ngắt kết nối thay vì trả về 401.
         return secrets.compare_digest(
-            value.removeprefix("Bearer ").strip(),
-            self.server.runtime.token,
+            value.removeprefix("Bearer ").strip().encode("utf-8"),
+            self.server.runtime.token.encode("utf-8"),
         )
 
     def _json_body(self) -> dict:
@@ -69,13 +72,20 @@ class _Handler(BaseHTTPRequestHandler):
         return payload
 
     def _dispatch(self, method: str) -> None:
-        # Nhập cục bộ: openclaw_tool kéo theo cả pipeline, không cần nạp
-        # sớm khi tiến trình chỉ khởi động server.
-        from autodub.openclaw_tool import BatchNotFound
-
         runtime = self.server.runtime
         if not self._authorized():
             self._reply(401, {"ok": False, "error": "Token không hợp lệ"})
+            return
+
+        # Nhập cục bộ: openclaw_tool kéo theo cả pipeline, không cần nạp sớm
+        # khi tiến trình chỉ khởi động server. Nhưng import hỏng vẫn phải trả
+        # lời được bằng HTTP: để nó ném ra ngoài là client chỉ thấy kết nối bị
+        # ngắt, không có phản hồi nào để đọc.
+        try:
+            from autodub.openclaw_tool import BatchNotFound
+        except Exception as exc:  # noqa: BLE001 - phải trả 500, không ngắt socket
+            self._reply(500, {"ok": False,
+                              "error": f"{type(exc).__name__}: {exc}"})
             return
 
         path = urlsplit(self.path).path.rstrip("/") or "/"

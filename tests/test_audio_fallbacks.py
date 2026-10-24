@@ -79,6 +79,10 @@ def test_postprocess_failure_keeps_raw_clip_and_counts(tmp_path):
         assert audio.postprocess_voice_clip(src, dst) is False
 
     assert os.path.exists(dst)
+    # Bản sao dự phòng phải ghi qua tệp tạm: tệp ở tên tái dùng luôn trọn vẹn.
+    with open(src, "rb") as fh_src, open(dst, "rb") as fh_dst:
+        assert fh_dst.read() == fh_src.read()
+    assert not os.path.exists(dst + ".copy.tmp.wav")
     assert audio.FALLBACKS.snapshot()["postprocess_failed"] == [42]
 
 

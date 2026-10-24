@@ -1,8 +1,6 @@
 """Trang Dự án của tôi: tìm kiếm, lọc, sắp xếp và phân trang."""
 from __future__ import annotations
 
-import shutil
-
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -57,6 +55,7 @@ class ProjectsPage(BasePage):
         super().__init__(parent)
         self._settings_provider = settings_provider
         self._scan_worker = None
+        self._delete_worker = None
         self._all: list = []
         self._filtered: list = []
         self._hidden: set[str] = set()
@@ -269,17 +268,26 @@ class ProjectsPage(BasePage):
         if not projects_mod.is_within_directory(project.work_dir, output_dir):
             TOASTS.error("Project nằm ngoài thư mục output, không xóa.")
             return
-        try:
-            shutil.rmtree(project.work_dir)
-        except OSError as e:
-            TOASTS.error(
-                "Không xóa được thư mục dự án. Có thể một tệp trong đó đang "
-                "được chương trình khác mở — hãy đóng lại rồi thử lần nữa.",
-                detail=str(e))
+        from autodub_gui.workers import ProjectDeleteWorker
+
+        if self._delete_worker is not None and self._delete_worker.isRunning():
             return
+        worker = ProjectDeleteWorker(project.work_dir, self)
+        worker.done.connect(lambda k=key, t=project.title: self._on_deleted(k, t))
+        worker.failed.connect(self._on_delete_failed)
+        self._delete_worker = worker
+        worker.start()
+
+    def _on_deleted(self, key: str, title: str) -> None:
         self._all = [p for p in self._all if p.key != key]
         self._apply_filters()
-        TOASTS.success(f"Đã xóa dự án «{project.title}» khỏi máy.")
+        TOASTS.success(f"Đã xóa dự án «{title}» khỏi máy.")
+
+    def _on_delete_failed(self, message: str) -> None:
+        TOASTS.error(
+            "Không xóa được thư mục dự án. Có thể một tệp trong đó đang "
+            "được chương trình khác mở — hãy đóng lại rồi thử lần nữa.",
+            detail=message)
 
     # -- Vòng đời ------------------------------------------------------
     def on_breakpoint(self, name: str) -> None:
@@ -290,5 +298,6 @@ class ProjectsPage(BasePage):
         self.search.focus()
 
     def cleanup(self) -> None:
-        if self._scan_worker is not None and self._scan_worker.isRunning():
-            self._scan_worker.wait(2000)
+        for worker in (self._scan_worker, self._delete_worker):
+            if worker is not None and worker.isRunning():
+                worker.wait(2000)

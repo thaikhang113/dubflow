@@ -245,7 +245,16 @@ def _job_payload(job_id: str, link: str, options: dict,
 
 
 def _manifest_path(queue_root: str, batch_id: str) -> Path:
-    return Path(queue_root).expanduser().resolve() / "batches" / f"{batch_id}.json"
+    batches = (Path(queue_root).expanduser().resolve() / "batches").resolve()
+    path = batches / f"{batch_id}.json"
+    # Kiểm tra đường dẫn ĐÃ GIẢI, không kiểm tra chuỗi thô: trên Windows "\"
+    # cũng là dấu phân cách, nên "..\..\openclaw" lọt qua phép thử chỉ tìm "/"
+    # rồi đọc/ghi được tệp ngoài batches/ — kể cả openclaw.json giữ token.
+    try:
+        path.resolve().relative_to(batches)
+    except (OSError, ValueError) as exc:
+        raise BatchNotFound(f"Không tìm thấy batch: {batch_id}") from exc
+    return path
 
 def _write_manifest(path: Path, manifest: dict) -> None:
     temp = path.with_name(path.name + ".part")
@@ -265,9 +274,17 @@ def _rollback_jobs(queue_root: str, jobs: list[dict]) -> None:
 def _read_manifest(queue_root: str, batch_id: str) -> dict:
     path = _manifest_path(queue_root, batch_id)
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        manifest = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise BatchNotFound(f"Không tìm thấy batch: {batch_id}") from exc
+    # Manifest bị cắt cụt hoặc do bản cũ ghi ra vẫn parse được JSON. Thiếu
+    # "job_ids" mà lọt qua đây thì KeyError ở status/cancel/retry rơi xuống
+    # catch-all 500, và client coi 5xx là lỗi tạm thời nên thử lại mãi.
+    if not isinstance(manifest, dict) or not isinstance(
+        manifest.get("job_ids"), list
+    ):
+        raise BatchNotFound(f"Manifest batch không hợp lệ: {batch_id}")
+    return manifest
 
 
 def _read_status(queue_root: str, job_id: str) -> dict:

@@ -156,3 +156,52 @@ def test_runtime_health_check_uses_local_api(tmp_path):
 def test_runtime_health_check_reports_disabled_api(tmp_path):
     runtime = OpenClawRuntime(data_dir=tmp_path)
     assert runtime.check_health() == (False, "DubFlow API đang tắt.")
+
+
+def test_batch_id_traversal_with_backslash_cannot_leave_batches(tmp_path):
+    """Trên Windows "\\" cũng là dấu phân cách: guard chỉ tìm "/" không đủ."""
+    runtime = OpenClawRuntime(data_dir=tmp_path)
+    runtime.start(worker=False)
+    try:
+        outside = tmp_path / "outside_marker.json"
+        original = json.dumps({"batch_id": "OUTSIDE", "job_ids": []})
+        outside.write_text(original, encoding="utf-8")
+
+        status, payload = _request(
+            runtime.endpoint + "/v1/batches/..\\..\\outside_marker",
+            runtime.token)
+        assert 400 <= status < 500
+        assert payload["ok"] is False
+        assert payload.get("batch_id") != "OUTSIDE"
+
+        status, payload = _request(
+            runtime.endpoint + "/v1/batches/..\\..\\outside_marker/cancel",
+            runtime.token, "POST")
+        assert 400 <= status < 500
+        assert payload["ok"] is False
+        assert outside.read_text(encoding="utf-8") == original
+    finally:
+        runtime.stop()
+
+
+def test_manifest_without_job_ids_answers_4xx_not_500(tmp_path):
+    """Manifest cắt cụt phải trả 4xx, không phải KeyError rồi 500."""
+    runtime = OpenClawRuntime(data_dir=tmp_path)
+    runtime.start(worker=False)
+    try:
+        batches = tmp_path / "openclaw_queue" / "batches"
+        batches.mkdir(parents=True, exist_ok=True)
+        (batches / "batch-legacy0001.json").write_text(
+            json.dumps({"batch_id": "batch-legacy0001",
+                        "links": ["https://example.com/a"]}),
+            encoding="utf-8")
+
+        for method, suffix in (("GET", ""), ("POST", "/cancel")):
+            status, payload = _request(
+                runtime.endpoint + "/v1/batches/batch-legacy0001" + suffix,
+                runtime.token, method)
+            assert 400 <= status < 500
+            assert payload["ok"] is False
+            assert "KeyError" not in payload["error"]
+    finally:
+        runtime.stop()

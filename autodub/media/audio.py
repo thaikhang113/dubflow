@@ -7,8 +7,14 @@ from concurrent.futures import ThreadPoolExecutor
 
 from pydub import AudioSegment
 
-from autodub.cancel import run_registered
+from autodub.cancel import (
+    CURRENT_CANCEL_SCOPE,
+    cancel_scope,
+    is_cancel_requested,
+    run_registered,
+)
 from autodub.media.video import probe_duration_s
+from autodub.progress import PipelineCancelled
 from autodub.resources import FFMPEG_SLOTS
 from autodub.utils import ensure_dir, ffmpeg_timeout_s, seg_wav_path, setup_logging
 
@@ -198,25 +204,41 @@ def slow_segments(
         logger.warning(f"VOICE_SPEED={slow_factor} ngoài khoảng "
                        f"[0.5, 2.0] của atempo — dùng {factor}")
 
+    # ThreadPoolExecutor KHÔNG mang contextvar sang luồng mới (xem
+    # autodub/pipeline.py:816-825) nên phạm vi hủy phải chép tay; thiếu nó,
+    # mọi tiến trình atempo ghi danh với scope None và nút Dừng (scope "gui")
+    # không giết được chúng.
+    scope = CURRENT_CANCEL_SCOPE.get()
+
     def _slow_one(seg: dict) -> None:
         src = seg_wav_path(src_dir, seg["id"])
         if not os.path.exists(src):
             return
         dst = os.path.join(dst_dir, os.path.basename(src))
-        # Resume-safe: đầu ra còn mới hơn nguồn thì khỏi chạy lại ffmpeg —
-        # chạy lại video 900 câu không tốn thêm 900 lệnh atempo vô ích.
+        # Resume-safe: đầu ra còn mới hơn nguồn VÀ đúng thời lượng kỳ vọng thì
+        # khỏi chạy lại ffmpeg — chạy lại video 900 câu không tốn thêm 900 lệnh
+        # atempo vô ích. Phải so thời lượng chứ không chỉ size/mtime: header
+        # WAV của một clip bị Dừng cắt ngang vẫn khai đủ độ dài (wav_duration_s
+        # chỉ đọc header) nên size/mtime một mình coi nó là xong.
         if (os.path.exists(dst) and os.path.getsize(dst) > 0
                 and os.path.getmtime(dst) >= os.path.getmtime(src)):
-            return
+            want = (wav_duration_s(src) or 0.0) / factor
+            have = wav_duration_s(dst) or -1.0
+            if want <= 0 or abs(have - want) < 0.05:
+                return
         try:
+            # Ghi ra tên tạm rồi mới thay vào chỗ cache (như
+            # apply_atempo/postprocess_voice_clip): Dừng giữa chừng không để
+            # lại file dở ở đúng cái tên mà lần chạy sau coi là đã xong.
+            tmp = dst + ".tmp.wav"
             with FFMPEG_SLOTS:
                 result = run_registered(
                     ["ffmpeg", "-y", "-i", src,
-                     "-filter:a", f"atempo={factor}", dst],
+                     "-filter:a", f"atempo={factor}", tmp],
                     capture_output=True, text=True, timeout=_SEG_TIMEOUT_S,
                 check=False)
-            failed = (result.returncode != 0 or not os.path.exists(dst)
-                      or os.path.getsize(dst) == 0)
+            failed = (result.returncode != 0 or not os.path.exists(tmp)
+                      or os.path.getsize(tmp) == 0)
             err = result.stderr[:120] if failed else ""
         except subprocess.TimeoutExpired:
             failed, err = True, f"treo quá {_SEG_TIMEOUT_S}s"
@@ -226,10 +248,20 @@ def slow_segments(
             logger.error(f"atempo lỗi trên {os.path.basename(src)} — "
                          f"giữ tốc độ gốc ({err})")
             FALLBACKS.add("atempo_failed", seg["id"])
-            shutil.copyfile(src, dst)
+            shutil.copyfile(src, tmp)
+        os.replace(tmp, dst)
+
+    def _scoped(seg: dict) -> None:
+        with cancel_scope(scope):
+            # Nhiệm vụ còn nằm trong hàng đợi của pool VẪN chạy sau khi map
+            # ném lỗi hủy, nên kiểm ở đây: không có nhịp này, một video đã
+            # Dừng vẫn spawn đủ số ffmpeg còn lại trước khi pool đóng.
+            if is_cancel_requested(scope):
+                raise PipelineCancelled("Pipeline cancelled by user")
+            _slow_one(seg)
 
     with ThreadPoolExecutor(max_workers=max_workers or _FFMPEG_WORKERS) as pool:
-        list(pool.map(_slow_one, segments))
+        list(pool.map(_scoped, segments))
     return dst_dir
 
 
@@ -306,7 +338,11 @@ def postprocess_voice_clip(src: str, dst: str,
         if os.path.exists(tmp):
             os.remove(tmp)
         if src != dst:
-            shutil.copyfile(src, dst)
+            # Ghi qua tệp tạm rồi thay tên: một lượt bị Dừng giữa chừng sẽ không
+            # để lại bản sao dở ở đúng tên được tái dùng (xem P-2).
+            copy_tmp = dst + ".copy.tmp.wav"
+            shutil.copyfile(src, copy_tmp)
+            os.replace(copy_tmp, dst)
         return False
     os.replace(tmp, dst)
     return True
@@ -323,6 +359,8 @@ def postprocess_voice_clips(segments: list[dict], src_dir: str, dst_dir: str,
     source — resume-safe like every other per-segment cache.
     """
     ensure_dir(dst_dir)
+    # Chép tay phạm vi hủy vào luồng pool — lý do như trong slow_segments.
+    scope = CURRENT_CANCEL_SCOPE.get()
 
     def _one(seg: dict) -> None:
         src = seg_wav_path(src_dir, seg["id"])
@@ -346,8 +384,16 @@ def postprocess_voice_clips(segments: list[dict], src_dir: str, dst_dir: str,
                 n = done
             on_done(n, len(segments))
 
+    def _scoped(seg: dict) -> None:
+        with cancel_scope(scope):
+            # Nhiệm vụ còn trong hàng đợi của pool VẪN chạy sau khi map ném
+            # lỗi hủy — kiểm ở đây để video đã Dừng không spawn thêm ffmpeg.
+            if is_cancel_requested(scope):
+                raise PipelineCancelled("Pipeline cancelled by user")
+            _tracked(seg)
+
     with ThreadPoolExecutor(max_workers=max_workers or _FFMPEG_WORKERS) as pool:
-        list(pool.map(_tracked, segments))
+        list(pool.map(_scoped, segments))
     return dst_dir
 
 

@@ -61,6 +61,21 @@ def _source(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
+def test_project_delete_runs_off_the_gui_thread() -> None:
+    """Xóa dự án phải qua worker: rmtree trên luồng giao diện làm cửa sổ đứng."""
+    page = _source("autodub_gui/pages/projects_page.py")
+    assert "shutil.rmtree" not in page
+    assert "ProjectDeleteWorker" in page
+    assert "shutil.rmtree" in _source("autodub_gui/workers.py")
+
+
+def test_export_subs_worker_cancel_kills_align_ffmpeg() -> None:
+    """Nhánh ASS gọi align_segments → ffmpeg, nên Dừng phải giết theo scope gui."""
+    source = _source("autodub_gui/workers.py")
+    block = source.split("class ExportSubsFileWorker", 1)[1].split("\nclass ", 1)[0]
+    assert 'cancel_processes(scope="gui")' in block
+
+
 def test_translation_model_updates_labeled_line_edit_through_public_api() -> None:
     source = _source("autodub_gui/pages/translate_tool_page.py")
     assert "widget.setText(model)" not in source

@@ -520,6 +520,31 @@ class ProjectScanWorker(QThread):
             self.failed.emit(str(e))
 
 
+class ProjectDeleteWorker(QThread):
+    """Xóa thư mục dự án ở luồng nền.
+
+    Một dự án có thể chứa cả video kết quả lẫn các tệp trung gian, nên xóa
+    trên luồng giao diện sẽ làm cửa sổ đứng im cho tới khi xóa xong.
+    """
+
+    done = Signal()
+    failed = Signal(str)
+
+    def __init__(self, work_dir: str, parent=None):
+        super().__init__(parent)
+        self._work_dir = work_dir
+
+    def run(self) -> None:
+        import shutil
+
+        try:
+            shutil.rmtree(self._work_dir)
+        except OSError as e:
+            self.failed.emit(str(e))
+            return
+        self.done.emit()
+
+
 class ThumbnailWorker(QRunnable):
     """Tạo một ảnh đại diện bằng ffmpeg, chạy trong nhóm luồng dùng chung."""
 
@@ -1030,6 +1055,9 @@ class ExportSubsFileWorker(QThread):
 
     def cancel(self) -> None:
         self._cancel_event.set()
+        # Nhánh ASS gọi align_segments → ffmpeg; không giết theo scope thì nút
+        # Dừng không cắt được lượt căn phụ đề đó (xem autodub/speech/align.py).
+        cancel_processes(scope="gui")
 
     def run(self) -> None:
         handler = attach_gui_logging(self.log)

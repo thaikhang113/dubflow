@@ -23,6 +23,7 @@ import json
 import os
 from concurrent.futures import ThreadPoolExecutor
 
+from autodub.cancel import CURRENT_CANCEL_SCOPE, is_cancel_requested
 from autodub.progress import PipelineCancelled
 from autodub.utils import save_json_atomic, seg_wav_path, setup_logging
 
@@ -196,9 +197,20 @@ def align_segments(
                        "chữ sẽ chia đều theo thời lượng câu")
         return out
 
+    # Phạm vi hủy của nơi gọi: ThreadPoolExecutor không mang contextvar sang
+    # luồng mới (xem autodub/pipeline.py:816-825), không chép tay thì một lệnh
+    # Dừng theo scope "gui" không tới được các luồng đang nghe clip.
+    align_scope = CURRENT_CANCEL_SCOPE.get()
+
     def _one(item, model=model):
         seg, wav, dur, key = item
         sid = seg.get("id")
+        # Dừng rồi thì đừng nghe thêm clip nào: model chạy trong tiến trình
+        # (faster-whisper) không có tiến trình con nào để ``cancel_processes``
+        # giết, nên nếu không tự kiểm ở đây thì đường 1 luồng vẫn đọc hết
+        # video đã bị Dừng.
+        if is_cancel_requested(align_scope):
+            raise PipelineCancelled("Đã hủy trong lúc canh phụ đề theo giọng đọc")
         text_words = str(seg.get(text_field, "")).split()
         try:
             asr = _asr_words(model, wav)
@@ -233,6 +245,11 @@ def align_segments(
                 "Đã hủy trong lúc canh phụ đề theo giọng đọc")
     else:
         done = [_one(item) for item in todo]
+
+    # Lượt đã bị Dừng thì không ghi cache: mốc của một lượt bỏ dở (phần lớn
+    # câu rơi về None) mà vào cache thì lần chạy sau thừa hưởng luôn.
+    if is_cancel_requested(align_scope):
+        raise PipelineCancelled("Đã hủy trong lúc canh phụ đề theo giọng đọc")
 
     new_cache_entries: dict = {}
     n_ok = 0

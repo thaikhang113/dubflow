@@ -8,6 +8,7 @@ không bị mất.
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 
 from autodub.utils import data_root
@@ -16,6 +17,13 @@ ENV_PATH = os.path.join(data_root(), ".env")
 
 _TRUE_WORDS = ("1", "true", "yes", "on")
 _FALSE_WORDS = ("0", "false", "no", "off")
+
+# python-dotenv (autodub/config.py đọc tệp này) cắt giá trị tại " #" và coi
+# dấu nháy đứng đầu là giá trị được trích dẫn, nên chỉ hai trường hợp đó cần
+# trích dẫn. Mọi thứ khác phải để nguyên: trong giá trị được trích dẫn, dotenv
+# nội suy ${TÊN_BIẾN} và giải mã \n, còn để nguyên thì trả lại đúng từng ký tự.
+_NEEDS_QUOTE = re.compile(r'^["\']|\s#')
+_UNESCAPE = re.compile(r"\\\\|\\\"")
 
 
 def read_env(path: str = ENV_PATH) -> dict[str, str]:
@@ -28,8 +36,22 @@ def read_env(path: str = ENV_PATH) -> dict[str, str]:
             line = line.strip()
             if line and not line.startswith("#") and "=" in line:
                 key, _, val = line.partition("=")
-                values[key.strip()] = val.strip()
+                values[key.strip()] = _unescape(val.strip())
     return values
+
+
+def _unescape(val: str) -> str:
+    """Giải mã giá trị trích dẫn do write_env ghi, đối xứng với _encode()."""
+    if len(val) < 2 or not (val.startswith('"') and val.endswith('"')):
+        return val
+    return _UNESCAPE.sub(lambda m: m.group(0)[1], val[1:-1])
+
+
+def _encode(val: str) -> str:
+    """Ghi giá trị sao cho python-dotenv đọc lại đúng những gì người dùng gõ."""
+    if not _NEEDS_QUOTE.search(val):
+        return val
+    return '"' + val.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 def write_env(updates: dict[str, str], path: str = ENV_PATH) -> None:
@@ -48,13 +70,13 @@ def write_env(updates: dict[str, str], path: str = ENV_PATH) -> None:
         if stripped and not stripped.startswith("#") and "=" in stripped:
             key = stripped.partition("=")[0].strip()
             if key in remaining:
-                lines[i] = f"{key}={remaining.pop(key)}"
+                lines[i] = f"{key}={_encode(remaining.pop(key))}"
 
     if remaining:
         if lines and lines[-1].strip():
             lines.append("")
         for key, val in remaining.items():
-            lines.append(f"{key}={val}")
+            lines.append(f"{key}={_encode(val)}")
 
     parent = os.path.dirname(os.path.abspath(path)) or "."
     os.makedirs(parent, exist_ok=True)

@@ -1,18 +1,38 @@
 import json
+import os
 import sys
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from autodub.utils import data_root  # noqa: E402
+
+
+def _config_candidates():
+    """Các vị trí openclaw.json mà app có thể đang dùng, theo thứ tự ưu tiên.
+
+    Cầu MCP là tiến trình riêng: nó chạy từ source (``data_root()`` trả về thư
+    mục source) trong khi app đang chạy thường là bản đóng gói (thư mục người
+    dùng — autodub/utils.py:55). Chỉ đọc một chỗ thì dễ trúng bản cũ, sai cổng
+    và sai token, nên phải thử cả hai.
+    """
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+        yield Path(base) / "DubFlow" / "openclaw.json"
+    else:
+        base = os.environ.get("XDG_DATA_HOME") or os.path.expanduser(
+            "~/.local/share")
+        yield Path(base) / "dubflow" / "openclaw.json"
+    yield Path(data_root()) / "openclaw.json"
+
+
 def _get_api_config():
-    config_path = Path("D:/dubflow/openclaw.json")
-    if not config_path.exists():
-        # Fallback to local
-        config_path = Path("D:/dubflow/data/openclaw.json") # Just a fallback
-    if config_path.exists():
-        try:
-            return json.loads(config_path.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+    for config_path in _config_candidates():
+        if config_path.exists():
+            try:
+                return json.loads(config_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
     return {}
 
 def call_openclaw(action: str, payload: dict):

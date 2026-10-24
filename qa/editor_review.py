@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -50,20 +51,32 @@ def probe(path):
 
 
 def newest_project():
+    """Du an moi nhat tinh theo mtime cua VIDEO, khong phai mtime thu muc.
+
+    mtime thu muc doi khi chinh script nay ghi/xoa tep trong do, nen ban cu
+    luon tu chon lai chinh no roi ket lai o mot du an doi cu.
+    """
     found = []
     for root, _dirs, files in os.walk(RUNS):
+        if os.path.basename(root).startswith("_"):
+            continue
         if "dubbed_video.mp4" in files and os.path.isfile(
                 os.path.join(root, "data", "transcript_vi.json")):
-            found.append(root)
-    return sorted(found, key=os.path.getmtime)[-1] if found else ""
+            found.append((os.path.getmtime(
+                os.path.join(root, "dubbed_video.mp4")), root))
+    return sorted(found)[-1][1] if found else ""
 
 
 def main() -> int:
-    work = newest_project()
-    if not work:
+    src = newest_project()
+    if not src:
         print("khong co du an de test editor - chay e2e_review truoc")
         return 1
-    print(f"du an: {work}", flush=True)
+    # Review tren ban sao: giu nguyen du an goc, va khong tu chon lai chinh no.
+    work = os.path.join(RUNS, "_editor_work")
+    shutil.rmtree(work, ignore_errors=True)
+    shutil.copytree(src, work)
+    print(f"du an: {src}\nban sao review: {work}", flush=True)
     settings = Settings.load(override=True)
     settings.asr_engine = "whisper"
     settings.whisper_model = "medium"
@@ -171,7 +184,7 @@ def main() -> int:
     print(f"=== {len(FINDINGS)} phat hien", flush=True)
     with open(os.path.join(ROOT, "qa", "findings_editor.json"), "w",
               encoding="utf-8") as handle:
-        json.dump({"project": work, "findings": FINDINGS}, handle,
+        json.dump({"project": src, "copy": work, "findings": FINDINGS}, handle,
                   ensure_ascii=False, indent=2)
     return 0
 

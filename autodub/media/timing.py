@@ -28,6 +28,8 @@ import shutil
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
+from autodub.cancel import CURRENT_CANCEL_SCOPE, cancel_scope, is_cancel_requested
+from autodub.progress import PipelineCancelled
 from autodub.utils import ensure_dir, seg_wav_path, setup_logging
 
 logger = setup_logging("autodub.timing")
@@ -162,6 +164,12 @@ def apply_soft_timing(
     if needs_render:
         out_dir = ensure_dir(dst_dir)
 
+        # ThreadPoolExecutor KHÔNG mang contextvar sang luồng mới (xem
+        # autodub/pipeline.py:816-825) nên phạm vi hủy phải chép tay; thiếu nó,
+        # mọi lệnh atempo ở đây ghi danh với scope None và nút Dừng (scope
+        # "gui") không giết được chúng.
+        scope = CURRENT_CANCEL_SCOPE.get()
+
         def _one(i: int) -> None:
             seg = segments[i]
             src = seg_wav_path(src_dir, seg["id"])
@@ -183,8 +191,16 @@ def apply_soft_timing(
                 # Copy thay vì link: dst_dir có thể bị xoá độc lập.
                 shutil.copyfile(src, dst)
 
+        def _scoped(i: int) -> None:
+            with cancel_scope(scope):
+                # Nhiệm vụ còn nằm trong hàng đợi của pool VẪN chạy sau khi
+                # map ném lỗi hủy, nên kiểm ở đây.
+                if is_cancel_requested(scope):
+                    raise PipelineCancelled("Pipeline cancelled by user")
+                _one(i)
+
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            list(pool.map(_one, range(len(segments))))
+            list(pool.map(_scoped, range(len(segments))))
 
     # Mutate start/end lên timeline THẬT (sau shift + nén) — SRT, merge và
     # total_duration cùng nhìn một sự thật. GIỮ NGUYÊN seg["duration"] (thời
