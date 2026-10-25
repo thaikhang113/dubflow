@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.0.36 - 2026-10-25
+
+### Added & Improved
+
+- Automatic WBI fallback for Bilibili videos (`autodub/media/bilibili.py`): bypasses the yt-dlp `Unable to extract initial state` defect when HTML lacks `__INITIAL_STATE__`, dynamically querying the official Bilibili WBI API for video/audio streams across BV and AV identifiers without requiring login or cookies.
+- Cancellation scope propagation in TTS pipeline (`autodub/pipeline.py`): `ThreadPoolExecutor` workers now inherit `CURRENT_CANCEL_SCOPE`, ensuring all sub-processes are terminated cleanly when Stop is triggered in GUI or CLI.
+- Resilient voice map persistence (`.voice_map.json`): voice mapping is now updated periodically during synthesis and in the termination handler, allowing interrupted long video runs (>1,000 segments) to resume immediately without re-rendering.
+- Comprehensive test coverage for Bilibili WBI API fallback and TTS thread pool cancel scope inheritance (`tests/test_bilibili.py`, `tests/test_cancel_scope.py`).
+- Package, GUI, installer and lockfile versions are synchronized to 3.0.36.
+
 ## 3.0.35 - 2026-10-25
 
 ### Verified & Hardened

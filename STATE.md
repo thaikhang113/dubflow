@@ -31,6 +31,11 @@ Build and maintain DubFlow: local Vietnamese video dubbing desktop app.
 - `qa/gui_walkthrough.py` và `qa/commit_safety_check.py` trước mỗi commit
 
 ## Latest Verification
+- 2026-10-25: Phát hành 3.0.36 — Tự động fallback WBI API cho Bilibili, kế thừa scope hủy trong ThreadPoolExecutor của TTS, và lưu định kỳ .voice_map.json cho video siêu dài.
+  + Fallback WBI API cho Bilibili (`autodub/media/bilibili.py`): khắc phục hoàn toàn lỗi `Unable to extract initial state` của yt-dlp khi Bilibili không nhúng `__INITIAL_STATE__` vào HTML; tự động ký WBI và truy vấn API detail chính thức lấy stream video/audio mà không cần đăng nhập hay cookie. Hỗ trợ cả BVID và AID, các link b23.tv.
+  + Kế thừa scope hủy trong TTS pool (`autodub/pipeline.py`): sao chép `CURRENT_CANCEL_SCOPE` sang các luồng công nhân bên trong `ThreadPoolExecutor` của `_synthesize_segments`, đảm bảo hủy sạch tiến trình con khi bấm Stop trên video hàng nghìn câu.
+  + Lưu định kỳ bản đồ giọng (`.voice_map.json`): ghi đĩa định kỳ và trong bộ xử lý thoát, giúp tiếp tục ngay lập tức các đoạn đã tổng hợp khi chạy lại video dài (>1.000 câu).
+  + Kiểm thử thực tế trên video Bilibili tiếng Trung dài 68.9 phút (`BV1E2Hu6EEKE`, 1.690 câu thoại) hoàn tất 100% các bước ASR, Dịch, TTS và Ghép. Toàn bộ 1.280 tests tự động (1.279 passed, 1 skipped).
 - 2026-10-25: Phát hành 3.0.35 — Kiểm chứng thực tế đầu cuối (E2E) trên video thật từ Internet, kiểm tra nút Dừng trực tiếp trên tiến trình ffmpeg thật, đồng bộ hoá toàn bộ phiên bản phát hành.
   + Kiểm thử video thật (`qa/real_video_runner.py`): kiểm chứng 100% video tiếng Việt 30s 1080p (Whisper large-v3 ASR -> CapCut Thanh Lan TTS -> video AMF 4.53 MB) và video tiếng Anh 19s (ASR -> dịch sang tiếng Việt -> TTS -> video 0.41 MB).
   + Kiểm thử nút Dừng thực tế: ngắt pipeline ngay giữa giai đoạn TTS trên video thật; phản hồi tức thì trong 0.04s, giải phóng sạch luồng công nhân, 0 tiến trình ffmpeg sống sót.
