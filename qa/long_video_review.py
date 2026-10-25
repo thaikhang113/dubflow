@@ -135,8 +135,7 @@ def main() -> int:
             if os.path.isfile(src_j):
                 with open(src_j, encoding="utf-8") as handle:
                     segs = _json.load(handle)
-                print(f"ASR thay {len(segs)} cau trong video 10 phut",
-                      flush=True)
+                print(f"ASR thay {len(segs)} cau trong {name}", flush=True)
                 for s in segs:
                     s["text_vi"] = s.get("text", "")
                 with open(dst_j, "w", encoding="utf-8") as handle:
