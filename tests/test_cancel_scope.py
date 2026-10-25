@@ -499,3 +499,73 @@ def test_align_does_not_cache_a_cancelled_pass(monkeypatch, tmp_path) -> None:
         clear_cancel_request()
 
     assert not os.path.exists(cache_path)
+
+
+def test_tts_pool_inherits_cancel_scope(tmp_path) -> None:
+    """ThreadPoolExecutor trong _synthesize_segments phai mang CURRENT_CANCEL_SCOPE."""
+    from autodub.config import Settings
+    from autodub.languages import get_target
+    from autodub.pipeline import DubPipeline
+    from autodub.speech.tts.base import TTSResult
+
+    class _ScopeRecorderSynth:
+        def __init__(self):
+            self.scopes: list[str | None] = []
+
+        def synthesize(self, text, output_path, target_duration=None):
+            self.scopes.append(CURRENT_CANCEL_SCOPE.get())
+            _write_wav(output_path, 0.5)
+            return TTSResult(
+                path=output_path,
+                actual_duration=0.5,
+                speed_adjusted=False,
+                rate_applied="1.0",
+            )
+
+    pipeline = DubPipeline(Settings())
+    synth = _ScopeRecorderSynth()
+    target = get_target("vi")
+    segs = [
+        {"id": 1, "text_vi": "mot", "duration": 1.0, "start": 0.0, "end": 1.0},
+        {"id": 2, "text_vi": "hai", "duration": 1.0, "start": 1.0, "end": 2.0},
+    ]
+    clear_cancel_request()
+    with cancel_scope("gui"):
+        pipeline._synthesize_segments(target, "Thanh Lan", segs, str(tmp_path), synth=synth)
+
+    assert synth.scopes == ["gui", "gui"]
+
+
+def test_tts_pool_saves_voice_map_periodically(tmp_path) -> None:
+    """Bản đồ giọng (.voice_map.json) được ghi định kỳ và khi hoàn thành/huỷ."""
+    from autodub.config import Settings
+    from autodub.languages import get_target
+    from autodub.pipeline import DubPipeline
+    from autodub.speech.tts.base import TTSResult
+    from autodub.utils import VOICE_MAP_NAME, load_voice_map
+
+    class _StubSynth:
+        def synthesize(self, text, output_path, target_duration=None):
+            _write_wav(output_path, 0.5)
+            return TTSResult(
+                path=output_path,
+                actual_duration=0.5,
+                speed_adjusted=False,
+                rate_applied="1.0",
+            )
+
+    pipeline = DubPipeline(Settings())
+    synth = _StubSynth()
+    target = get_target("vi")
+    segs = [
+        {"id": 1, "text_vi": "mot", "duration": 1.0, "start": 0.0, "end": 1.0},
+        {"id": 2, "text_vi": "hai", "duration": 1.0, "start": 1.0, "end": 2.0},
+    ]
+    pipeline._synthesize_segments(target, "Thanh Lan", segs, str(tmp_path), synth=synth)
+
+    vmap_file = os.path.join(str(tmp_path), VOICE_MAP_NAME)
+    assert os.path.exists(vmap_file)
+    mapping = load_voice_map(str(tmp_path))
+    assert mapping.get("1") == "Thanh Lan"
+    assert mapping.get("2") == "Thanh Lan"
+

@@ -5,7 +5,7 @@ import os
 import re
 from urllib.parse import parse_qs, urlparse
 
-_BVID_RE = re.compile(r"/video/(BV[0-9A-Za-z]+)", re.IGNORECASE)
+_BVID_RE = re.compile(r"/video/((?:BV[0-9A-Za-z]+)|(?:av\d+))", re.IGNORECASE)
 _AUTH_COOKIES = {"SESSDATA", "DedeUserID", "bili_jct"}
 _PATCHED_BILIBILI = False
 
@@ -28,7 +28,10 @@ def patch_bilibili_extractor() -> None:
         orig_search_json = BiliBiliIE._search_json
 
         def _patched_search_json(self, expr, webpage, name, video_id, *args, **kwargs):
-            res = orig_search_json(self, expr, webpage, name, video_id, *args, **kwargs)
+            try:
+                res = orig_search_json(self, expr, webpage, name, video_id, *args, **kwargs)
+            except Exception:
+                res = None
             if res is None and name == "initial state":
                 headers = {
                     "User-Agent": (
@@ -38,8 +41,12 @@ def patch_bilibili_extractor() -> None:
                     ),
                     "Referer": "https://www.bilibili.com/",
                 }
-                bvid = video_id if str(video_id).startswith("BV") else f"BV{video_id}"
-                query = {"platform": "web", "bvid": bvid}
+                vid_str = str(video_id or "").strip()
+                if vid_str.isdigit():
+                    query = {"platform": "web", "aid": vid_str}
+                else:
+                    bvid = vid_str if vid_str.upper().startswith("BV") else f"BV{vid_str}"
+                    query = {"platform": "web", "bvid": bvid}
                 signed = self._sign_wbi(query, video_id)
                 detail = self._download_json(
                     "https://api.bilibili.com/x/web-interface/wbi/view/detail",
@@ -67,10 +74,12 @@ def patch_bilibili_extractor() -> None:
 def canonical_url(url: str) -> str:
     value = str(url or "").strip()
     parsed = urlparse(value)
+    host = parsed.netloc.lower()
+    if host in ("bilibili.com", "b23.tv") or host.endswith((".bilibili.com", ".b23.tv")):
+        patch_bilibili_extractor()
     match = _BVID_RE.search(parsed.path)
     if not match:
         return value
-    patch_bilibili_extractor()
     result = f"https://www.bilibili.com/video/{match.group(1)}"
     part = parse_qs(parsed.query).get("p", [""])[0]
     if part.isdigit() and int(part) > 0:
