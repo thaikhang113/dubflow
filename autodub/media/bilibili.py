@@ -7,6 +7,61 @@ from urllib.parse import parse_qs, urlparse
 
 _BVID_RE = re.compile(r"/video/(BV[0-9A-Za-z]+)", re.IGNORECASE)
 _AUTH_COOKIES = {"SESSDATA", "DedeUserID", "bili_jct"}
+_PATCHED_BILIBILI = False
+
+
+def patch_bilibili_extractor() -> None:
+    """Patch yt-dlp's BilibiliIE to handle pages where window.__INITIAL_STATE__ is omitted.
+
+    Bilibili frequently omits server-rendered window.__INITIAL_STATE__ for non-logged-in
+    requests. When this occurs, yt-dlp raises 'Unable to extract initial state' even though
+    the official WBI detail API provides the exact same data structure under data.View.
+    This patch intercepts the missing state and populates videoData from the WBI API response.
+    """
+    global _PATCHED_BILIBILI
+    if _PATCHED_BILIBILI:
+        return
+    try:
+        from yt_dlp.extractor.bilibili import BiliBiliIE
+        from yt_dlp.utils import traverse_obj
+
+        orig_search_json = BiliBiliIE._search_json
+
+        def _patched_search_json(self, expr, webpage, name, video_id, *args, **kwargs):
+            res = orig_search_json(self, expr, webpage, name, video_id, *args, **kwargs)
+            if res is None and name == "initial state":
+                headers = {
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/120.0.0.0 Safari/537.36"
+                    ),
+                    "Referer": "https://www.bilibili.com/",
+                }
+                bvid = video_id if str(video_id).startswith("BV") else f"BV{video_id}"
+                query = {"platform": "web", "bvid": bvid}
+                signed = self._sign_wbi(query, video_id)
+                detail = self._download_json(
+                    "https://api.bilibili.com/x/web-interface/wbi/view/detail",
+                    video_id,
+                    note="Downloading video detail via WBI API fallback",
+                    query=signed,
+                    headers=headers,
+                    fatal=False,
+                )
+                view = traverse_obj(detail, ("data", "View", {dict}))
+                if view:
+                    res = {
+                        "videoData": view,
+                        "upData": traverse_obj(detail, ("data", "Card", "card", {dict})) or {},
+                        "tags": traverse_obj(detail, ("data", "Tags", {list})) or [],
+                    }
+            return res
+
+        BiliBiliIE._search_json = _patched_search_json
+        _PATCHED_BILIBILI = True
+    except Exception:
+        pass
 
 
 def canonical_url(url: str) -> str:
@@ -15,6 +70,7 @@ def canonical_url(url: str) -> str:
     match = _BVID_RE.search(parsed.path)
     if not match:
         return value
+    patch_bilibili_extractor()
     result = f"https://www.bilibili.com/video/{match.group(1)}"
     part = parse_qs(parsed.query).get("p", [""])[0]
     if part.isdigit() and int(part) > 0:

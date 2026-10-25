@@ -2455,6 +2455,13 @@ class DubPipeline:
                 voice_dirty[0] = True
             return result
 
+        from autodub.cancel import CURRENT_CANCEL_SCOPE, cancel_scope
+        pool_scope = CURRENT_CANCEL_SCOPE.get()
+
+        def _one_scoped(seg: dict) -> dict:
+            with cancel_scope(pool_scope):
+                return _one(seg)
+
         try:
             with ThreadPoolExecutor(max_workers=n_threads) as pool:
                 # Longest texts first: a 15 s segment picked up last would
@@ -2463,7 +2470,7 @@ class DubPipeline:
                 order = sorted(range(total),
                                key=lambda i: len(str(segments[i].get(text_field, ""))),
                                reverse=True)
-                futures = {pool.submit(_one, segments[i]): i for i in order}
+                futures = {pool.submit(_one_scoped, segments[i]): i for i in order}
                 try:
                     for fut in as_completed(futures):
                         i = futures[fut]
@@ -2481,6 +2488,13 @@ class DubPipeline:
                                 f"(target: {segments[i]['duration']:.1f}s, "
                                 f"rate: {result['rate_applied']}) [{n}/{total}]"
                             )
+                            with voice_lock:
+                                if voice_dirty[0]:
+                                    try:
+                                        save_voice_map(seg_dir, voice_map)
+                                        voice_dirty[0] = False
+                                    except OSError:
+                                        pass
                 except BaseException:
                     # Unstarted tasks never run; in-flight renders (a few
                     # seconds each) finish as the pool context exits, then we

@@ -77,3 +77,13 @@ def test_save_netscape_cookies_accepts_cookie_editor_httponly_domain(tmp_path):
     )
     save_netscape_cookies(text, str(path))
     assert has_login_cookies(str(path))
+
+
+def test_patch_bilibili_extractor_installs():
+    from autodub.media.bilibili import patch_bilibili_extractor
+    patch_bilibili_extractor()
+    import yt_dlp  # noqa: F401
+    from yt_dlp.extractor.bilibili import BiliBiliIE
+    # Verify patch exists on BiliBiliIE
+    assert hasattr(BiliBiliIE, "_search_json")
+
