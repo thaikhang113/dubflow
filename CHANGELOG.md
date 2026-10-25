@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.0.35 - 2026-10-25
+
+### Verified & Hardened
+
+- Full real-world video dubbing pipeline verified end-to-end on both Vietnamese (ASR + CapCut TTS + AMF merge) and English (ASR + translation + CapCut TTS + AMF merge) videos.
+- Verified instantaneous mid-pipeline cancellation on real video workflows with zero leaked ffmpeg or worker processes.
+- Fixed duration reporting in `qa/long_video_review.py` to accurately reflect target file names during benchmark suites.
+- Documented `${VAR}` shell expansion ceiling in `.env` configuration store.
+- Package, GUI, installer and lockfile versions are synchronized to 3.0.35.
+
 ## 3.0.34 - 2026-10-25
 
 ### Fixed

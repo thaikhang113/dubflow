@@ -31,7 +31,12 @@ Build and maintain DubFlow: local Vietnamese video dubbing desktop app.
 - `qa/gui_walkthrough.py` và `qa/commit_safety_check.py` trước mỗi commit
 
 ## Latest Verification
-- 2026-10-25 (lần 2): Kiểm lại sau phát hành — chạy lại cả 7 bộ QA trên đúng commit đã phát hành `16acd5b` (`features`, `cancel`, `batch_flows`, `e2e`, `editor`, `timing`, `long_video`): không có phát hiện mới (bộ `features` vẫn đúng 1 phát hiện môi trường VSR như mốc trước khi vá). `long_video` trên video 30 phút: 741,9s, ASR thật 244 câu, video ra 36,1 MB — nhanh hơn 1,83× so với mốc 08/09 (1358,4s) và không thoái hoá. Sửa 1 lỗi nhãn trong `qa/long_video_review.py` (in cứng "video 10 phut" cho mọi tệp). Không đổi mã sản phẩm nên không cần bản phát hành mới.
+- 2026-10-25: Phát hành 3.0.35 — Kiểm chứng thực tế đầu cuối (E2E) trên video thật từ Internet, kiểm tra nút Dừng trực tiếp trên tiến trình ffmpeg thật, đồng bộ hoá toàn bộ phiên bản phát hành.
+  + Kiểm thử video thật (`qa/real_video_runner.py`): kiểm chứng 100% video tiếng Việt 30s 1080p (Whisper large-v3 ASR -> CapCut Thanh Lan TTS -> video AMF 4.53 MB) và video tiếng Anh 19s (ASR -> dịch sang tiếng Việt -> TTS -> video 0.41 MB).
+  + Kiểm thử nút Dừng thực tế: ngắt pipeline ngay giữa giai đoạn TTS trên video thật; phản hồi tức thì trong 0.04s, giải phóng sạch luồng công nhân, 0 tiến trình ffmpeg sống sót.
+  + Sửa hiển thị nhãn benchmark: `qa/long_video_review.py` ghi nhận chính xác tên tệp đo kiểm thay vì cố định tên 10 phút.
+  + Tài liệu hóa trần nội suy biến `${VAR}` trong cấu hình `.env`.
+- 2026-10-25 (lần 2): Kiểm lại sau phát hành 3.0.34 — chạy lại cả 7 bộ QA trên đúng commit đã phát hành `16acd5b` (`features`, `cancel`, `batch_flows`, `e2e`, `editor`, `timing`, `long_video`): không có phát hiện mới (bộ `features` vẫn đúng 1 phát hiện môi trường VSR như mốc trước khi vá). `long_video` trên video 30 phút: 741,9s, ASR thật 244 câu, video ra 36,1 MB — nhanh hơn 1,83× so với mốc 08/09 (1358,4s) và không thoái hoá. Sửa 1 lỗi nhãn trong `qa/long_video_review.py` (in cứng "video 10 phut" cho mọi tệp).
 - 2026-10-25: Phát hành 3.0.34 — Vá cầu OpenClaw, giữ nguyên giá trị `.env`, nút Dừng cắt được các lượt ffmpeg song song và lượt xuất phụ đề.
   + OpenClaw: `_manifest_path` kiểm tra đường dẫn ĐÃ GIẢI nên `..\..\openclaw` không còn đọc/ghi được ngoài `batches/` (trước đó đọc được cả `openclaw.json` giữ token); manifest thiếu `job_ids` trả 4xx thay vì 500; import hỏng trả 500 thay vì ngắt kết nối.
   + `.env`: chỉ trích dẫn khi python-dotenv thực sự cần, nên glossary/context không còn bị cắt tại ` #` và giá trị bắt đầu bằng dấu nháy không còn mất. Trần còn lại: giá trị buộc phải trích dẫn vẫn bị nội suy `${TÊN}` (ghi ở `tests/test_env_store.py:117`).
