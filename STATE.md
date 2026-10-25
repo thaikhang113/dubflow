@@ -31,9 +31,10 @@ Build and maintain DubFlow: local Vietnamese video dubbing desktop app.
 - `qa/gui_walkthrough.py` và `qa/commit_safety_check.py` trước mỗi commit
 
 ## Latest Verification
+- 2026-10-25 (lần 2): Kiểm lại sau phát hành — chạy lại cả 7 bộ QA trên đúng commit đã phát hành `16acd5b` (`features`, `cancel`, `batch_flows`, `e2e`, `editor`, `timing`, `long_video`): không có phát hiện mới (bộ `features` vẫn đúng 1 phát hiện môi trường VSR như mốc trước khi vá). `long_video` trên video 30 phút: 741,9s, ASR thật 244 câu, video ra 36,1 MB — nhanh hơn 1,83× so với mốc 08/09 (1358,4s) và không thoái hoá. Sửa 1 lỗi nhãn trong `qa/long_video_review.py` (in cứng "video 10 phut" cho mọi tệp). Không đổi mã sản phẩm nên không cần bản phát hành mới.
 - 2026-10-25: Phát hành 3.0.34 — Vá cầu OpenClaw, giữ nguyên giá trị `.env`, nút Dừng cắt được các lượt ffmpeg song song và lượt xuất phụ đề.
   + OpenClaw: `_manifest_path` kiểm tra đường dẫn ĐÃ GIẢI nên `..\..\openclaw` không còn đọc/ghi được ngoài `batches/` (trước đó đọc được cả `openclaw.json` giữ token); manifest thiếu `job_ids` trả 4xx thay vì 500; import hỏng trả 500 thay vì ngắt kết nối.
-  + `.env`: chỉ trích dẫn khi python-dotenv thực sự cần, nên glossary/context không còn bị cắt tại ` #` và giá trị bắt đầu bằng dấu nháy không còn mất.
+  + `.env`: chỉ trích dẫn khi python-dotenv thực sự cần, nên glossary/context không còn bị cắt tại ` #` và giá trị bắt đầu bằng dấu nháy không còn mất. Trần còn lại: giá trị buộc phải trích dẫn vẫn bị nội suy `${TÊN}` (ghi ở `tests/test_env_store.py:117`).
   + Hủy: ba pool ffmpeg (`slow_segments`, `postprocess_voice_clips`, atempo) và lượt căn phụ đề sao chép scope hủy sang luồng công nhân; clip hậu kỳ ghi qua tệp tạm nên bản dở không bị tái dùng.
   + `mcp_server.py` đọc `openclaw.json` của app đang chạy thay vì đường dẫn phát triển cố định — hết 401.
   + Xác minh: `python -m pytest -q` → 1274 passed, 1 skipped; `ruff check` sạch; probe trước/sau ở `qa/work/probe_p34_scope_threadpool.py`, `qa/work/probe_p34_cfg_roundtrip.py`, `qa/work/probe_p34_http_traversal.py`.
